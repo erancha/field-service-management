@@ -79,8 +79,11 @@ Docker Postgres; the rest are optional and degrade gracefully until set:
 | 5 | Holidays | `GOOGLE_API_KEY`, `HOLIDAY_CALENDAR_ID` | excluding public holidays from availability |
 | 6 | Email / `.ics` | `SMTP_HOST`, `SMTP_FROM`, `SMTP_*` | sending booking emails (otherwise notifications stay in the in-app feed) |
 
-The one-time Google Cloud Console setup that group #2 needs is the only manual step that happens
-outside this repo; everything else is values you set in `.env`.
+The steps that happen outside this repo are all credential setup: the Google Cloud Console OAuth
+client for group #2 and — if you enable holidays — the separate Google **API key** for group #5,
+plus SMTP credentials from your mail provider if you enable email (group #6). Everything else is
+values you set in `.env`, and the two local secrets (`FSM_TOKEN_KEY`, `SESSION_SECRET`) are
+generated for you by `init-env.sh`. Each is documented inline in `backend/.env.example`.
 
 ### 2. Run it
 
