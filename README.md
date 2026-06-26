@@ -53,9 +53,6 @@ The inner layers (`domain`, `application`, `ports`) depend only on abstractions 
 library; only `adapters` touch infrastructure. These boundaries are **enforced in CI** by
 import-linter — a forbidden import fails the build, not just code review.
 
-See the [Documentation](#documentation) section for the design spec covering the full architecture,
-data model, calendar-privacy model, and error-handling strategy.
-
 ## Getting started
 
 Prerequisites: **Python**, **Docker** (for PostgreSQL), and **Node.js + npm** (to build the React
@@ -133,7 +130,5 @@ Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker
 
 ## Documentation
 
-- [Scheduling Module — Slice 1 Design](docs/superpowers/specs/2026-06-25-scheduling-design.md) — architecture, data model,
-  decisions, deferred work.
 - [Testing](docs/testing.md) — the test taxonomy (unit, integration, API, contract, architecture)
   and how to run it.
