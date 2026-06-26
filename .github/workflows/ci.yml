@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# Both jobs run scripts/test.sh — the same entry point developers use locally — so CI and local
+# verification can never drift. The script provisions its own backend virtualenv / frontend deps.
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Matches the floor in backend/pyproject.toml and the python:3.12-slim image the app
+          # deploys on — CI proves exactly what ships.
+          python-version: "3.12"
+      # import-linter boundary contracts + the full pytest suite (unit, integration via a
+      # testcontainers Postgres on the runner's Docker, API, contract).
+      - name: Backend tests
+        run: bash scripts/test.sh backend
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # typecheck (tsc), lint (oxlint), production build (vite).
+      - name: Frontend checks
+        run: bash scripts/test.sh frontend

@@ -1,0 +1,63 @@
+import { useState } from 'react'
+import { createServiceCall } from '../../api/scheduling.ts'
+import type { ServiceCall } from '../../api/types.ts'
+import { Button } from '../../components/Button.tsx'
+import { ErrorBanner } from '../../components/ErrorBanner.tsx'
+
+interface OpenServiceCallProps {
+  customerId: string
+  onCreated: (serviceCall: ServiceCall) => void
+}
+
+export function OpenServiceCall({ customerId, onCreated }: OpenServiceCallProps) {
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      const sc = await createServiceCall({ customer_id: customerId, description, category })
+      onCreated(sc)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create service call')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="open-service-call">
+      <h3>Open a Service Call</h3>
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      <form onSubmit={handleSubmit} className="form">
+        <label>
+          Description:
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+            rows={3}
+            placeholder="Describe the issue…"
+          />
+        </label>
+        <label>
+          Category:
+          <input
+            type="text"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            required
+            placeholder="e.g. plumbing, electrical…"
+          />
+        </label>
+        <Button type="submit" loading={loading} disabled={!description.trim() || !category.trim()}>
+          Open Service Call
+        </Button>
+      </form>
+    </div>
+  )
+}

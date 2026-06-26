@@ -1,0 +1,78 @@
+# One backend image runs migrations and both role services; they differ only by command, FSM_ROLE, and published port.
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+
+# Operator config (Google, SMTP, Fernet key, runner flags, ...) comes from backend/.env so the
+# Docker path honors the same configuration as host mode. Optional: absent on a fresh checkout.
+# The inline `environment` below overrides DATABASE_URL to the in-network `db` host regardless of
+# what .env sets for the host path.
+x-backend-env-file: &backend-env-file
+  - path: ./backend/.env
+    required: false
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://fsm:fsm@db:5432/fsm
+  APP_ENV: local
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: fsm
+      POSTGRES_PASSWORD: fsm
+      POSTGRES_DB: fsm
+    ports:
+      - "5432:5432"
+    volumes:
+      - fsm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fsm -d fsm"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    build: *backend-build
+    image: fsm-backend:local
+    command: alembic upgrade head
+    env_file: *backend-env-file
+    environment: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  technician:
+    build: *backend-build
+    image: fsm-backend:local
+    command: uvicorn fsm.platform.app:create_app --factory --host 0.0.0.0 --port 8001
+    env_file: *backend-env-file
+    environment:
+      <<: *backend-env
+      FSM_ROLE: technician
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  customer:
+    build: *backend-build
+    image: fsm-backend:local
+    command: uvicorn fsm.platform.app:create_app --factory --host 0.0.0.0 --port 8002
+    env_file: *backend-env-file
+    environment:
+      <<: *backend-env
+      FSM_ROLE: customer
+    ports:
+      - "8002:8002"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  fsm_pgdata:
