@@ -122,7 +122,7 @@ class _FakeCalendarClient:
 # ---------------------------------------------------------------------------
 
 
-def test_busy_interval_excluded_from_slots(pg_session_factory):
+def test_busy_interval_excluded_from_slots(pg_session_factory, authenticate):
     """A connected technician's 09:00–10:00 busy block is excluded from availability."""
     token_key = Fernet.generate_key().decode()
     tech_id = uuid.uuid4()
@@ -137,6 +137,7 @@ def test_busy_interval_excluded_from_slots(pg_session_factory):
 
     settings = _configured_settings(os.environ["DATABASE_URL"], token_key)
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     # Inject the seam: the resolver calls client_factory(refresh_token=...) to build a client.
     app.state.calendar_client_factory_override = lambda **kw: fake_client
     client = TestClient(app)
@@ -163,7 +164,7 @@ def test_busy_interval_excluded_from_slots(pg_session_factory):
     )
 
 
-def test_no_busy_returns_full_slot_set(pg_session_factory):
+def test_no_busy_returns_full_slot_set(pg_session_factory, authenticate):
     """A connected technician with no busy intervals gets the full 8-slot day."""
     token_key = Fernet.generate_key().decode()
     tech_id = uuid.uuid4()
@@ -173,6 +174,7 @@ def test_no_busy_returns_full_slot_set(pg_session_factory):
 
     settings = _configured_settings(os.environ["DATABASE_URL"], token_key)
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     app.state.calendar_client_factory_override = lambda **kw: fake_client
     client = TestClient(app)
 
@@ -196,10 +198,11 @@ def test_no_busy_returns_full_slot_set(pg_session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_unconnected_technician_returns_full_slots(pg_session_factory):
+def test_unconnected_technician_returns_full_slots(pg_session_factory, authenticate):
     """An unconnected technician gets the full slot set — NullCalendarPort path."""
     settings = _configured_settings(os.environ["DATABASE_URL"], Fernet.generate_key().decode())
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     client = TestClient(app)
 
     # tech_id has no CalendarConnection row
@@ -218,10 +221,11 @@ def test_unconnected_technician_returns_full_slots(pg_session_factory):
     assert len(resp.json()["slots"]) == 8
 
 
-def test_unconfigured_google_returns_full_slots(pg_session_factory):
+def test_unconfigured_google_returns_full_slots(pg_session_factory, authenticate):
     """When Google is not configured the endpoint degrades to NullCalendarPort."""
     settings = _unconfigured_settings(os.environ["DATABASE_URL"])
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     client = TestClient(app)
 
     resp = client.get(
@@ -244,7 +248,7 @@ def test_unconfigured_google_returns_full_slots(pg_session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_resolver_failure_degrades_to_full_slots(pg_session_factory):
+def test_resolver_failure_degrades_to_full_slots(pg_session_factory, authenticate):
     """If the client factory raises, availability returns slots rather than 500."""
     token_key = Fernet.generate_key().decode()
     tech_id = uuid.uuid4()
@@ -255,6 +259,7 @@ def test_resolver_failure_degrades_to_full_slots(pg_session_factory):
 
     settings = _configured_settings(os.environ["DATABASE_URL"], token_key)
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     app.state.calendar_client_factory_override = _exploding_factory
     client = TestClient(app)
 

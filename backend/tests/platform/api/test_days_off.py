@@ -20,6 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from fsm.platform.app import create_app
+from fsm.identity.domain.role import Role
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +73,8 @@ _ADJACENT_AFTER = date(2025, 7, 14)   # Monday
 # ---------------------------------------------------------------------------
 
 
-def test_post_day_off_returns_201(client):
-    tech_id = uuid.uuid4()
+def test_post_day_off_returns_201(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.post(
         f"/api/technicians/{tech_id}/days-off",
         json={"date": _DAY_OFF_DATE.isoformat()},
@@ -81,8 +82,8 @@ def test_post_day_off_returns_201(client):
     assert resp.status_code == 201
 
 
-def test_post_day_off_idempotent(client):
-    tech_id = uuid.uuid4()
+def test_post_day_off_idempotent(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.post(f"/api/technicians/{tech_id}/days-off", json={"date": _DAY_OFF_DATE.isoformat()})
     resp = client.post(
         f"/api/technicians/{tech_id}/days-off",
@@ -91,8 +92,8 @@ def test_post_day_off_idempotent(client):
     assert resp.status_code == 201
 
 
-def test_get_days_off_lists_added_date(client):
-    tech_id = uuid.uuid4()
+def test_get_days_off_lists_added_date(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.post(f"/api/technicians/{tech_id}/days-off", json={"date": _DAY_OFF_DATE.isoformat()})
 
     resp = client.get(
@@ -103,8 +104,8 @@ def test_get_days_off_lists_added_date(client):
     assert _DAY_OFF_DATE.isoformat() in resp.json()["days_off"]
 
 
-def test_availability_no_slots_on_day_off(client):
-    tech_id = uuid.uuid4()
+def test_availability_no_slots_on_day_off(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.post(f"/api/technicians/{tech_id}/days-off", json={"date": _DAY_OFF_DATE.isoformat()})
 
     resp = client.get(
@@ -121,8 +122,8 @@ def test_availability_no_slots_on_day_off(client):
     assert resp.json()["slots"] == []
 
 
-def test_availability_normal_slots_on_adjacent_days(client):
-    tech_id = uuid.uuid4()
+def test_availability_normal_slots_on_adjacent_days(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.post(f"/api/technicians/{tech_id}/days-off", json={"date": _DAY_OFF_DATE.isoformat()})
 
     resp = client.get(
@@ -141,16 +142,16 @@ def test_availability_normal_slots_on_adjacent_days(client):
     assert len(slots) == 16
 
 
-def test_delete_day_off_returns_204(client):
-    tech_id = uuid.uuid4()
+def test_delete_day_off_returns_204(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.post(f"/api/technicians/{tech_id}/days-off", json={"date": _DAY_OFF_DATE.isoformat()})
 
     resp = client.delete(f"/api/technicians/{tech_id}/days-off/{_DAY_OFF_DATE.isoformat()}")
     assert resp.status_code == 204
 
 
-def test_slots_reappear_after_delete(client):
-    tech_id = uuid.uuid4()
+def test_slots_reappear_after_delete(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.post(f"/api/technicians/{tech_id}/days-off", json={"date": _DAY_OFF_DATE.isoformat()})
 
     # Confirm no slots.

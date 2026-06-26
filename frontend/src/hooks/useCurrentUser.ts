@@ -6,7 +6,6 @@ export type AuthState =
   | { status: 'loading' }
   | { status: 'authenticated'; user: CurrentUser }
   | { status: 'unauthenticated' }
-  | { status: 'unavailable' }
 
 export function useCurrentUser(): AuthState {
   const [state, setState] = useState<AuthState>({ status: 'loading' })
@@ -16,14 +15,10 @@ export function useCurrentUser(): AuthState {
     fetchCurrentUser()
       .then((user) => {
         if (cancelled) return
-        if (user) {
-          setState({ status: 'authenticated', user })
-        } else {
-          setState({ status: 'unauthenticated' })
-        }
+        setState(user ? { status: 'authenticated', user } : { status: 'unauthenticated' })
       })
       .catch(() => {
-        if (!cancelled) setState({ status: 'unavailable' })
+        if (!cancelled) setState({ status: 'unauthenticated' })
       })
     return () => {
       cancelled = true

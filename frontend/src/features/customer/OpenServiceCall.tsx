@@ -5,11 +5,10 @@ import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 
 interface OpenServiceCallProps {
-  customerId: string
   onCreated: (serviceCall: ServiceCall) => void
 }
 
-export function OpenServiceCall({ customerId, onCreated }: OpenServiceCallProps) {
+export function OpenServiceCall({ onCreated }: OpenServiceCallProps) {
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,7 +19,7 @@ export function OpenServiceCall({ customerId, onCreated }: OpenServiceCallProps)
     setError(null)
     setLoading(true)
     try {
-      const sc = await createServiceCall({ customer_id: customerId, description, category })
+      const sc = await createServiceCall({ description, category })
       onCreated(sc)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create service call')

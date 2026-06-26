@@ -9,12 +9,11 @@ import { AppointmentCard } from '../../components/AppointmentCard.tsx'
 
 interface BookFlowProps {
   serviceCall: ServiceCall
-  customerId: string
 }
 
 type Step = 'form' | 'slots' | 'booked'
 
-export function BookFlow({ serviceCall, customerId }: BookFlowProps) {
+export function BookFlow({ serviceCall }: BookFlowProps) {
   const [step, setStep] = useState<Step>('form')
   const [technicianId, setTechnicianId] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -39,7 +38,6 @@ export function BookFlow({ serviceCall, customerId }: BookFlowProps) {
     await appts.book({
       service_call_id: serviceCall.id,
       technician_id: technicianId,
-      customer_id: customerId,
       start: selectedSlot.start,
       end: selectedSlot.end,
     })

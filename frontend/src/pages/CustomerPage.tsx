@@ -7,12 +7,11 @@ import { LogoutButton } from '../features/auth/LogoutButton.tsx'
 interface CustomerPageProps {
   customerId: string
   email?: string
-  devMode?: boolean
 }
 
 type Phase = 'open-sc' | 'book'
 
-export function CustomerPage({ customerId, email, devMode = false }: CustomerPageProps) {
+export function CustomerPage({ customerId, email }: CustomerPageProps) {
   const [phase, setPhase] = useState<Phase>('open-sc')
   const [serviceCall, setServiceCall] = useState<ServiceCall | null>(null)
 
@@ -27,19 +26,18 @@ export function CustomerPage({ customerId, email, devMode = false }: CustomerPag
         <h2>Customer Dashboard</h2>
         <div className="page__header-right">
           {email && <span className="page__email">{email}</span>}
-          {devMode && <span className="badge badge--dev">Dev Mode</span>}
-          {!devMode && <LogoutButton />}
+          <LogoutButton />
         </div>
       </header>
 
       <p className="page__id">Customer ID: <code>{customerId}</code></p>
 
       {phase === 'open-sc' && (
-        <OpenServiceCall customerId={customerId} onCreated={handleServiceCallCreated} />
+        <OpenServiceCall onCreated={handleServiceCallCreated} />
       )}
 
       {phase === 'book' && serviceCall && (
-        <BookFlow serviceCall={serviceCall} customerId={customerId} />
+        <BookFlow serviceCall={serviceCall} />
       )}
 
       {phase === 'book' && serviceCall && (

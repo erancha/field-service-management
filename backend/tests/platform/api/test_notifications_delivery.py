@@ -57,32 +57,35 @@ class TestNotificationsDelivery:
         self, client, pg_session_factory
     ):
         from fsm.notifications.adapters.orm import NotificationRow
+        from fsm.platform.api.auth_deps import require_user, SessionUser
+        from fsm.identity.domain.role import Role
 
-        sc_resp = client.post(
-            "/api/service-calls",
-            json={
-                "customer_id": str(uuid.uuid4()),
-                "description": "Notification test",
-                "category": "general",
-            },
-        )
-        assert sc_resp.status_code == 201
-        sc_id = sc_resp.json()["id"]
-
+        # Authenticate as the customer; booking derives customer_id from the session.
         cust_id = uuid.uuid4()
         tech_id = uuid.uuid4()
-
-        book_resp = client.post(
-            "/api/appointments",
-            json={
-                "service_call_id": sc_id,
-                "technician_id": str(tech_id),
-                "customer_id": str(cust_id),
-                "start": _utc_iso(2025, 7, 6, 9),
-                "end": _utc_iso(2025, 7, 6, 10),
-            },
+        client.app.dependency_overrides[require_user] = lambda: SessionUser(
+            id=cust_id, role=Role.CUSTOMER, email="cust@example.com"
         )
-        assert book_resp.status_code == 200
+        try:
+            sc_resp = client.post(
+                "/api/service-calls",
+                json={"description": "Notification test", "category": "general"},
+            )
+            assert sc_resp.status_code == 201
+            sc_id = sc_resp.json()["id"]
+
+            book_resp = client.post(
+                "/api/appointments",
+                json={
+                    "service_call_id": sc_id,
+                    "technician_id": str(tech_id),
+                    "start": _utc_iso(2025, 7, 6, 9),
+                    "end": _utc_iso(2025, 7, 6, 10),
+                },
+            )
+            assert book_resp.status_code == 200
+        finally:
+            client.app.dependency_overrides.pop(require_user, None)
 
         with pg_session_factory() as sess:
             cust_rows = (

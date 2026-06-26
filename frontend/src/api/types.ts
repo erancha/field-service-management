@@ -30,7 +30,7 @@ export interface Appointment {
 export interface CurrentUser {
   user_id: string
   email: string
-  role: 'customer' | 'technician' | string
+  role: 'CUSTOMER' | 'TECHNICIAN' | string
 }
 
 export interface ApiError {
@@ -38,7 +38,6 @@ export interface ApiError {
 }
 
 export interface CreateServiceCallRequest {
-  customer_id: string
   description: string
   category: string
 }
@@ -46,7 +45,6 @@ export interface CreateServiceCallRequest {
 export interface CreateAppointmentRequest {
   service_call_id: string
   technician_id: string
-  customer_id: string
   start: string
   end: string
 }

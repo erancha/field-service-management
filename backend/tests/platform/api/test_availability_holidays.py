@@ -80,7 +80,8 @@ def seed_holiday(pg_session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_no_slots_on_holiday_date(client):
+def test_no_slots_on_holiday_date(client, authenticate):
+    authenticate(client.app)
     tech_id = uuid.uuid4()
     response = client.get(
         "/api/availability",
@@ -96,7 +97,8 @@ def test_no_slots_on_holiday_date(client):
     assert response.json()["slots"] == []
 
 
-def test_normal_slots_on_adjacent_working_days(client):
+def test_normal_slots_on_adjacent_working_days(client, authenticate):
+    authenticate(client.app)
     tech_id = uuid.uuid4()
     response = client.get(
         "/api/availability",

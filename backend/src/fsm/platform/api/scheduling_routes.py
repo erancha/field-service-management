@@ -51,8 +51,12 @@ from fsm.platform.api.schemas import (
 from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.dev_adapters import LoggingNotificationPort, NullCalendarPort
 from fsm.platform.notifications_factory import build_notifications
+from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
+from fsm.identity.domain.role import Role
 
-router = APIRouter(prefix="/api")
+# Every scheduling route requires an authenticated session; identity is taken from the session,
+# never from the request body. Per-route role and ownership are enforced in the handlers below.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
 
 def _get_session_factory(request: Request):
@@ -156,19 +160,35 @@ def _map_domain_error(exc: Exception) -> HTTPException:
     raise exc
 
 
+def _assert_self(technician_id: UUID, user: SessionUser) -> None:
+    """Authorize a technician acting only on their own resources."""
+    if technician_id != user.id:
+        raise HTTPException(status_code=403, detail="Cannot act on behalf of another technician")
+
+
+def _assert_participant(appt, user: SessionUser) -> None:
+    """Authorize only the appointment's own customer or technician."""
+    if user.id not in (appt.customer_id, appt.technician_id):
+        raise HTTPException(status_code=403, detail="Not a participant of this appointment")
+
+
 # ---------------------------------------------------------------------------
 # Service calls
 # ---------------------------------------------------------------------------
 
 
 @router.post("/service-calls", response_model=ServiceCallResponse, status_code=201)
-def open_service_call(body: OpenServiceCallRequest, request: Request) -> ServiceCallResponse:
-    """Create a new OPEN service call and return it."""
+def open_service_call(
+    body: OpenServiceCallRequest,
+    request: Request,
+    user: SessionUser = Depends(require_role(Role.CUSTOMER)),
+) -> ServiceCallResponse:
+    """Create a new OPEN service call for the authenticated customer and return it."""
     try:
         with _build_uow(request) as uow:
             svc = ServiceCallService(service_calls=uow.service_calls)
             sc = svc.open_service_call(
-                customer_id=body.customer_id,
+                customer_id=user.id,
                 description=body.description,
                 category=body.category,
             )
@@ -330,10 +350,16 @@ def get_availability_pool(
 
 
 @router.post("/technicians/{technician_id}/days-off", status_code=201)
-def add_day_off(technician_id: UUID, body: DayOffRequest, request: Request) -> None:
+def add_day_off(
+    technician_id: UUID,
+    body: DayOffRequest,
+    request: Request,
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
+) -> None:
     """Mark a date as a day off for a technician; idempotent."""
     from fsm.scheduling.adapters.time_off_repository import SqlAlchemyTimeOffRepository
 
+    _assert_self(technician_id, user)
     with _build_uow(request) as uow:
         repo = SqlAlchemyTimeOffRepository(uow._session)
         repo.add(technician_id, body.date)
@@ -341,10 +367,16 @@ def add_day_off(technician_id: UUID, body: DayOffRequest, request: Request) -> N
 
 
 @router.delete("/technicians/{technician_id}/days-off/{off_date}", status_code=204)
-def remove_day_off(technician_id: UUID, off_date: date, request: Request) -> None:
+def remove_day_off(
+    technician_id: UUID,
+    off_date: date,
+    request: Request,
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
+) -> None:
     """Remove a previously marked day off; no-op if absent."""
     from fsm.scheduling.adapters.time_off_repository import SqlAlchemyTimeOffRepository
 
+    _assert_self(technician_id, user)
     with _build_uow(request) as uow:
         repo = SqlAlchemyTimeOffRepository(uow._session)
         repo.remove(technician_id, off_date)
@@ -357,10 +389,12 @@ def list_days_off(
     request: Request,
     date_from: Annotated[date, Query()],
     date_to: Annotated[date, Query()],
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
 ) -> DaysOffResponse:
     """List day-off dates for a technician within a date range."""
     from fsm.scheduling.adapters.time_off_repository import SqlAlchemyTimeOffRepository
 
+    _assert_self(technician_id, user)
     with _build_uow(request) as uow:
         repo = SqlAlchemyTimeOffRepository(uow._session)
         days = sorted(repo.list_between(technician_id, date_from, date_to))
@@ -377,11 +411,13 @@ def put_working_hours(
     technician_id: UUID,
     body: WorkingHoursRequest,
     request: Request,
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
 ) -> WorkingHoursResponse:
     """Store the technician's weekly working-hours schedule, replacing any existing configuration."""
     from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
     from fsm.scheduling.domain.errors import SchedulingError
 
+    _assert_self(technician_id, user)
     try:
         windows = tuple(
             DailyHours(weekday=w.weekday, start=w.start, end=w.end) for w in body.windows
@@ -403,10 +439,15 @@ def put_working_hours(
 
 
 @router.get("/technicians/{technician_id}/working-hours", response_model=WorkingHoursResponse)
-def get_working_hours(technician_id: UUID, request: Request) -> WorkingHoursResponse:
+def get_working_hours(
+    technician_id: UUID,
+    request: Request,
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
+) -> WorkingHoursResponse:
     """Return the technician's working-hours schedule (default when unset)."""
     from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
 
+    _assert_self(technician_id, user)
     with _build_uow(request) as uow:
         repo = SqlAlchemyWorkingHoursRepository(uow._session)
         hours = repo.get_for_technician(technician_id)
@@ -421,10 +462,12 @@ def put_timezone(
     technician_id: UUID,
     body: TimezoneRequest,
     request: Request,
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
 ) -> TimezoneResponse:
     """Store the technician's IANA timezone, validating it against the system timezone database."""
     from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
 
+    _assert_self(technician_id, user)
     try:
         zoneinfo.ZoneInfo(body.timezone)
     except zoneinfo.ZoneInfoNotFoundError:
@@ -439,10 +482,15 @@ def put_timezone(
 
 
 @router.get("/technicians/{technician_id}/timezone", response_model=TimezoneResponse)
-def get_timezone(technician_id: UUID, request: Request) -> TimezoneResponse:
+def get_timezone(
+    technician_id: UUID,
+    request: Request,
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
+) -> TimezoneResponse:
     """Return the technician's timezone (default Asia/Jerusalem when unset)."""
     from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
 
+    _assert_self(technician_id, user)
     with _build_uow(request) as uow:
         repo = SqlAlchemyWorkingHoursRepository(uow._session)
         stored = repo.get_timezone(technician_id)
@@ -456,8 +504,12 @@ def get_timezone(technician_id: UUID, request: Request) -> TimezoneResponse:
 
 
 @router.post("/appointments", response_model=AppointmentResponse)
-def book_appointment(body: BookAppointmentRequest, request: Request) -> AppointmentResponse:
-    """Book a new appointment for an OPEN service call."""
+def book_appointment(
+    body: BookAppointmentRequest,
+    request: Request,
+    user: SessionUser = Depends(require_role(Role.CUSTOMER)),
+) -> AppointmentResponse:
+    """Book a new appointment for the authenticated customer's OPEN service call."""
     try:
         time_range = TimeRange(start=body.start, end=body.end)
     except InvalidTimeRange as exc:
@@ -465,6 +517,13 @@ def book_appointment(body: BookAppointmentRequest, request: Request) -> Appointm
 
     try:
         with _build_uow(request) as uow:
+            # The booking customer must own the service call they book against.
+            service_call = uow.service_calls.get(body.service_call_id)
+            if service_call.customer_id != user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cannot book against another customer's service call",
+                )
             svc = AppointmentService(
                 appointments=uow.appointments,
                 service_calls=uow.service_calls,
@@ -475,7 +534,7 @@ def book_appointment(body: BookAppointmentRequest, request: Request) -> Appointm
             appt = svc.book_appointment(
                 service_call_id=body.service_call_id,
                 technician_id=body.technician_id,
-                customer_id=body.customer_id,
+                customer_id=user.id,
                 time_range=time_range,
             )
             uow.commit()
@@ -490,6 +549,7 @@ def reschedule_appointment(
     appointment_id: UUID,
     body: RescheduleRequest,
     request: Request,
+    user: SessionUser = Depends(require_user),
 ) -> AppointmentResponse:
     """Reschedule an existing appointment to a new time window."""
     try:
@@ -499,6 +559,7 @@ def reschedule_appointment(
 
     try:
         with _build_uow(request) as uow:
+            _assert_participant(uow.appointments.get(appointment_id), user)
             svc = AppointmentService(
                 appointments=uow.appointments,
                 service_calls=uow.service_calls,
@@ -518,10 +579,15 @@ def reschedule_appointment(
 
 
 @router.post("/appointments/{appointment_id}/cancel", response_model=AppointmentResponse)
-def cancel_appointment(appointment_id: UUID, request: Request) -> AppointmentResponse:
+def cancel_appointment(
+    appointment_id: UUID,
+    request: Request,
+    user: SessionUser = Depends(require_user),
+) -> AppointmentResponse:
     """Cancel an appointment."""
     try:
         with _build_uow(request) as uow:
+            _assert_participant(uow.appointments.get(appointment_id), user)
             svc = AppointmentService(
                 appointments=uow.appointments,
                 service_calls=uow.service_calls,
@@ -542,10 +608,12 @@ def add_details(
     appointment_id: UUID,
     body: AddDetailsRequest,
     request: Request,
+    user: SessionUser = Depends(require_user),
 ) -> AppointmentResponse:
     """Attach or replace free-text details on an appointment."""
     try:
         with _build_uow(request) as uow:
+            _assert_participant(uow.appointments.get(appointment_id), user)
             svc = AppointmentService(
                 appointments=uow.appointments,
                 service_calls=uow.service_calls,

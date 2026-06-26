@@ -5,6 +5,11 @@ applied to it once. Each test uses a real TestClient so that the full
 request/response path — including FastAPI routing, Pydantic validation,
 domain use-cases, UoW, and SQL persistence — is exercised end-to-end.
 
+Authentication: every /api route is gated by require_user. Tests authenticate
+by overriding that dependency via the `auth` fixture, which stamps a session
+user of a chosen id and role; identity is taken from the session, never the
+request body. The override is cleared after each test.
+
 Test isolation: each test that writes to the DB uses a unique technician_id
 or service_call_id so tests don't collide. The module-level container is not
 rolled back between tests; the Postgres exclusion constraint is exercised
@@ -25,6 +30,7 @@ from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from fsm.platform.app import create_app
+from fsm.identity.domain.role import Role
 
 
 # ---------------------------------------------------------------------------
@@ -55,10 +61,28 @@ def pg_session_factory():
 
 
 @pytest.fixture(scope="module")
-def client(pg_session_factory):
-    """Return a TestClient wired to the migrated Postgres container."""
-    app = create_app(session_factory=pg_session_factory)
+def app(pg_session_factory):
+    """Return the FastAPI app wired to the migrated Postgres container."""
+    return create_app(session_factory=pg_session_factory)
+
+
+@pytest.fixture(scope="module")
+def client(app):
+    """Return a TestClient. Unauthenticated by default — use `auth` to sign in."""
     return TestClient(app)
+
+
+@pytest.fixture
+def auth(app, authenticate):
+    """Bind this module's app to the shared `authenticate` helper.
+
+    Returns `auth(user_id=None, role=Role.CUSTOMER) -> UUID`; calling it again within a
+    test switches the active user. The default (no call) leaves the request unauthenticated.
+    """
+    def _set(user_id: uuid.UUID | None = None, role: Role = Role.CUSTOMER) -> uuid.UUID:
+        return authenticate(app, user_id=user_id, role=role)
+
+    return _set
 
 
 # ---------------------------------------------------------------------------
@@ -71,23 +95,55 @@ def _utc_iso(year: int, month: int, day: int, hour: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 0. Gating: unauthenticated access is rejected
+# ---------------------------------------------------------------------------
+
+
+def test_unauthenticated_request_returns_401(client):
+    """With no session, scheduling routes are not reachable."""
+    create = client.post("/api/service-calls", json={"description": "x", "category": "y"})
+    assert create.status_code == 401
+
+    read = client.get(
+        "/api/availability",
+        params={
+            "technician_id": str(uuid.uuid4()),
+            "date_from": "2025-01-05",
+            "date_to": "2025-01-05",
+        },
+    )
+    assert read.status_code == 401
+
+
+# ---------------------------------------------------------------------------
 # 1. Open a service call
 # ---------------------------------------------------------------------------
 
 
-def test_open_service_call_returns_201(client):
-    payload = {
-        "customer_id": str(uuid.uuid4()),
-        "description": "Fix broken boiler",
-        "category": "plumbing",
-    }
-    response = client.post("/api/service-calls", json=payload)
+def test_open_service_call_returns_201(client, auth):
+    cust_id = auth(role=Role.CUSTOMER)
+    response = client.post(
+        "/api/service-calls",
+        json={"description": "Fix broken boiler", "category": "plumbing"},
+    )
     assert response.status_code == 201
     data = response.json()
+    # Identity comes from the session, not the body.
+    assert data["customer_id"] == str(cust_id)
     assert data["description"] == "Fix broken boiler"
     assert data["category"] == "plumbing"
     assert data["status"] == "OPEN"
     assert uuid.UUID(data["id"])
+
+
+def test_open_service_call_wrong_role_returns_403(client, auth):
+    """Only customers may open service calls."""
+    auth(role=Role.TECHNICIAN)
+    response = client.post(
+        "/api/service-calls",
+        json={"description": "x", "category": "y"},
+    )
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +151,8 @@ def test_open_service_call_returns_201(client):
 # ---------------------------------------------------------------------------
 
 
-def test_availability_returns_slots(client):
+def test_availability_returns_slots(client, auth):
+    auth()
     tech_id = uuid.uuid4()
     response = client.get(
         "/api/availability",
@@ -112,14 +169,14 @@ def test_availability_returns_slots(client):
     assert "slots" in data
     # Default schedule: Sun–Thu 09:00–17:00 = 8 one-hour slots per day
     assert len(data["slots"]) == 8
-    # Each slot must have start and end
     for slot in data["slots"]:
         assert "start" in slot
         assert "end" in slot
 
 
-def test_availability_friday_returns_no_slots(client):
+def test_availability_friday_returns_no_slots(client, auth):
     """Friday is not a working day in the default Israeli schedule."""
+    auth()
     tech_id = uuid.uuid4()
     response = client.get(
         "/api/availability",
@@ -135,7 +192,8 @@ def test_availability_friday_returns_no_slots(client):
     assert response.json()["slots"] == []
 
 
-def test_availability_invalid_timezone_returns_400(client):
+def test_availability_invalid_timezone_returns_400(client, auth):
+    auth()
     response = client.get(
         "/api/availability",
         params={
@@ -153,28 +211,21 @@ def test_availability_invalid_timezone_returns_400(client):
 # ---------------------------------------------------------------------------
 
 
-def test_book_appointment_returns_200_and_is_persisted(client, pg_session_factory):
-    # Open a service call first
+def test_book_appointment_returns_200_and_is_persisted(client, auth, pg_session_factory):
+    cust_id = auth(role=Role.CUSTOMER)
     sc_resp = client.post(
         "/api/service-calls",
-        json={
-            "customer_id": str(uuid.uuid4()),
-            "description": "AC repair",
-            "category": "hvac",
-        },
+        json={"description": "AC repair", "category": "hvac"},
     )
     assert sc_resp.status_code == 201
     sc_id = sc_resp.json()["id"]
 
     tech_id = uuid.uuid4()
-    cust_id = uuid.uuid4()
-
     book_resp = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc_id,
             "technician_id": str(tech_id),
-            "customer_id": str(cust_id),
             "start": _utc_iso(2025, 1, 5, 9),
             "end": _utc_iso(2025, 1, 5, 10),
         },
@@ -182,9 +233,9 @@ def test_book_appointment_returns_200_and_is_persisted(client, pg_session_factor
     assert book_resp.status_code == 200
     appt_data = book_resp.json()
     assert appt_data["status"] == "SCHEDULED"
+    assert appt_data["customer_id"] == str(cust_id)
     assert uuid.UUID(appt_data["id"])
 
-    # Verify service call is now SCHEDULED
     from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
     from fsm.scheduling.domain.service_call import ServiceCallStatus
 
@@ -193,7 +244,6 @@ def test_book_appointment_returns_200_and_is_persisted(client, pg_session_factor
         sc = sc_repo.get(uuid.UUID(sc_id))
         assert sc.status == ServiceCallStatus.SCHEDULED
 
-    # Verify outbox CREATE entry exists
     from fsm.scheduling.adapters.outbox_repository import SqlAlchemyOutboxRepository
     from fsm.scheduling.ports.outbox import OutboxOperation
 
@@ -206,44 +256,63 @@ def test_book_appointment_returns_200_and_is_persisted(client, pg_session_factor
         assert matching[0].operation == OutboxOperation.CREATE
 
 
+def test_book_against_another_customers_service_call_returns_403(client, auth):
+    """A customer cannot book against a service call they don't own."""
+    owner = auth(role=Role.CUSTOMER)
+    sc = client.post(
+        "/api/service-calls",
+        json={"description": "Owned by someone else", "category": "general"},
+    ).json()
+    assert sc["customer_id"] == str(owner)
+
+    # Switch to a different customer and try to book against the first one's call.
+    auth(user_id=uuid.uuid4(), role=Role.CUSTOMER)
+    resp = client.post(
+        "/api/appointments",
+        json={
+            "service_call_id": sc["id"],
+            "technician_id": str(uuid.uuid4()),
+            "start": _utc_iso(2025, 8, 3, 9),
+            "end": _utc_iso(2025, 8, 3, 10),
+        },
+    )
+    assert resp.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # 4. Book overlapping appointment for same technician → 409
 # ---------------------------------------------------------------------------
 
 
-def test_booking_overlapping_slot_returns_409(client):
-    # Open two service calls, share the same technician
+def test_booking_overlapping_slot_returns_409(client, auth):
+    auth(role=Role.CUSTOMER)
     tech_id = uuid.uuid4()
 
     sc1 = client.post(
         "/api/service-calls",
-        json={"customer_id": str(uuid.uuid4()), "description": "Job 1", "category": "electric"},
+        json={"description": "Job 1", "category": "electric"},
     ).json()
     sc2 = client.post(
         "/api/service-calls",
-        json={"customer_id": str(uuid.uuid4()), "description": "Job 2", "category": "electric"},
+        json={"description": "Job 2", "category": "electric"},
     ).json()
 
-    # First booking succeeds
     r1 = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc1["id"],
             "technician_id": str(tech_id),
-            "customer_id": str(uuid.uuid4()),
             "start": _utc_iso(2025, 2, 2, 10),
             "end": _utc_iso(2025, 2, 2, 12),
         },
     )
     assert r1.status_code == 200
 
-    # Second booking overlaps the first → 409
     r2 = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc2["id"],
             "technician_id": str(tech_id),
-            "customer_id": str(uuid.uuid4()),
             "start": _utc_iso(2025, 2, 2, 11),
             "end": _utc_iso(2025, 2, 2, 13),
         },
@@ -256,31 +325,30 @@ def test_booking_overlapping_slot_returns_409(client):
 # ---------------------------------------------------------------------------
 
 
-def test_reschedule_appointment_succeeds(client):
+def _book_one(client, auth, *, tech_id, start_hour, day):
+    """Open a service call and book an appointment as a fresh customer; return (appt_id, cust_id)."""
+    cust_id = auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"customer_id": str(uuid.uuid4()), "description": "Pipe fix", "category": "plumbing"},
+        json={"description": "Pipe fix", "category": "plumbing"},
     ).json()
-
-    tech_id = uuid.uuid4()
     book = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc["id"],
             "technician_id": str(tech_id),
-            "customer_id": str(uuid.uuid4()),
-            "start": _utc_iso(2025, 3, 2, 9),
-            "end": _utc_iso(2025, 3, 2, 10),
+            "start": _utc_iso(2025, 3, day, start_hour),
+            "end": _utc_iso(2025, 3, day, start_hour + 1),
         },
     ).json()
+    return book["id"], cust_id
 
-    appt_id = book["id"]
+
+def test_reschedule_appointment_succeeds(client, auth):
+    appt_id, _ = _book_one(client, auth, tech_id=uuid.uuid4(), start_hour=9, day=2)
     reschedule_resp = client.post(
         f"/api/appointments/{appt_id}/reschedule",
-        json={
-            "start": _utc_iso(2025, 3, 3, 9),
-            "end": _utc_iso(2025, 3, 3, 11),
-        },
+        json={"start": _utc_iso(2025, 3, 3, 9), "end": _utc_iso(2025, 3, 3, 11)},
     )
     assert reschedule_resp.status_code == 200
     data = reschedule_resp.json()
@@ -288,31 +356,41 @@ def test_reschedule_appointment_succeeds(client):
     assert data["id"] == appt_id
 
 
+def test_reschedule_by_non_participant_returns_403(client, auth):
+    """Only the appointment's customer or technician may mutate it."""
+    appt_id, _ = _book_one(client, auth, tech_id=uuid.uuid4(), start_hour=14, day=10)
+    # Switch to an unrelated user.
+    auth(user_id=uuid.uuid4(), role=Role.CUSTOMER)
+    resp = client.post(
+        f"/api/appointments/{appt_id}/reschedule",
+        json={"start": _utc_iso(2025, 3, 11, 9), "end": _utc_iso(2025, 3, 11, 10)},
+    )
+    assert resp.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # 6. Cancel an appointment
 # ---------------------------------------------------------------------------
 
 
-def test_cancel_appointment_succeeds(client):
+def test_cancel_appointment_succeeds(client, auth):
+    cust_id = auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"customer_id": str(uuid.uuid4()), "description": "Window seal", "category": "general"},
+        json={"description": "Window seal", "category": "general"},
     ).json()
-
     tech_id = uuid.uuid4()
     book = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc["id"],
             "technician_id": str(tech_id),
-            "customer_id": str(uuid.uuid4()),
             "start": _utc_iso(2025, 4, 6, 14),
             "end": _utc_iso(2025, 4, 6, 15),
         },
     ).json()
 
-    appt_id = book["id"]
-    cancel_resp = client.post(f"/api/appointments/{appt_id}/cancel")
+    cancel_resp = client.post(f"/api/appointments/{book['id']}/cancel")
     assert cancel_resp.status_code == 200
     assert cancel_resp.json()["status"] == "CANCELLED"
 
@@ -322,27 +400,25 @@ def test_cancel_appointment_succeeds(client):
 # ---------------------------------------------------------------------------
 
 
-def test_add_details_succeeds(client):
+def test_add_details_succeeds(client, auth):
+    auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"customer_id": str(uuid.uuid4()), "description": "Leaky tap", "category": "plumbing"},
+        json={"description": "Leaky tap", "category": "plumbing"},
     ).json()
-
     tech_id = uuid.uuid4()
     book = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc["id"],
             "technician_id": str(tech_id),
-            "customer_id": str(uuid.uuid4()),
             "start": _utc_iso(2025, 5, 4, 10),
             "end": _utc_iso(2025, 5, 4, 11),
         },
     ).json()
 
-    appt_id = book["id"]
     details_resp = client.post(
-        f"/api/appointments/{appt_id}/details",
+        f"/api/appointments/{book['id']}/details",
         json={"text": "Bring 3/4 inch wrench"},
     )
     assert details_resp.status_code == 200
@@ -350,17 +426,42 @@ def test_add_details_succeeds(client):
 
 
 # ---------------------------------------------------------------------------
-# Error path: booking against non-existent service call → 404
+# 8. Technician self-service authorization
 # ---------------------------------------------------------------------------
 
 
-def test_book_against_missing_service_call_returns_404(client):
+def test_technician_sets_own_working_hours_but_not_anothers(client, auth):
+    tech_id = auth(role=Role.TECHNICIAN)
+    payload = {"windows": [{"weekday": 0, "start": "09:00:00", "end": "17:00:00"}]}
+
+    own = client.put(f"/api/technicians/{tech_id}/working-hours", json=payload)
+    assert own.status_code == 200
+
+    other = client.put(f"/api/technicians/{uuid.uuid4()}/working-hours", json=payload)
+    assert other.status_code == 403
+
+
+def test_customer_cannot_set_working_hours_returns_403(client, auth):
+    auth(role=Role.CUSTOMER)
+    resp = client.put(
+        f"/api/technicians/{uuid.uuid4()}/working-hours",
+        json={"windows": [{"weekday": 0, "start": "09:00:00", "end": "17:00:00"}]},
+    )
+    assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Error paths
+# ---------------------------------------------------------------------------
+
+
+def test_book_against_missing_service_call_returns_404(client, auth):
+    auth(role=Role.CUSTOMER)
     response = client.post(
         "/api/appointments",
         json={
             "service_call_id": str(uuid.uuid4()),
             "technician_id": str(uuid.uuid4()),
-            "customer_id": str(uuid.uuid4()),
             "start": _utc_iso(2025, 6, 1, 9),
             "end": _utc_iso(2025, 6, 1, 10),
         },
@@ -368,12 +469,8 @@ def test_book_against_missing_service_call_returns_404(client):
     assert response.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# Error path: reschedule non-existent appointment → 404
-# ---------------------------------------------------------------------------
-
-
-def test_reschedule_missing_appointment_returns_404(client):
+def test_reschedule_missing_appointment_returns_404(client, auth):
+    auth(role=Role.CUSTOMER)
     response = client.post(
         f"/api/appointments/{uuid.uuid4()}/reschedule",
         json={"start": _utc_iso(2025, 6, 1, 9), "end": _utc_iso(2025, 6, 1, 10)},

@@ -23,6 +23,7 @@ from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
+from fsm.identity.domain.role import Role
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +107,7 @@ def _configured_settings(pg_url: str, token_key: str) -> Settings:
 # ---------------------------------------------------------------------------
 
 
-def test_pool_returns_slots_from_both_connected_technicians(pg_session_factory):
+def test_pool_returns_slots_from_both_connected_technicians(pg_session_factory, authenticate):
     """Slots from two connected technicians are merged, each tagged with its technician_id."""
     token_key = Fernet.generate_key().decode()
     tech_a = uuid.uuid4()
@@ -118,6 +119,7 @@ def test_pool_returns_slots_from_both_connected_technicians(pg_session_factory):
     # technicians — this test verifies pool aggregation, not free/busy subtraction.
     settings = _unconfigured_settings(os.environ["DATABASE_URL"])
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     client = TestClient(app)
 
     resp = client.get(
@@ -160,7 +162,7 @@ def test_pool_returns_slots_from_both_connected_technicians(pg_session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_pool_excludes_day_off_technician(pg_session_factory):
+def test_pool_excludes_day_off_technician(pg_session_factory, authenticate):
     """On a date where B has a day off, only A's slots appear for that date."""
     token_key = Fernet.generate_key().decode()
     tech_a = uuid.uuid4()
@@ -170,6 +172,7 @@ def test_pool_excludes_day_off_technician(pg_session_factory):
 
     settings = _unconfigured_settings(os.environ["DATABASE_URL"])
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app, user_id=tech_b, role=Role.TECHNICIAN)
     client = TestClient(app)
 
     # Give B a day off on _DATE_SUNDAY.
@@ -214,7 +217,7 @@ def test_pool_excludes_day_off_technician(pg_session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_pool_excludes_unconnected_technician(pg_session_factory):
+def test_pool_excludes_unconnected_technician(pg_session_factory, authenticate):
     """A technician without a calendar connection does not appear in the pool."""
     token_key = Fernet.generate_key().decode()
     connected_tech = uuid.uuid4()
@@ -223,6 +226,7 @@ def test_pool_excludes_unconnected_technician(pg_session_factory):
 
     settings = _unconfigured_settings(os.environ["DATABASE_URL"])
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     client = TestClient(app)
 
     resp = client.get(
@@ -245,10 +249,11 @@ def test_pool_excludes_unconnected_technician(pg_session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_pool_returns_200_and_valid_json_shape(pg_session_factory):
+def test_pool_returns_200_and_valid_json_shape(pg_session_factory, authenticate):
     """The pool endpoint returns 200 with a valid slots list regardless of pool contents."""
     settings = _unconfigured_settings(os.environ["DATABASE_URL"])
     app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
     client = TestClient(app)
 
     resp = client.get(
@@ -264,7 +269,7 @@ def test_pool_returns_200_and_valid_json_shape(pg_session_factory):
     assert "slots" in resp.json()
 
 
-def test_pool_truly_empty_no_connections():
+def test_pool_truly_empty_no_connections(authenticate):
     """An isolated container with no calendar connections returns {slots: []}."""
     from alembic import command as alembic_command
     from alembic.config import Config as AlembicConfig
@@ -300,6 +305,7 @@ def test_pool_truly_empty_no_connections():
             fsm_token_key=None,
         )
         app = create_app(session_factory=factory, settings=settings)
+        authenticate(app)
         client = TestClient(app)
 
         resp = client.get(

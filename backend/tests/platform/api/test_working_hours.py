@@ -23,6 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from fsm.platform.app import create_app
+from fsm.identity.domain.role import Role
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +83,8 @@ _SUNDAY = date(2025, 7, 20)
 # ---------------------------------------------------------------------------
 
 
-def test_put_working_hours_returns_200(client):
-    tech_id = uuid.uuid4()
+def test_put_working_hours_returns_200(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.put(
         f"/api/technicians/{tech_id}/working-hours",
         json={"windows": _MON_FRI_WINDOWS},
@@ -91,8 +92,8 @@ def test_put_working_hours_returns_200(client):
     assert resp.status_code == 200
 
 
-def test_get_working_hours_returns_stored_schedule(client):
-    tech_id = uuid.uuid4()
+def test_get_working_hours_returns_stored_schedule(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.put(
         f"/api/technicians/{tech_id}/working-hours",
         json={"windows": _MON_FRI_WINDOWS},
@@ -105,8 +106,8 @@ def test_get_working_hours_returns_stored_schedule(client):
     assert stored_weekdays == {0, 1, 2, 3, 4}
 
 
-def test_get_working_hours_returns_default_when_unset(client):
-    tech_id = uuid.uuid4()
+def test_get_working_hours_returns_default_when_unset(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.get(f"/api/technicians/{tech_id}/working-hours")
     assert resp.status_code == 200
 
@@ -115,8 +116,8 @@ def test_get_working_hours_returns_default_when_unset(client):
     assert stored_weekdays == {6, 0, 1, 2, 3}
 
 
-def test_put_invalid_window_start_gte_end_returns_400(client):
-    tech_id = uuid.uuid4()
+def test_put_invalid_window_start_gte_end_returns_400(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.put(
         f"/api/technicians/{tech_id}/working-hours",
         json={"windows": [{"weekday": 0, "start": "17:00:00", "end": "09:00:00"}]},
@@ -124,8 +125,8 @@ def test_put_invalid_window_start_gte_end_returns_400(client):
     assert resp.status_code == 400
 
 
-def test_put_duplicate_weekday_returns_400(client):
-    tech_id = uuid.uuid4()
+def test_put_duplicate_weekday_returns_400(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.put(
         f"/api/technicians/{tech_id}/working-hours",
         json={
@@ -143,8 +144,8 @@ def test_put_duplicate_weekday_returns_400(client):
 # ---------------------------------------------------------------------------
 
 
-def test_availability_slots_on_friday_with_mon_fri_schedule(client):
-    tech_id = uuid.uuid4()
+def test_availability_slots_on_friday_with_mon_fri_schedule(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.put(
         f"/api/technicians/{tech_id}/working-hours",
         json={"windows": _MON_FRI_WINDOWS},
@@ -165,8 +166,8 @@ def test_availability_slots_on_friday_with_mon_fri_schedule(client):
     assert len(resp.json()["slots"]) == 8
 
 
-def test_availability_no_slots_on_sunday_with_mon_fri_schedule(client):
-    tech_id = uuid.uuid4()
+def test_availability_no_slots_on_sunday_with_mon_fri_schedule(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.put(
         f"/api/technicians/{tech_id}/working-hours",
         json={"windows": _MON_FRI_WINDOWS},
@@ -191,8 +192,8 @@ def test_availability_no_slots_on_sunday_with_mon_fri_schedule(client):
 # ---------------------------------------------------------------------------
 
 
-def test_put_timezone_returns_200(client):
-    tech_id = uuid.uuid4()
+def test_put_timezone_returns_200(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.put(
         f"/api/technicians/{tech_id}/timezone",
         json={"timezone": "Europe/London"},
@@ -201,8 +202,8 @@ def test_put_timezone_returns_200(client):
     assert resp.json()["timezone"] == "Europe/London"
 
 
-def test_get_timezone_returns_stored(client):
-    tech_id = uuid.uuid4()
+def test_get_timezone_returns_stored(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     client.put(
         f"/api/technicians/{tech_id}/timezone",
         json={"timezone": "America/New_York"},
@@ -213,15 +214,15 @@ def test_get_timezone_returns_stored(client):
     assert resp.json()["timezone"] == "America/New_York"
 
 
-def test_get_timezone_returns_default_when_unset(client):
-    tech_id = uuid.uuid4()
+def test_get_timezone_returns_default_when_unset(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.get(f"/api/technicians/{tech_id}/timezone")
     assert resp.status_code == 200
     assert resp.json()["timezone"] == "Asia/Jerusalem"
 
 
-def test_put_invalid_timezone_returns_400(client):
-    tech_id = uuid.uuid4()
+def test_put_invalid_timezone_returns_400(client, authenticate):
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
     resp = client.put(
         f"/api/technicians/{tech_id}/timezone",
         json={"timezone": "Not/A/Real/Zone"},
@@ -229,9 +230,9 @@ def test_put_invalid_timezone_returns_400(client):
     assert resp.status_code == 400
 
 
-def test_availability_slot_boundaries_reflect_stored_timezone(client):
+def test_availability_slot_boundaries_reflect_stored_timezone(client, authenticate):
     """Slots for UTC+0 (Europe/London in winter) start at a different UTC hour than Asia/Jerusalem."""
-    tech_id = uuid.uuid4()
+    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
 
     # Store Mon–Fri 09:00–10:00 schedule (1 slot per day)
     client.put(

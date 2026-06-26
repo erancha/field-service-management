@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict
 
 
 class OpenServiceCallRequest(BaseModel):
-    customer_id: UUID
     description: str
     category: str
 
@@ -65,7 +64,6 @@ class PooledAvailabilityResponse(BaseModel):
 class BookAppointmentRequest(BaseModel):
     service_call_id: UUID
     technician_id: UUID
-    customer_id: UUID
     start: datetime
     end: datetime
 
