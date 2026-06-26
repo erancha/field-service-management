@@ -1,0 +1,8 @@
+# Keep build contexts small: never ship dependency trees, build outputs, VCS, or local secrets.
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+**/*.pyc
+.git
+backend/.env

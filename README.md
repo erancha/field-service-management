@@ -85,8 +85,9 @@ outside this repo; everything else is values you set in `.env`.
 ### 2. Run it
 
 ```bash
-./scripts/start.sh technician   # technician-facing app  (alias: tec)  -> http://localhost:8001
-./scripts/start.sh customer     # customer-facing app    (alias: cus)  -> http://localhost:8002
+./scripts/start.sh              # both roles on the host (default)
+./scripts/start.sh technician   # one role  (alias: tec)  -> http://localhost:8001
+./scripts/start.sh customer     # one role  (alias: cus)  -> http://localhost:8002
 ```
 
 The script is idempotent and requires `backend/.env` (step 1) — it aborts with instructions if that
@@ -94,14 +95,26 @@ file is missing. On each run it provisions the virtualenv, starts PostgreSQL via
 migrations, builds the frontend, and starts the server. Edit `backend/.env` and re-run to pick up
 changes. `/docs` serves interactive API docs, with `/health` and `/ready` for liveness and readiness.
 
-Add `--docker` to build and run the role as a container instead of on the host — compose brings up
-the database, runs migrations, and publishes the service port. Both paths read the **same**
-`backend/.env`:
+Add `--docker` to build and run the roles as containers instead of on the host — compose brings up
+the database, runs migrations, the role backends, and an **nginx edge**. Both paths read the
+**same** `backend/.env`:
 
 ```bash
-./scripts/start.sh technician --docker
-./scripts/start.sh customer   --docker
+./scripts/start.sh --docker          # both roles (default): db + migrations + backends + nginx
+./scripts/start.sh <role> --docker   # one role, e.g. `./scripts/start.sh technician` — nginx still fronts both
 ```
+
+`--docker` runs both backends as internal containers behind one `nginx` container on port `80`,
+which serves the app and routes to each backend by hostname. Open the app at:
+
+#### **Frontend** — open in a browser         
+
+| App | URL |
+|---|---|
+| Technician | http://technician.localhost |
+| Customer | http://customer.localhost |
+
+Browsers resolve `*.localhost` to `127.0.0.1` automatically — no hosts-file edit needed.
 
 ## Testing
 

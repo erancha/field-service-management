@@ -1,4 +1,4 @@
-# One backend image runs migrations and both role services; they differ only by command, FSM_ROLE, and published port.
+# One backend image runs migrations and both role services; they differ only by command and FSM_ROLE.
 x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile
@@ -14,6 +14,14 @@ x-backend-env-file: &backend-env-file
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+psycopg://fsm:fsm@db:5432/fsm
   APP_ENV: local
+
+# Shared liveness-probe timing for the role backends; nginx gates startup on these becoming healthy.
+# Each service supplies its own `test` (the role port differs); the slim image has no curl, so the
+# probe uses Python's urllib, which is always present.
+x-backend-healthcheck: &backend-healthcheck
+  interval: 3s
+  timeout: 3s
+  retries: 20
 
 services:
   db:
@@ -50,8 +58,13 @@ services:
     environment:
       <<: *backend-env
       FSM_ROLE: technician
-    ports:
-      - "8001:8001"
+    healthcheck:
+      <<: *backend-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+    # No host port: nginx is the sole entry point; other services reach this one as `technician:8001`
+    # on the compose network. Uncomment to reach the backend directly (e.g. debugging).
+    # ports:
+    #   - "8001:8001"
     depends_on:
       db:
         condition: service_healthy
@@ -66,13 +79,34 @@ services:
     environment:
       <<: *backend-env
       FSM_ROLE: customer
-    ports:
-      - "8002:8002"
+    healthcheck:
+      <<: *backend-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+    # No host port: nginx is the sole entry point; other services reach this one as `customer:8002`
+    # on the compose network. Uncomment to reach the backend directly (e.g. debugging).
+    # ports:
+    #   - "8002:8002"
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  # Single edge and the only published entry point: serves the built SPA and reverse-proxies each
+  # role host to its (now internal) backend.
+  # technician.localhost -> technician:8001, customer.localhost -> customer:8002.
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    image: fsm-nginx:local
+    ports:
+      - "80:80"
+    depends_on:
+      technician:
+        condition: service_healthy
+      customer:
+        condition: service_healthy
 
 volumes:
   fsm_pgdata:
