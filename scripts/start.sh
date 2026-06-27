@@ -2,18 +2,19 @@
 #
 # Single entry point for running the Field Service Management app.
 #
-#   ./scripts/start.sh                       # both roles on the host (technician + customer)
+#   ./scripts/start.sh                       # all roles on the host (technician + customer + backoffice)
 #   ./scripts/start.sh technician            # one role on the host  (alias: tec)  -> http://localhost:8001
 #   ./scripts/start.sh customer              # one role on the host  (alias: cus)  -> http://localhost:8002
-#   ./scripts/start.sh both                  # both roles, stated explicitly       (alias: all)
-#   ./scripts/start.sh --docker              # build + run both roles via docker compose (both = default)
+#   ./scripts/start.sh backoffice            # one role on the host  (alias: bo)   -> http://localhost:8003
+#   ./scripts/start.sh all                   # all roles, stated explicitly        (same as no argument)
+#   ./scripts/start.sh --docker              # build + run all roles via docker compose (all = default)
 #   ./scripts/start.sh technician --docker   # build + run one role via docker compose
 #
-# The first 3 letters of a role are enough (tec / cus); with no role, both run. Host mode
+# The first 3 letters of a role are enough (tec / cus / bac); with no role, all roles run. Host mode
 # provisions a virtualenv, starts PostgreSQL via Docker, applies migrations, builds the frontend,
 # and runs uvicorn per role. --docker instead builds the backend image and brings the role(s) up as
 # internal compose services (alongside db + a one-shot migration) behind an nginx edge that serves
-# the SPA and is the only published port (80); reach the roles at technician/customer.localhost.
+# the SPA and is the only published port (80); reach each role at its <role>.localhost host.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,14 +23,14 @@ VENV="$BACKEND/.venv"
 COMPOSE="$ROOT/docker-compose.yml"
 
 usage() {
-  echo "Usage: ./scripts/start.sh [technician|customer|both] [--docker]   (default: both; aliases tec|cus|all)" >&2
+  echo "Usage: ./scripts/start.sh [technician|customer|backoffice|all] [--docker]   (default: all; aliases tec|cus|bo)" >&2
   exit 2
 }
 
 # Print this script's header comment block as --help text (single source of usage docs).
 print_help() { awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "${BASH_SOURCE[0]}"; }
 
-port_for() { case "$1" in technician) echo 8001 ;; customer) echo 8002 ;; esac; }
+port_for() { case "$1" in technician) echo 8001 ;; customer) echo 8002 ;; backoffice) echo 8003 ;; esac; }
 
 # Selected roles, in invocation order and without duplicates.
 ROLES=()
@@ -46,13 +47,14 @@ for arg in "$@"; do
   case "$(printf '%s' "$arg" | tr '[:upper:]' '[:lower:]')" in
     tec*)      add_role technician ;;
     cus*)      add_role customer ;;
-    both|all)  add_role technician; add_role customer ;;
+    bac*|bo)   add_role backoffice ;;
+    all)       add_role technician; add_role customer; add_role backoffice ;;
     --docker)  DOCKER=1 ;;
     -h|--help) print_help; exit 0 ;;
     *)         usage ;;
   esac
 done
-[ ${#ROLES[@]} -gt 0 ] || { add_role technician; add_role customer; }
+[ ${#ROLES[@]} -gt 0 ] || { add_role technician; add_role customer; add_role backoffice; }
 
 # backend/.env is required by both run paths (host mode sources it; docker compose loads it via
 # env_file). It is not created here — run the init helper once first.
@@ -71,14 +73,14 @@ wait_for_edge() {  # role
 
 if [ "$DOCKER" -eq 1 ]; then
   echo "Deploying [${ROLES[*]}] to Docker (db + migrations + ${ROLES[*]} + nginx edge)..."
-  # nginx fronts both roles, so it pulls both backends up via depends_on regardless of selection.
+  # nginx fronts all roles, so it pulls all backends up via depends_on regardless of selection.
   docker compose -f "$COMPOSE" up -d --build nginx "${ROLES[@]}"
   for role in "${ROLES[@]}"; do
     wait_for_edge "$role"
     echo "FSM ($role): http://$role.localhost  (via nginx :80)"
   done
-  echo "  nginx edge on :80 is the only published entry — open http://technician.localhost /"
-  echo "  http://customer.localhost   (per host: /  (SPA)   /docs   /health   /ready)"
+  echo "  nginx edge on :80 is the only published entry — reach each role at http://<role>.localhost/"
+  echo "  (per host: /  (SPA)   /docs   /health   /ready)"
   echo "  backends are internal to the compose network; reach them via the edge."
   exit 0
 fi
@@ -90,7 +92,11 @@ command -v npm >/dev/null 2>&1 || { echo "npm not found — install Node.js + np
   || ( cd "$BACKEND" && "$VENV/bin/pip" install --quiet --disable-pip-version-check -e ".[dev]" )
 set -a; . "$BACKEND/.env"; set +a
 
-docker compose -f "$COMPOSE" up -d db
+# Cross-process SSE needs a shared broker: each role runs as its own uvicorn, so the in-memory bus
+# cannot reach across them. Point every role process at the published Redis unless .env overrides it.
+export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
+
+docker compose -f "$COMPOSE" up -d db redis
 
 printf 'Waiting for PostgreSQL'
 for _ in $(seq 1 30); do

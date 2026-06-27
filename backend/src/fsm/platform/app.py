@@ -12,8 +12,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from fsm.platform.api.auth_routes import router as auth_router
+from fsm.platform.api.backoffice_routes import router as backoffice_router
 from fsm.platform.api.calendar_routes import router as calendar_router
+from fsm.platform.api.events_routes import router as events_router
 from fsm.platform.api.scheduling_routes import router as scheduling_router
+from fsm.platform.events import build_event_bus
 from fsm.platform.logging import configure_logging
 
 
@@ -34,11 +37,14 @@ def create_app(
     app.include_router(scheduling_router)
     app.include_router(auth_router)
     app.include_router(calendar_router)
+    app.include_router(backoffice_router)
+    app.include_router(events_router)
 
     if settings is None:
         from fsm.platform.config import get_settings
         settings = get_settings()
     app.state.settings = settings
+    app.state.event_bus = build_event_bus(settings)
 
     if settings.session_secret:
         from starlette.middleware.sessions import SessionMiddleware

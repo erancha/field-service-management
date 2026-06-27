@@ -9,6 +9,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from fsm.identity.domain.errors import AuthenticationError, NotFoundError
+from fsm.identity.domain.role import Role
+from fsm.identity.domain.role_status import RoleStatus
 from fsm.identity.domain.user import User
 from fsm.identity.ports.auth import VerifiedIdentity
 
@@ -47,6 +49,13 @@ class InMemoryUserRepository:
     def save(self, user: User) -> None:
         self._save_count += 1
         self._store[user.id] = user
+
+    def list_pending_technicians(self) -> list[User]:
+        return [
+            user
+            for user in self._store.values()
+            if user.role is Role.TECHNICIAN and user.role_status is RoleStatus.PENDING
+        ]
 
 
 class FakeAuthPort:

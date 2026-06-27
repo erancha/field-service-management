@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { CurrentUser } from '../api/types.ts'
 import { fetchCurrentUser } from '../api/auth.ts'
 
@@ -7,8 +7,16 @@ export type AuthState =
   | { status: 'authenticated'; user: CurrentUser }
   | { status: 'unauthenticated' }
 
-export function useCurrentUser(): AuthState {
+export interface CurrentUserResult {
+  auth: AuthState
+  refresh: () => void
+}
+
+export function useCurrentUser(): CurrentUserResult {
   const [state, setState] = useState<AuthState>({ status: 'loading' })
+  const [nonce, setNonce] = useState(0)
+
+  const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
   useEffect(() => {
     let cancelled = false
@@ -23,7 +31,7 @@ export function useCurrentUser(): AuthState {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [nonce])
 
-  return state
+  return { auth: state, refresh }
 }

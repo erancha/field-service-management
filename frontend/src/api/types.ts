@@ -27,10 +27,20 @@ export interface Appointment {
   details?: string
 }
 
+export type Role = 'CUSTOMER' | 'TECHNICIAN' | 'ADMIN'
+export type RoleStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
 export interface CurrentUser {
   user_id: string
   email: string
-  role: 'CUSTOMER' | 'TECHNICIAN' | string
+  role: Role | string
+  role_status: RoleStatus | string
+}
+
+export interface TechnicianRequest {
+  user_id: string
+  email: string
+  name: string
 }
 
 export interface ApiError {

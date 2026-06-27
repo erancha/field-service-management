@@ -1,11 +1,13 @@
 """User entity for the identity bounded context."""
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from dataclasses import dataclass
 
 from fsm.identity.domain.errors import InvalidUser
 from fsm.identity.domain.role import Role
+from fsm.identity.domain.role_status import RoleStatus
 
 
 @dataclass
@@ -14,11 +16,15 @@ class User:
 
     Core responsibilities:
     - Holds the stable Google subject identifier linking this record to a Google account
-    - Tracks the user's email, display name, and assigned role
-    - Enforces construction invariants and role assignment
+    - Tracks the user's email, display name, and assigned role plus its approval status
+    - Enforces construction invariants and role transitions
 
     google_sub is the immutable external identity key issued by Google; it never
     changes for a given Google account even if the email address is updated.
+
+    role and role_status are orthogonal: role is the access the user is claiming, role_status
+    whether that access is granted. role_decided_at / role_decided_by record the administrator
+    decision that last set role_status (both None until a decision is made).
     """
 
     id: uuid.UUID
@@ -26,6 +32,9 @@ class User:
     email: str
     name: str
     role: Role
+    role_status: RoleStatus
+    role_decided_at: dt.datetime | None = None
+    role_decided_by: uuid.UUID | None = None
 
     def __post_init__(self) -> None:
         if not self.google_sub:
@@ -33,6 +42,32 @@ class User:
         if not self.email:
             raise InvalidUser("email must not be empty.")
 
-    def assign_role(self, role: Role) -> None:
-        """Set the user's role. Idempotent when the role is unchanged."""
+    def grant_role(self, role: Role) -> None:
+        """Assign a role with immediate effect, clearing any prior decision.
+
+        Used for access that needs no approval (customer self-service, the env-bootstrapped
+        administrator): the role is APPROVED at once and stale decision stamps are dropped.
+        """
         self.role = role
+        self.role_status = RoleStatus.APPROVED
+        self.role_decided_at = None
+        self.role_decided_by = None
+
+    def request_role(self, role: Role) -> None:
+        """Claim a role that requires back-office approval, leaving it PENDING."""
+        self.role = role
+        self.role_status = RoleStatus.PENDING
+        self.role_decided_at = None
+        self.role_decided_by = None
+
+    def approve(self, decided_by: uuid.UUID, at: dt.datetime) -> None:
+        """Grant the currently-claimed role, recording who approved it and when."""
+        self.role_status = RoleStatus.APPROVED
+        self.role_decided_by = decided_by
+        self.role_decided_at = at
+
+    def reject(self, decided_by: uuid.UUID, at: dt.datetime) -> None:
+        """Decline the currently-claimed role, recording who rejected it and when."""
+        self.role_status = RoleStatus.REJECTED
+        self.role_decided_by = decided_by
+        self.role_decided_at = at

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from fsm.identity.adapters.orm import UserRow
 from fsm.identity.domain.errors import DuplicateGoogleSub, NotFoundError
 from fsm.identity.domain.role import Role
+from fsm.identity.domain.role_status import RoleStatus
 from fsm.identity.domain.user import User
 
 _GOOGLE_SUB_CONSTRAINT = "uq_app_user_google_sub"
@@ -38,6 +39,9 @@ def _row_to_user(row: UserRow) -> User:
         email=row.email,
         name=row.name,
         role=Role(row.role),
+        role_status=RoleStatus(row.role_status),
+        role_decided_at=row.role_decided_at,
+        role_decided_by=row.role_decided_by,
     )
 
 
@@ -48,6 +52,9 @@ def _user_to_row(user: User) -> UserRow:
         email=user.email,
         name=user.name,
         role=user.role.value,
+        role_status=user.role_status.value,
+        role_decided_at=user.role_decided_at,
+        role_decided_by=user.role_decided_by,
     )
 
 
@@ -87,6 +94,9 @@ class SqlAlchemyUserRepository:
         row.email = user.email
         row.name = user.name
         row.role = user.role.value
+        row.role_status = user.role_status.value
+        row.role_decided_at = user.role_decided_at
+        row.role_decided_by = user.role_decided_by
         self._session.flush()
 
     def get(self, user_id: uuid.UUID) -> User:
@@ -98,3 +108,15 @@ class SqlAlchemyUserRepository:
         if row is None:
             raise NotFoundError(f"User {user_id!r} not found")
         return _row_to_user(row)
+
+    def list_pending_technicians(self) -> list[User]:
+        """Return technicians whose role_status is PENDING — the back-office approval queue."""
+        rows = (
+            self._session.query(UserRow)
+            .filter(
+                UserRow.role == Role.TECHNICIAN.value,
+                UserRow.role_status == RoleStatus.PENDING.value,
+            )
+            .all()
+        )
+        return [_row_to_user(row) for row in rows]

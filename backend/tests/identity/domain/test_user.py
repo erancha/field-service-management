@@ -1,8 +1,10 @@
 """Tests for the User entity."""
+import datetime as dt
 import uuid
+
 import pytest
 
-from fsm.identity.domain import User, Role, InvalidUser
+from fsm.identity.domain import InvalidUser, Role, RoleStatus, User
 
 
 def _new_user(**kwargs) -> User:
@@ -12,6 +14,7 @@ def _new_user(**kwargs) -> User:
         email="alice@example.com",
         name="Alice",
         role=Role.CUSTOMER,
+        role_status=RoleStatus.APPROVED,
     )
     defaults.update(kwargs)
     return User(**defaults)
@@ -22,6 +25,15 @@ class TestUserCreation:
         user = _new_user()
         assert user.email == "alice@example.com"
         assert user.role == Role.CUSTOMER
+
+    def test_carries_role_status(self):
+        user = _new_user(role=Role.TECHNICIAN, role_status=RoleStatus.PENDING)
+        assert user.role_status == RoleStatus.PENDING
+
+    def test_decision_fields_default_to_none(self):
+        user = _new_user()
+        assert user.role_decided_at is None
+        assert user.role_decided_by is None
 
     def test_fields_accessible(self):
         uid = uuid.uuid4()
@@ -38,18 +50,52 @@ class TestUserCreation:
             _new_user(email="")
 
 
-class TestUserAssignRole:
-    def test_customer_promoted_to_technician(self):
-        user = _new_user(role=Role.CUSTOMER)
-        user.assign_role(Role.TECHNICIAN)
+class TestGrantRole:
+    def test_grant_sets_role_and_approves_immediately(self):
+        user = _new_user(role=Role.TECHNICIAN, role_status=RoleStatus.PENDING)
+        user.grant_role(Role.CUSTOMER)
+        assert user.role == Role.CUSTOMER
+        assert user.role_status == RoleStatus.APPROVED
+
+    def test_grant_clears_prior_decision_stamps(self):
+        user = _new_user(
+            role=Role.TECHNICIAN,
+            role_status=RoleStatus.REJECTED,
+            role_decided_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+            role_decided_by=uuid.uuid4(),
+        )
+        user.grant_role(Role.CUSTOMER)
+        assert user.role_decided_at is None
+        assert user.role_decided_by is None
+
+
+class TestRequestRole:
+    def test_request_sets_role_pending(self):
+        user = _new_user(role=Role.CUSTOMER, role_status=RoleStatus.APPROVED)
+        user.request_role(Role.TECHNICIAN)
         assert user.role == Role.TECHNICIAN
+        assert user.role_status == RoleStatus.PENDING
 
-    def test_assign_same_role_is_idempotent(self):
-        user = _new_user(role=Role.CUSTOMER)
-        user.assign_role(Role.CUSTOMER)
-        assert user.role == Role.CUSTOMER
 
-    def test_technician_can_be_set_back_to_customer(self):
-        user = _new_user(role=Role.TECHNICIAN)
-        user.assign_role(Role.CUSTOMER)
-        assert user.role == Role.CUSTOMER
+class TestRoleDecision:
+    def test_approve_sets_approved_and_stamps_decision(self):
+        admin_id = uuid.uuid4()
+        at = dt.datetime(2026, 6, 26, 12, 0, tzinfo=dt.timezone.utc)
+        user = _new_user(role=Role.TECHNICIAN, role_status=RoleStatus.PENDING)
+
+        user.approve(decided_by=admin_id, at=at)
+
+        assert user.role_status == RoleStatus.APPROVED
+        assert user.role_decided_by == admin_id
+        assert user.role_decided_at == at
+
+    def test_reject_sets_rejected_and_stamps_decision(self):
+        admin_id = uuid.uuid4()
+        at = dt.datetime(2026, 6, 26, 12, 0, tzinfo=dt.timezone.utc)
+        user = _new_user(role=Role.TECHNICIAN, role_status=RoleStatus.PENDING)
+
+        user.reject(decided_by=admin_id, at=at)
+
+        assert user.role_status == RoleStatus.REJECTED
+        assert user.role_decided_by == admin_id
+        assert user.role_decided_at == at

@@ -16,6 +16,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2",
     "itsdangerous>=2.0",
     "cryptography>=42",
+    "redis>=5",
 ]
 
 [project.optional-dependencies]

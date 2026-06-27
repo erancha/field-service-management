@@ -85,9 +85,10 @@ generated for you by `init-env.sh`. Each is documented inline in `backend/.env.e
 ### 2. Run it
 
 ```bash
-./scripts/start.sh              # both roles on the host (default)
+./scripts/start.sh              # all roles on the host (default)
 ./scripts/start.sh technician   # one role  (alias: tec)  -> http://localhost:8001
 ./scripts/start.sh customer     # one role  (alias: cus)  -> http://localhost:8002
+./scripts/start.sh backoffice   # one role  (alias: bo)   -> http://localhost:8003
 ```
 
 The script is idempotent and requires `backend/.env` (step 1) — it aborts with instructions if that
@@ -100,11 +101,11 @@ the database, runs migrations, the role backends, and an **nginx edge**. Both pa
 **same** `backend/.env`:
 
 ```bash
-./scripts/start.sh --docker          # both roles (default): db + migrations + backends + nginx
-./scripts/start.sh <role> --docker   # one role, e.g. `./scripts/start.sh technician` — nginx still fronts both
+./scripts/start.sh --docker          # all roles (default): db + migrations + backends + nginx
+./scripts/start.sh <role> --docker   # one role, e.g. `./scripts/start.sh technician` — nginx still fronts all
 ```
 
-`--docker` runs both backends as internal containers behind one `nginx` container on port `80`,
+`--docker` runs all role backends as internal containers behind one `nginx` container on port `80`,
 which serves the app and routes to each backend by hostname. Open the app at:
 
 #### **Frontend** — open in a browser         
@@ -113,6 +114,7 @@ which serves the app and routes to each backend by hostname. Open the app at:
 |---|---|
 | Technician | http://technician.localhost |
 | Customer | http://customer.localhost |
+| Back office | http://backoffice.localhost |
 
 Browsers resolve `*.localhost` to `127.0.0.1` automatically — no hosts-file edit needed.
 

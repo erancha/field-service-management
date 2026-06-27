@@ -44,3 +44,7 @@ class UserRepository(Protocol):
         Raises NotFoundError if no such user exists.
         """
         ...
+
+    def list_pending_technicians(self) -> list[User]:
+        """Return technicians whose role_status is PENDING — the back-office approval queue."""
+        ...

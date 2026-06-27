@@ -9,7 +9,7 @@ import uuid
 
 import pytest
 
-from fsm.identity.domain import NotFoundError, Role, User
+from fsm.identity.domain import NotFoundError, Role, RoleStatus, User
 from fsm.identity.domain.errors import AuthenticationError
 from fsm.identity.ports import AuthPort, UserRepository, VerifiedIdentity
 from tests.identity.fakes import FakeAuthPort, InMemoryUserRepository
@@ -26,6 +26,7 @@ def _make_user(*, google_sub: str = "sub-001", email: str = "a@example.com") -> 
         email=email,
         name="Alice",
         role=Role.CUSTOMER,
+        role_status=RoleStatus.APPROVED,
     )
 
 
@@ -54,7 +55,7 @@ class TestInMemoryUserRepository:
         repo = InMemoryUserRepository()
         user = _make_user()
         repo.add(user)
-        user.assign_role(Role.TECHNICIAN)
+        user.request_role(Role.TECHNICIAN)
         repo.save(user)
         assert repo.get(user.id).role is Role.TECHNICIAN
 

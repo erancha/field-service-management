@@ -1,4 +1,4 @@
-# One backend image runs migrations and both role services; they differ only by command and FSM_ROLE.
+# One backend image runs migrations and all role services; they differ only by command and FSM_ROLE.
 x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile
@@ -14,6 +14,9 @@ x-backend-env-file: &backend-env-file
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+psycopg://fsm:fsm@db:5432/fsm
   APP_ENV: local
+  # Shared pub/sub broker so an event published in one role process (e.g. a customer's sign-in)
+  # reaches SSE streams connected to another role process (e.g. the back office).
+  REDIS_URL: redis://redis:6379/0
 
 # Shared liveness-probe timing for the role backends; nginx gates startup on these becoming healthy.
 # Each service supplies its own `test` (the role port differs); the slim image has no curl, so the
@@ -36,6 +39,18 @@ services:
       - fsm_pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fsm -d fsm"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    # Published so host-mode processes (one uvicorn per role) can share the same broker at
+    # localhost:6379; the Docker path reaches it in-network as redis:6379.
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 3s
       timeout: 3s
       retries: 15
@@ -68,6 +83,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
@@ -89,12 +106,35 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  backoffice:
+    build: *backend-build
+    image: fsm-backend:local
+    command: uvicorn fsm.platform.app:create_app --factory --host 0.0.0.0 --port 8003
+    env_file: *backend-env-file
+    environment:
+      <<: *backend-env
+      FSM_ROLE: backoffice
+    healthcheck:
+      <<: *backend-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+    # No host port: nginx is the sole entry point; reachable as `backoffice:8003` on the compose
+    # network. ADMIN_EMAILS (in backend/.env) governs who this host grants the admin role to.
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
   # Single edge and the only published entry point: serves the built SPA and reverse-proxies each
-  # role host to its (now internal) backend.
-  # technician.localhost -> technician:8001, customer.localhost -> customer:8002.
+  # role host to its (now internal) backend. technician.localhost -> technician:8001,
+  # customer.localhost -> customer:8002, backoffice.localhost -> backoffice:8003.
   nginx:
     build:
       context: .
@@ -106,6 +146,8 @@ services:
       technician:
         condition: service_healthy
       customer:
+        condition: service_healthy
+      backoffice:
         condition: service_healthy
 
 volumes:

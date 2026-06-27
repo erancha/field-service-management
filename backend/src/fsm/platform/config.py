@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     database_url: SecretStr
     app_env: Literal["local", "test", "staging", "prod"] = "local"
 
+    # Which deployment this process serves: technician | customer | backoffice. Drives the
+    # sign-in role assignment (see SignInHost) and the landing-page title.
+    fsm_role: str = "unknown"
+    # Comma-separated emails granted ADMIN on first back-office sign-in. The only path to ADMIN.
+    admin_emails: str | None = None
+    # Redis pub/sub URL backing cross-process SSE delivery. Absent in host mode (single process
+    # per role), where the in-memory event bus suffices.
+    redis_url: str | None = None
+
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
     google_redirect_uri: str = "http://localhost:8001/auth/google/callback"
@@ -47,6 +56,8 @@ class Settings(BaseSettings):
         "google_client_secret",
         "session_secret",
         "fsm_token_key",
+        "admin_emails",
+        "redis_url",
         "smtp_host",
         "smtp_username",
         "smtp_password",
@@ -60,6 +71,15 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.strip() == "":
             return None
         return value
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        """Lower-cased administrator allowlist parsed from the comma-separated admin_emails."""
+        if not self.admin_emails:
+            return frozenset()
+        return frozenset(
+            part.strip().lower() for part in self.admin_emails.split(",") if part.strip()
+        )
 
 
 @lru_cache

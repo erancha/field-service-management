@@ -16,19 +16,28 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
+import datetime as dt
+
 from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 from fsm.identity.domain.errors import DuplicateGoogleSub, NotFoundError
 from fsm.identity.domain.role import Role
+from fsm.identity.domain.role_status import RoleStatus
 from fsm.identity.domain.user import User
 
 
-def _make_user(*, google_sub: str = "sub-001", role: Role = Role.CUSTOMER) -> User:
+def _make_user(
+    *,
+    google_sub: str = "sub-001",
+    role: Role = Role.CUSTOMER,
+    role_status: RoleStatus = RoleStatus.APPROVED,
+) -> User:
     return User(
         id=uuid.uuid4(),
         google_sub=google_sub,
         email=f"{google_sub}@example.com",
         name="Test User",
         role=role,
+        role_status=role_status,
     )
 
 
@@ -90,10 +99,42 @@ class TestSqlAlchemyUserRepository:
         repo = SqlAlchemyUserRepository(session)
         user = _make_user(google_sub="sub-promote", role=Role.CUSTOMER)
         repo.add(user)
-        user.assign_role(Role.TECHNICIAN)
+        user.request_role(Role.TECHNICIAN)
         repo.save(user)
         fetched = repo.get(user.id)
         assert fetched.role == Role.TECHNICIAN
+
+    def test_role_status_and_decision_stamps_round_trip(self, session):
+        repo = SqlAlchemyUserRepository(session)
+        admin_id = uuid.uuid4()
+        decided_at = dt.datetime(2026, 6, 26, 12, 0, tzinfo=dt.timezone.utc)
+        user = _make_user(
+            google_sub="sub-pending", role=Role.TECHNICIAN, role_status=RoleStatus.PENDING
+        )
+        repo.add(user)
+        user.approve(decided_by=admin_id, at=decided_at)
+        repo.save(user)
+
+        fetched = repo.get(user.id)
+        assert fetched.role_status == RoleStatus.APPROVED
+        assert fetched.role_decided_by == admin_id
+        assert fetched.role_decided_at == decided_at
+
+    def test_list_pending_technicians_returns_only_pending_technicians(self, session):
+        repo = SqlAlchemyUserRepository(session)
+        pending = _make_user(
+            google_sub="sub-q-pending", role=Role.TECHNICIAN, role_status=RoleStatus.PENDING
+        )
+        approved = _make_user(
+            google_sub="sub-q-approved", role=Role.TECHNICIAN, role_status=RoleStatus.APPROVED
+        )
+        customer = _make_user(google_sub="sub-q-customer", role=Role.CUSTOMER)
+        for u in (pending, approved, customer):
+            repo.add(u)
+
+        result = repo.list_pending_technicians()
+
+        assert [u.id for u in result] == [pending.id]
 
     def test_duplicate_google_sub_raises_duplicate_google_sub(self, session):
         repo = SqlAlchemyUserRepository(session)
