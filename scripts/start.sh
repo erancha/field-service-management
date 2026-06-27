@@ -120,11 +120,17 @@ pids=()
 cleanup() { [ ${#pids[@]} -gt 0 ] && kill "${pids[@]}" 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
 
+# The backoffice process additionally runs the background calendar workers — draining the outbox to
+# Google (outbound projection) and polling Google for technician-side edits (inbound sync). Exactly
+# one process may run them so a single owner drains the shared outbox and Google is polled once;
+# backoffice is that owner, so the projection only runs when this role is part of the launch.
 echo "Starting [${ROLES[*]}]  (/: React app, docs: /docs, health: /health, ready: /ready)"
 for role in "${ROLES[@]}"; do
   port="$(port_for "$role")"
   echo "  FSM ($role) -> http://localhost:$port"
-  ( cd "$BACKEND" && FSM_ROLE="$role" exec "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --reload --port "$port" ) &
+  role_env=(FSM_ROLE="$role")
+  [ "$role" = backoffice ] && role_env+=(FSM_DISPATCH_ENABLED=true FSM_SYNC_ENABLED=true)
+  ( cd "$BACKEND" && exec env "${role_env[@]}" "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --reload --port "$port" ) &
   pids+=($!)
 done
 wait

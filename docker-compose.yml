@@ -119,6 +119,12 @@ services:
     environment:
       <<: *backend-env
       FSM_ROLE: backoffice
+      # This role process runs the background calendar workers for the whole deployment: it drains
+      # the outbox to Google (outbound projection) and polls Google for technician-side edits
+      # (inbound sync). Exactly one process may run them, so technician/customer leave them at the
+      # config default (off) and only backoffice turns them on.
+      FSM_DISPATCH_ENABLED: "true"
+      FSM_SYNC_ENABLED: "true"
     healthcheck:
       <<: *backend-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
