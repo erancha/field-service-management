@@ -11,4 +11,9 @@ venv/
 node_modules/
 dist/
 build/
-docs/superpowers/
+docs/superpowers/*
+# Track the approved scheduling design spec — referenced by GitHub issues — but keep the rest of the
+# superpowers working area ignored. Re-including a file requires un-ignoring its parent dirs first.
+!docs/superpowers/specs/
+docs/superpowers/specs/*
+!docs/superpowers/specs/2026-06-25-scheduling-design.md
