@@ -1,16 +1,10 @@
-"""Outbound port protocols for the scheduling bounded context.
+"""Outbound port boundary for the scheduling bounded context.
 
-Ports define the boundary between the domain and its infrastructure adapters.
-All protocols are @runtime_checkable so adapters can be verified with isinstance
-at startup or in tests.
-
-Re-exported protocols:
-- ServiceCallRepository: add, get, save
-- AppointmentRepository: add, get, save, list_for_technician_between
-- CalendarPort: get_busy, create_event, update_event, delete_event
-- NotificationPort: appointment_booked, appointment_rescheduled, appointment_cancelled
-- UnitOfWork: context-manager owning one transaction; exposes service_calls + appointments + outbox
-- OutboxOperation, OutboxEntry, OutboxRepository: transactional outbox for calendar projection
+Ports define the boundary between the domain and its infrastructure adapters,
+covering persistence, calendar projection, notifications, and the unit of work
+that owns a transaction. The repository, calendar, notification, and outbox
+protocols are @runtime_checkable so adapters can be verified with isinstance at
+startup or in tests.
 """
 
 from fsm.scheduling.ports.repositories import AppointmentRepository, ServiceCallRepository

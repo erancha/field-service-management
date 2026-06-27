@@ -38,15 +38,11 @@ npx tsc --noEmit
 
 ## Project layout
 
-```
-src/
-  api/          Typed fetch wrapper, per-domain API modules, shared types
-  hooks/        Custom React hooks (auth, availability, appointments)
-  components/   Shared presentational components (Button, ErrorBanner, SlotPicker, AppointmentCard)
-  features/
-    auth/       DevModePanel (Google-unconfigured fallback), LogoutButton
-    customer/   OpenServiceCall form, BookFlow (slot search + booking + appointment management)
-    technician/ ConnectCalendar button, MyAppointments lookup
-  pages/        HomePage (routes by auth state), CustomerPage, TechnicianPage
-  styles/       global.css
-```
+Code under `src/` is organized by responsibility, with `features/` split one folder per user role:
+
+- `api/` — typed fetch wrapper, per-domain API modules, and shared request/response types
+- `hooks/` — custom React hooks for data fetching and auth state
+- `components/` — shared presentational components reused across features
+- `features/<role>/` — role-specific screens and flows (`auth`, `customer`, `technician`, `backoffice`)
+- `pages/` — top-level route components; `HomePage` dispatches by auth state and role
+- `styles/` — global CSS

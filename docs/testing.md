@@ -54,7 +54,7 @@ conventions.
 ## Frontend (`frontend`)
 
 The React app's quality gates are **typecheck** (`tsc --noEmit`), **lint** (`oxlint`), and a
-production **build** (`vite build`); `scripts/tests.sh frontend` runs all three.
+production **build** (`vite build`); `scripts/test.sh frontend` runs all three.
 
 **OPEN — no JavaScript unit/component test runner is configured yet.** Adding one (e.g. Vitest +
 React Testing Library for the API client, hooks, and components) is the next step for frontend

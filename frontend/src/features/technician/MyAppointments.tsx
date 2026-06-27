@@ -13,13 +13,11 @@ export function MyAppointments({ technicianId: _technicianId }: MyAppointmentsPr
   const [appointmentId, setAppointmentId] = useState('')
   const [lookedUp, setLookedUp] = useState(false)
 
-  // The backend does not expose a list endpoint for technician appointments yet.
-  // This component lets a technician look up an appointment by ID and manage it.
+  // No endpoint to list or fetch a technician's appointments exists yet, so this
+  // screen cannot load one — it is a placeholder until that endpoint lands.
 
   function handleLookup(e: React.FormEvent) {
     e.preventDefault()
-    // Placeholder: the real endpoint would be GET /api/appointments?technician_id=...
-    // For now we surface this limitation clearly.
     setLookedUp(true)
   }
 

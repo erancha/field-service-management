@@ -7,7 +7,7 @@ Wiring:
 - POST /auth/logout          → clear the session
 
 Injectable seams on app.state allow tests to bypass real Google without patching globals:
-  app.state.token_exchange_override  — callable(flow, code) → dict with "id_token" key
+  app.state.token_exchange_override  — callable(flow, code) → the ID-token credential string
   app.state.auth_adapter_override    — AuthPort used instead of building GoogleOidcAuthAdapter
 """
 from __future__ import annotations
@@ -63,8 +63,8 @@ def _build_flow(settings):
     return flow
 
 
-def _real_token_exchange(flow, code: str) -> dict:
-    """Exchange the authorization code for tokens using the real Google endpoint."""
+def _real_token_exchange(flow, code: str) -> str:
+    """Exchange the authorization code for tokens and return the raw ID-token credential."""
     flow.fetch_token(code=code)
     return flow.credentials.id_token  # type: ignore[attr-defined]
 

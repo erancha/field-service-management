@@ -5,7 +5,6 @@ import {
   rescheduleAppointment,
   cancelAppointment,
   addAppointmentDetails,
-  type AvailabilityParams,
 } from '../api/scheduling.ts'
 import type { CreateAppointmentRequest, RescheduleRequest } from '../api/types.ts'
 
@@ -19,9 +18,6 @@ export interface UseAppointmentsResult {
   addDetails: (id: string, text: string) => Promise<void>
   clearError: () => void
 }
-
-// AvailabilityParams is used in consumer components; re-export keeps imports clean.
-export type { AvailabilityParams }
 
 export function useAppointments(): UseAppointmentsResult {
   const [appointment, setAppointment] = useState<Appointment | null>(null)

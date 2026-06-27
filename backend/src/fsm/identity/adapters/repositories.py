@@ -86,7 +86,8 @@ class SqlAlchemyUserRepository:
             _translate_integrity_error(exc)
 
     def save(self, user: User) -> None:
-        """Persist mutations to an already-stored user; caller owns the transaction."""
+        """Persist mutations to an already-stored user, raising NotFoundError if the user
+        does not exist; caller owns the transaction."""
         row = self._session.get(UserRow, user.id)
         if row is None:
             raise NotFoundError(f"User {user.id!r} not found")

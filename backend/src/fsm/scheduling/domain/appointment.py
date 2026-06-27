@@ -52,7 +52,8 @@ class Appointment:
     pending_audits accumulates AuditRecord entries on each mutation. The repository
     drains this list via drain_audits() when persisting, writing one audit row per
     record in the same transaction as the appointment row. The field is excluded from
-    equality and repr so that existing tests comparing Appointment instances are unaffected.
+    equality and repr because pending audits are incidental bookkeeping, not part of the
+    appointment's identity.
     """
 
     id: uuid.UUID
