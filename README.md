@@ -131,6 +131,19 @@ the sign-in also completes it: sign in at `http://localhost:8003` and you land t
 works identically in either mode. A production deployment fronts the roles by hostname over `https`
 and registers those `https://…` callbacks instead.
 
+## Scripts
+
+All live in `scripts/`; run with `-h`/`--help` for full usage.
+
+| Script | Purpose |
+|---|---|
+| `init-env.sh` | Bootstrap `backend/.env` on a fresh checkout. |
+| `generate-secret.sh` | Generate one application secret; used by `init-env.sh`. |
+| `start.sh` | Run the app. |
+| `docker-helper.sh` | Operate the running Docker stack. |
+| `sql-helper.sh` | Open psql against the database. |
+| `test.sh` | Run the test suite — see [Testing](#testing). |
+
 ## Testing
 
 Run the whole suite — backend (unit, integration, API, contract, and architecture tests) plus the
