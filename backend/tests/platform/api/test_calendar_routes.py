@@ -258,6 +258,50 @@ def test_calendar_callback_bad_state_returns_400(pg_session_factory):
 
 
 # ---------------------------------------------------------------------------
+# 5b. Callback flow carries the PKCE code_verifier minted at login
+# ---------------------------------------------------------------------------
+
+
+def test_calendar_callback_propagates_pkce_code_verifier_to_token_exchange(pg_session_factory):
+    """The flow handed to the token exchange must carry the code_verifier minted at login.
+
+    authorization_url() sends Google a PKCE code_challenge, so the token exchange must present the
+    matching code_verifier. Login and callback build independent Flow objects, so the verifier has
+    to ride the session across the redirect — without it Google rejects the exchange with
+    invalid_grant "Missing code verifier".
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(_fake_identity())
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+
+    seen = {}
+
+    def capturing_exchange(flow, code: str) -> str:
+        seen["code_verifier"] = flow.code_verifier
+        return "refresh-tok-pkce"
+
+    app.state.calendar_token_exchange_override = capturing_exchange
+    app.state.calendar_client_factory_override = lambda rt: _FakeCalendarClient("fsm-cal-pkce")
+
+    login_resp = client.get("/calendar/connect/login")
+    location = login_resp.headers["location"]
+    assert "code_challenge=" in location  # PKCE is active on the login redirect
+    state = parse_qs(urlparse(location).query)["state"][0]
+
+    cb_resp = client.get(f"/calendar/connect/callback?code=cal-code&state={state}")
+
+    assert cb_resp.status_code == 307
+    assert seen["code_verifier"], (
+        "calendar callback flow reached token exchange without a PKCE code_verifier"
+    )
+
+
+# ---------------------------------------------------------------------------
 # 6. /calendar/status — no connection → connected: false
 # ---------------------------------------------------------------------------
 

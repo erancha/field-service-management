@@ -8,7 +8,7 @@
 #   SESSION_SECRET=$(./scripts/generate-secret.sh session-secret)
 #
 # A Fernet key is 32 random bytes url-safe-base64 encoded (identical to Fernet.generate_key()); the
-# session secret is 32 random bytes as hex. Both use the Python standard library only, so the Docker
+# session secret is 32 random bytes as hex. Each uses the Python standard library only, so the Docker
 # fallback needs no pip install. Uses a local Python when available, otherwise Docker.
 set -euo pipefail
 

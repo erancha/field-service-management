@@ -92,3 +92,25 @@ class TestGoogleOidcAuthAdapter:
         adapter = _make_adapter(claims=claims)
         with pytest.raises(AuthenticationError, match="name"):
             adapter.verify("any-credential")
+
+
+def test_default_verify_allows_clock_skew(monkeypatch):
+    """The default verifier must tolerate a few seconds of clock skew between this host and Google.
+
+    Google signs ID tokens against its own clock; with zero tolerance a host running even a second
+    behind rejects a freshly issued token as "used too early". The verifier passes a non-zero
+    clock_skew_in_seconds so normal drift does not break sign-in.
+    """
+    from fsm.identity.adapters.google_auth import _default_verify
+
+    captured = {}
+
+    def fake_verify(credential, request, audience=None, clock_skew_in_seconds=0):
+        captured["clock_skew_in_seconds"] = clock_skew_in_seconds
+        return dict(_VALID_CLAIMS)
+
+    monkeypatch.setattr("google.oauth2.id_token.verify_oauth2_token", fake_verify)
+
+    _default_verify("a-credential", "test-client-id")
+
+    assert captured["clock_skew_in_seconds"] >= 5

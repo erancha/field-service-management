@@ -138,16 +138,19 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # Single edge and the only published entry point: serves the built SPA and reverse-proxies each
-  # role host to its (now internal) backend. technician.localhost -> technician:8001,
-  # customer.localhost -> customer:8002, backoffice.localhost -> backoffice:8003.
+  # Single edge and the only published entry point: serves the built SPA and reverse-proxies each role
+  # to its (internal) backend on a dedicated localhost port. localhost:8001 -> technician:8001,
+  # localhost:8002 -> customer:8002, localhost:8003 -> backoffice:8003. Per-port (not per-subdomain)
+  # because Google only accepts localhost:<port> as a loopback OAuth redirect URI, not *.localhost.
   nginx:
     build:
       context: .
       dockerfile: nginx/Dockerfile
     image: fsm-nginx:local
     ports:
-      - "80:80"
+      - "8001:8001"
+      - "8002:8002"
+      - "8003:8003"
     depends_on:
       technician:
         condition: service_healthy

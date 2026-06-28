@@ -33,7 +33,7 @@ fi
 
 cp "$EXAMPLE" "$ENV_FILE"
 
-# Fill the two locally-minted secrets now so the OAuth flows work without manual steps. Both secret
+# Fill the two locally-minted secrets now so the OAuth flows work without manual steps. Their secret
 # alphabets (url-safe base64 / hex) never contain the '|' sed delimiter.
 TOKEN_KEY="$("$ROOT/scripts/generate-secret.sh" token-key)"
 SESSION_SECRET="$("$ROOT/scripts/generate-secret.sh" session-secret)"

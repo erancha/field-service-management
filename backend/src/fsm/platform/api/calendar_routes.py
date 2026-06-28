@@ -27,13 +27,14 @@ from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepos
 from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.application.connection_service import CalendarConnectionService
 from fsm.calendar.domain.errors import DuplicateTechnicianError, NotFoundError
+from fsm.platform.api.oauth_redirect import resolve_redirect_uri
 
 router = APIRouter(prefix="/calendar")
 
 _CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 
 
-def _build_flow(settings):
+def _build_flow(settings, redirect_uri: str):
     """Construct a google_auth_oauthlib Flow configured for calendar scope."""
     from google_auth_oauthlib.flow import Flow
 
@@ -41,7 +42,7 @@ def _build_flow(settings):
         "web": {
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret.get_secret_value(),
-            "redirect_uris": [settings.google_calendar_redirect_uri],
+            "redirect_uris": [redirect_uri],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
@@ -49,7 +50,7 @@ def _build_flow(settings):
     return Flow.from_client_config(
         client_config,
         scopes=[_CALENDAR_SCOPE],
-        redirect_uri=settings.google_calendar_redirect_uri,
+        redirect_uri=redirect_uri,
     )
 
 
@@ -113,7 +114,10 @@ def calendar_connect_login(request: Request):
             {"detail": "Calendar integration not configured"}, status_code=503
         )
 
-    flow = _build_flow(settings)
+    redirect_uri = resolve_redirect_uri(
+        request, settings.google_calendar_redirect_uri, "calendar_connect_callback"
+    )
+    flow = _build_flow(settings, redirect_uri)
     state = secrets.token_urlsafe(32)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
@@ -122,6 +126,9 @@ def calendar_connect_login(request: Request):
         include_granted_scopes="true",
     )
     request.session["calendar_oauth_state"] = state
+    # authorization_url() mints a PKCE code_verifier and sends its derived challenge to Google. The
+    # callback builds a separate Flow, so the verifier must ride the session to complete the exchange.
+    request.session["calendar_code_verifier"] = flow.code_verifier
     return RedirectResponse(auth_url, status_code=307)
 
 
@@ -142,7 +149,11 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "")
     token_exchange = _get_token_exchange(request.app)
     client_factory = _get_client_factory(request.app, settings)
 
-    flow = _build_flow(settings)
+    redirect_uri = resolve_redirect_uri(
+        request, settings.google_calendar_redirect_uri, "calendar_connect_callback"
+    )
+    flow = _build_flow(settings, redirect_uri)
+    flow.code_verifier = request.session.get("calendar_code_verifier")
     refresh_token = token_exchange(flow, code)
     client = client_factory(refresh_token)
 
@@ -161,6 +172,7 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "")
             session.rollback()
 
     request.session.pop("calendar_oauth_state", None)
+    request.session.pop("calendar_code_verifier", None)
     return RedirectResponse("/", status_code=307)
 
 

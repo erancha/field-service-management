@@ -12,6 +12,7 @@ Injectable seams on app.state allow tests to bypass real Google without patching
 """
 from __future__ import annotations
 
+import os
 import secrets
 from typing import Callable
 
@@ -23,6 +24,7 @@ from fsm.identity.application.identity_service import IdentityService, SignInHos
 from fsm.identity.domain.errors import BackOfficeAccessDenied
 from fsm.identity.ports.auth import AuthPort
 from fsm.platform.api.auth_deps import resolve_current_user
+from fsm.platform.api.oauth_redirect import resolve_redirect_uri
 from fsm.platform.events import ADMINS_CHANNEL, publish_to_app
 
 router = APIRouter(prefix="/auth")
@@ -42,7 +44,7 @@ def _sign_in_host(settings) -> SignInHost:
 _publish = publish_to_app
 
 
-def _build_flow(settings):
+def _build_flow(settings, redirect_uri: str):
     """Construct a google_auth_oauthlib Flow from in-memory client config."""
     from google_auth_oauthlib.flow import Flow
 
@@ -50,7 +52,7 @@ def _build_flow(settings):
         "web": {
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret.get_secret_value(),
-            "redirect_uris": [settings.google_redirect_uri],
+            "redirect_uris": [redirect_uri],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
@@ -58,13 +60,17 @@ def _build_flow(settings):
     flow = Flow.from_client_config(
         client_config,
         scopes=["openid", "email", "profile"],
-        redirect_uri=settings.google_redirect_uri,
+        redirect_uri=redirect_uri,
     )
     return flow
 
 
 def _real_token_exchange(flow, code: str) -> str:
     """Exchange the authorization code for tokens and return the raw ID-token credential."""
+    # Google normalises the granted OIDC scopes (email -> .../userinfo.email, profile ->
+    # .../userinfo.profile, reordered with openid), so they never byte-match the requested scope.
+    # oauthlib rejects any granted-vs-requested scope mismatch as fatal unless this flag relaxes it.
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
     flow.fetch_token(code=code)
     return flow.credentials.id_token  # type: ignore[attr-defined]
 
@@ -104,7 +110,8 @@ def google_login(request: Request):
             status_code=503,
         )
 
-    flow = _build_flow(settings)
+    redirect_uri = resolve_redirect_uri(request, settings.google_redirect_uri, "google_callback")
+    flow = _build_flow(settings, redirect_uri)
     state = secrets.token_urlsafe(32)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
@@ -112,6 +119,9 @@ def google_login(request: Request):
         include_granted_scopes="true",
     )
     request.session["oauth_state"] = state
+    # authorization_url() mints a PKCE code_verifier and sends its derived challenge to Google. The
+    # callback builds a separate Flow, so the verifier must ride the session to complete the exchange.
+    request.session["code_verifier"] = flow.code_verifier
     return RedirectResponse(auth_url, status_code=307)
 
 
@@ -129,7 +139,9 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
     if not settings.google_client_id or not settings.google_client_secret:
         return JSONResponse({"detail": "Google sign-in not configured"}, status_code=503)
 
-    flow = _build_flow(settings)
+    redirect_uri = resolve_redirect_uri(request, settings.google_redirect_uri, "google_callback")
+    flow = _build_flow(settings, redirect_uri)
+    flow.code_verifier = request.session.get("code_verifier")
     id_token = token_exchange(flow, code)
 
     host = _sign_in_host(settings)
@@ -163,6 +175,7 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
         )
 
     request.session.pop("oauth_state", None)
+    request.session.pop("code_verifier", None)
     request.session["user_id"] = str(user.id)
     request.session["email"] = user.email
     return RedirectResponse("/", status_code=307)

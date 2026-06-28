@@ -131,6 +131,47 @@ def test_google_login_returns_503_when_not_configured(pg_session_factory):
 
 
 # ---------------------------------------------------------------------------
+# 2b. Redirect URI: derived per-host when unset, configured value as override
+# ---------------------------------------------------------------------------
+
+
+def _redirect_uri_from_login(client) -> str:
+    from urllib.parse import parse_qs, urlparse
+
+    location = client.get("/auth/google/login").headers["location"]
+    return parse_qs(urlparse(location).query)["redirect_uri"][0]
+
+
+def test_google_login_derives_redirect_uri_from_request_host_when_unset(pg_session_factory):
+    """With no configured redirect URI, login derives the callback from the request's own host.
+
+    Each role sits on its own edge host behind nginx, so the callback must return there; deriving it
+    per request lets one OAuth client serve every role without a hard-coded host.
+    """
+    settings = Settings(
+        database_url=os.environ["DATABASE_URL"],
+        app_env="test",
+        google_client_id="test-client-id.apps.googleusercontent.com",
+        google_client_secret="test-client-secret",
+        google_redirect_uri="",
+        session_secret="test-session-secret-32-bytes-long!!",
+    )
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    client = TestClient(app, follow_redirects=False)
+
+    assert _redirect_uri_from_login(client) == "http://testserver/auth/google/callback"
+
+
+def test_google_login_uses_configured_redirect_uri_override(pg_session_factory):
+    """An explicit redirect URI overrides per-host derivation, for a fixed public deployment."""
+    settings = _settings_with_google(os.environ["DATABASE_URL"])
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    client = TestClient(app, follow_redirects=False)
+
+    assert _redirect_uri_from_login(client) == "http://localhost:8001/auth/google/callback"
+
+
+# ---------------------------------------------------------------------------
 # 3. Full callback → user → session flow with injected fakes
 # ---------------------------------------------------------------------------
 
@@ -173,6 +214,97 @@ def test_callback_creates_user_sets_session_and_me_returns_user(pg_session_facto
     # /auth/me returns 401 after logout
     me_after_logout = client.get("/auth/me")
     assert me_after_logout.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 3b. PKCE: the verifier minted at login must reach the token exchange
+# ---------------------------------------------------------------------------
+
+
+def test_callback_propagates_pkce_code_verifier_to_token_exchange(pg_session_factory):
+    """The flow handed to fetch_token must carry the code_verifier minted at login.
+
+    authorization_url() sends Google a PKCE code_challenge, so the token exchange must present the
+    matching code_verifier. Login and callback build independent Flow objects, so the verifier has
+    to ride the session across the redirect — without it Google rejects the exchange with
+    invalid_grant "Missing code verifier".
+    """
+    settings = _settings_with_google(os.environ["DATABASE_URL"])
+    identity = _fake_identity()
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+
+    seen = {}
+
+    def capturing_exchange(flow, code: str) -> str:
+        seen["code_verifier"] = flow.code_verifier
+        return "fake-id-token"
+
+    app.state.token_exchange_override = capturing_exchange
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+
+    client = TestClient(app, follow_redirects=False)
+
+    login_resp = client.get("/auth/google/login")
+    from urllib.parse import parse_qs, urlparse
+
+    location = login_resp.headers["location"]
+    assert "code_challenge=" in location  # PKCE is active on the login redirect
+    state = parse_qs(urlparse(location).query)["state"][0]
+
+    callback_resp = client.get(f"/auth/google/callback?code=fake-code&state={state}")
+
+    assert callback_resp.status_code == 307
+    assert seen["code_verifier"], "callback flow reached token exchange without a PKCE code_verifier"
+
+
+# ---------------------------------------------------------------------------
+# 3c. Token exchange tolerates Google normalising the granted OIDC scopes
+# ---------------------------------------------------------------------------
+
+
+def test_real_token_exchange_tolerates_google_scope_normalization(monkeypatch):
+    """The real exchange must not crash when Google returns scopes in expanded/reordered form.
+
+    Google always normalises the granted OIDC scopes (email -> .../userinfo.email, profile ->
+    .../userinfo.profile, reordered with openid), so they never byte-match the requested
+    "openid email profile". oauthlib raises on any such mismatch unless the exchange relaxes that
+    check, so without the relaxation every real sign-in fails the token exchange.
+    """
+    import json
+
+    import requests
+    from requests_oauthlib import OAuth2Session
+
+    from fsm.platform.api.auth_routes import _build_flow, _real_token_exchange
+
+    settings = _settings_with_google("postgresql+psycopg://unused:unused@localhost/unused")
+    token_body = json.dumps(
+        {
+            "access_token": "fake-access-token",
+            "token_type": "Bearer",
+            "id_token": "the-id-token",
+            "expires_in": 3599,
+            "scope": "https://www.googleapis.com/auth/userinfo.email openid "
+            "https://www.googleapis.com/auth/userinfo.profile",
+        }
+    )
+
+    def fake_request(self, method, url, **kwargs):
+        resp = requests.models.Response()
+        resp.status_code = 200
+        resp._content = token_body.encode()
+        resp.headers["Content-Type"] = "application/json"
+        resp.url = url
+        prepared = requests.PreparedRequest()
+        prepared.url = url
+        resp.request = prepared
+        return resp
+
+    monkeypatch.setattr(OAuth2Session, "request", fake_request)
+    monkeypatch.delenv("OAUTHLIB_RELAX_TOKEN_SCOPE", raising=False)
+
+    flow = _build_flow(settings, settings.google_redirect_uri)
+    assert _real_token_exchange(flow, "fake-code") == "the-id-token"
 
 
 # ---------------------------------------------------------------------------

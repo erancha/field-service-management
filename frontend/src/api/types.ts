@@ -37,6 +37,11 @@ export interface CurrentUser {
   role_status: RoleStatus | string
 }
 
+export interface CalendarStatus {
+  connected: boolean
+  fsm_calendar_id: string | null
+}
+
 export interface TechnicianRequest {
   user_id: string
   email: string

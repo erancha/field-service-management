@@ -11,11 +11,18 @@ from fsm.identity.domain.errors import AuthenticationError
 from fsm.identity.ports.auth import VerifiedIdentity
 
 
+# Google signs ID tokens against its own clock, so a host running slightly behind would otherwise
+# reject a freshly issued token as "used too early". A few seconds of leeway absorbs ordinary clock
+# drift without materially widening the token's validity window.
+_CLOCK_SKEW_SECONDS = 10
+
+
 def _default_verify(credential: str, client_id: str) -> dict:
     return google.oauth2.id_token.verify_oauth2_token(
         credential,
         google.auth.transport.requests.Request(),
         client_id,
+        clock_skew_in_seconds=_CLOCK_SKEW_SECONDS,
     )
 
 

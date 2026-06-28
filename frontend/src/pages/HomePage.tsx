@@ -1,4 +1,4 @@
-import { useCurrentUser } from '../hooks/useCurrentUser.ts'
+import { useAuth } from '../features/auth/authContext.ts'
 import { SignInWithGoogle } from '../components/SignInWithGoogle.tsx'
 import { CustomerPage } from './CustomerPage.tsx'
 import { TechnicianPage } from './TechnicianPage.tsx'
@@ -7,7 +7,7 @@ import { TechnicianWaiting } from '../features/technician/TechnicianWaiting.tsx'
 import { TechnicianDeclined } from '../features/technician/TechnicianDeclined.tsx'
 
 export function HomePage() {
-  const { auth, refresh } = useCurrentUser()
+  const { auth, refresh } = useAuth()
 
   if (auth.status === 'loading') {
     return <div className="loading">Checking authentication…</div>

@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 #
-# Single entry point for running the Field Service Management app.
+# Single entry point for running the Field Service Management app. Either mode reaches the roles at
+# the same URLs — http://localhost:8001 (technician) / :8002 (customer) / :8003 (backoffice) — and
+# each completes Google sign-in with the same registered localhost callbacks. Docker is the default (a
+# closer-to-production stack); --host runs the roles as local uvicorn processes for fast boot and
+# debugger attach. They differ only in packaging, not capability.
 #
-#   ./scripts/start.sh                       # all roles on the host (technician + customer + backoffice)
-#   ./scripts/start.sh technician            # one role on the host  (alias: tec)  -> http://localhost:8001
-#   ./scripts/start.sh customer              # one role on the host  (alias: cus)  -> http://localhost:8002
-#   ./scripts/start.sh backoffice            # one role on the host  (alias: bo)   -> http://localhost:8003
-#   ./scripts/start.sh all                   # all roles, stated explicitly        (same as no argument)
-#   ./scripts/start.sh --docker              # build + run all roles via docker compose (all = default)
-#   ./scripts/start.sh technician --docker   # build + run one role via docker compose
+#   ./scripts/start.sh                       # all roles via docker compose, nginx on :8001/:8002/:8003 (default)
+#   ./scripts/start.sh technician            # one role (alias: tec) -> http://localhost:8001
+#   ./scripts/start.sh --host                # all roles as local uvicorn processes, same ports
+#   ./scripts/start.sh technician --host     # one role on the host  -> http://localhost:8001
 #
-# The first 3 letters of a role are enough (tec / cus / bac); with no role, all roles run. Host mode
-# provisions a virtualenv, starts PostgreSQL via Docker, applies migrations, builds the frontend,
-# and runs uvicorn per role. --docker instead builds the backend image and brings the role(s) up as
-# internal compose services (alongside db + a one-shot migration) behind an nginx edge that serves
-# the SPA and is the only published port (80); reach each role at its <role>.localhost host.
+# The first 3 letters of a role are enough (tec / cus / bac); with no role, all roles run. Docker mode
+# builds the backend image and brings the role(s) up as internal compose services (alongside db,
+# redis, and a one-shot migration) behind an nginx edge that serves the SPA and publishes one localhost
+# port per role. Host mode provisions a virtualenv, starts PostgreSQL + Redis via Docker, applies
+# migrations, builds the frontend, and runs uvicorn per role directly on those ports.
+#
+# Bring the stack down or tail logs with scripts/docker-helper.sh (--stop / --logs / --ps).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,7 +26,7 @@ VENV="$BACKEND/.venv"
 COMPOSE="$ROOT/docker-compose.yml"
 
 usage() {
-  echo "Usage: ./scripts/start.sh [technician|customer|backoffice|all] [--docker]   (default: all; aliases tec|cus|bo)" >&2
+  echo "Usage: ./scripts/start.sh [technician|customer|backoffice|all] [--host]   (default: all roles, docker; aliases tec|cus|bo)" >&2
   exit 2
 }
 
@@ -42,33 +45,33 @@ add_role() {
   ROLES+=("$candidate")
 }
 
-DOCKER=0
+DOCKER=1
 for arg in "$@"; do
   case "$(printf '%s' "$arg" | tr '[:upper:]' '[:lower:]')" in
-    tec*)      add_role technician ;;
-    cus*)      add_role customer ;;
-    bac*|bo)   add_role backoffice ;;
-    all)       add_role technician; add_role customer; add_role backoffice ;;
-    --docker)  DOCKER=1 ;;
-    -h|--help) print_help; exit 0 ;;
-    *)         usage ;;
+    tec*)           add_role technician ;;
+    cus*)           add_role customer ;;
+    bac*|bo)        add_role backoffice ;;
+    all)            add_role technician; add_role customer; add_role backoffice ;;
+    --docker)       DOCKER=1 ;;
+    --host|--local) DOCKER=0 ;;
+    -h|--help)      print_help; exit 0 ;;
+    *)              usage ;;
   esac
 done
 [ ${#ROLES[@]} -gt 0 ] || { add_role technician; add_role customer; add_role backoffice; }
 
-# backend/.env is required by both run paths (host mode sources it; docker compose loads it via
+# backend/.env is required by either run path (host mode sources it; docker compose loads it via
 # env_file). It is not created here — run the init helper once first.
 if [ ! -f "$BACKEND/.env" ]; then
   echo "backend/.env not found — create it first:  ./scripts/init-env.sh" >&2
   exit 1
 fi
 
-# Probe a role's backend through the nginx edge by Host header — the backends are internal to the
-# compose network and not published on the host. --retry-all-errors also retries the 502s nginx
-# returns while the backend is still warming up.
-wait_for_edge() {  # role
-  curl -fs --retry 60 --retry-all-errors --retry-delay 1 -o /dev/null \
-    -H "Host: $1.localhost" "http://localhost/health"
+# Probe a role through the nginx edge on its published localhost port — the backends themselves are
+# internal to the compose network. --retry-all-errors also retries the 502s nginx returns while the
+# backend is still warming up.
+wait_for_edge() {  # port
+  curl -fs --retry 60 --retry-all-errors --retry-delay 1 -o /dev/null "http://localhost:$1/health"
 }
 
 if [ "$DOCKER" -eq 1 ]; then
@@ -76,12 +79,12 @@ if [ "$DOCKER" -eq 1 ]; then
   # nginx fronts all roles, so it pulls all backends up via depends_on regardless of selection.
   docker compose -f "$COMPOSE" up -d --build nginx "${ROLES[@]}"
   for role in "${ROLES[@]}"; do
-    wait_for_edge "$role"
-    echo "FSM ($role): http://$role.localhost  (via nginx :80)"
+    port="$(port_for "$role")"
+    wait_for_edge "$port"
+    echo "  FSM ($role) -> http://localhost:$port"
   done
-  echo "  nginx edge on :80 is the only published entry — reach each role at http://<role>.localhost/"
-  echo "  (per host: /  (SPA)   /docs   /health   /ready)"
-  echo "  backends are internal to the compose network; reach them via the edge."
+  echo "  nginx serves each role on its own localhost port (SPA at /, plus /docs /health /ready)."
+  echo "  stop the stack or tail logs:  ./scripts/docker-helper.sh --stop | --logs"
   exit 0
 fi
 
@@ -130,7 +133,7 @@ for role in "${ROLES[@]}"; do
   echo "  FSM ($role) -> http://localhost:$port"
   role_env=(FSM_ROLE="$role")
   [ "$role" = backoffice ] && role_env+=(FSM_DISPATCH_ENABLED=true FSM_SYNC_ENABLED=true)
-  ( cd "$BACKEND" && exec env "${role_env[@]}" "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --reload --port "$port" ) &
+  ( cd "$BACKEND" && exec env "${role_env[@]}" "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --port "$port" ) &
   pids+=($!)
 done
 wait

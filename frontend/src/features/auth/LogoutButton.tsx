@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { logout } from '../../api/auth.ts'
+import { useAuth } from './authContext.ts'
 import { Button } from '../../components/Button.tsx'
 
 export function LogoutButton() {
   const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+  const { refresh } = useAuth()
 
   async function handleLogout() {
     setLoading(true)
@@ -13,7 +13,7 @@ export function LogoutButton() {
       await logout()
     } finally {
       setLoading(false)
-      navigate('/')
+      refresh()
     }
   }
 

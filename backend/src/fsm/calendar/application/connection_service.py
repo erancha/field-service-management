@@ -37,7 +37,7 @@ class CalendarConnectionService:
         Returns the new CONNECTED CalendarConnection. The plaintext refresh_token
         is never persisted or logged.
         """
-        calendar_id = self._client.create_calendar("Field Service")
+        calendar_id = self._client.create_calendar("Field Service Management")
         encrypted_token = self._cipher.encrypt(refresh_token)
         connection = CalendarConnection(
             technician_id=technician_id,

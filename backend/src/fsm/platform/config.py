@@ -26,11 +26,15 @@ class Settings(BaseSettings):
 
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
-    google_redirect_uri: str = "http://localhost:8001/auth/google/callback"
+    # OAuth sign-in callback URL. Blank (default) derives it per request from the host the sign-in
+    # began on, so each role completes OAuth on its own edge host behind nginx; set an explicit value
+    # only for a fixed public deployment. Either way it must be registered on the Google OAuth client.
+    google_redirect_uri: str = ""
     session_secret: SecretStr | None = None
 
     fsm_token_key: SecretStr | None = None
-    google_calendar_redirect_uri: str = "http://localhost:8001/calendar/connect/callback"
+    # Calendar-connect callback URL; same blank-derives-per-host rule as google_redirect_uri.
+    google_calendar_redirect_uri: str = ""
 
     fsm_dispatch_enabled: bool = False
     fsm_dispatch_interval_seconds: float = 5.0
