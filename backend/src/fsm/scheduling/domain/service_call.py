@@ -25,7 +25,6 @@ class ServiceCall:
     id: uuid.UUID
     customer_id: uuid.UUID
     description: str
-    category: str
     status: ServiceCallStatus
     created_at: datetime
 

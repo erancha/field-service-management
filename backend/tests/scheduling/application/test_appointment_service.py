@@ -95,7 +95,6 @@ def _seed_open_service_call(sc_repo: InMemoryServiceCallRepository) -> ServiceCa
         id=_SC_ID,
         customer_id=_CUST_ID,
         description="Boiler repair",
-        category="plumbing",
         status=ServiceCallStatus.OPEN,
         created_at=_FIXED_NOW,
     )
@@ -735,7 +734,6 @@ class TestBookAppointmentServiceCallValidation:
             id=_SC_ID,
             customer_id=_CUST_ID,
             description="Boiler repair",
-            category="plumbing",
             status=ServiceCallStatus.SCHEDULED,
             created_at=_FIXED_NOW,
         )
@@ -763,7 +761,6 @@ class TestBookAppointmentServiceCallValidation:
             id=_SC_ID,
             customer_id=_CUST_ID,
             description="Boiler repair",
-            category="plumbing",
             status=ServiceCallStatus.CANCELLED,
             created_at=_FIXED_NOW,
         )

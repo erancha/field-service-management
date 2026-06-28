@@ -34,17 +34,14 @@ class TestOpenServiceCall:
         sc = svc.open_service_call(
             customer_id=customer_id,
             description="Boiler not working",
-            category="plumbing",
         )
         assert sc.customer_id == customer_id
         assert sc.description == "Boiler not working"
-        assert sc.category == "plumbing"
 
     def test_new_service_call_is_open(self, svc: ServiceCallService):
         sc = svc.open_service_call(
             customer_id=UUID("cccccccc-0000-0000-0000-000000000002"),
             description="AC repair",
-            category="hvac",
         )
         assert sc.status == ServiceCallStatus.OPEN
 
@@ -52,7 +49,6 @@ class TestOpenServiceCall:
         sc = svc.open_service_call(
             customer_id=UUID("cccccccc-0000-0000-0000-000000000003"),
             description="Leak",
-            category="plumbing",
         )
         assert sc.created_at == _FIXED_NOW
 
@@ -60,7 +56,6 @@ class TestOpenServiceCall:
         sc = svc.open_service_call(
             customer_id=UUID("cccccccc-0000-0000-0000-000000000004"),
             description="Leak",
-            category="plumbing",
         )
         assert sc.id == _FIXED_ID
 
@@ -71,7 +66,6 @@ class TestOpenServiceCall:
         sc = svc.open_service_call(
             customer_id=customer_id,
             description="Broken pipe",
-            category="plumbing",
         )
         stored = repo.get(sc.id)
         assert stored is sc

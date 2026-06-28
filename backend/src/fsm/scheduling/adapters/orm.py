@@ -23,7 +23,6 @@ class ServiceCallRow(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     customer_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
-    category: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 

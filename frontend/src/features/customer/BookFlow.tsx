@@ -87,7 +87,7 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
   return (
     <div className="book-flow">
       <h3>Find Availability</h3>
-      <p className="book-flow__sc">Service call: <strong>{serviceCall.description}</strong> ({serviceCall.category})</p>
+      <p className="book-flow__sc">Service call: <strong>{serviceCall.description}</strong></p>
       <form onSubmit={handleFetchSlots} className="form">
         <label>
           Technician UUID:

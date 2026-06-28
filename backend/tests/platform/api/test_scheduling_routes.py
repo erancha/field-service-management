@@ -101,7 +101,7 @@ def _utc_iso(year: int, month: int, day: int, hour: int) -> str:
 
 def test_unauthenticated_request_returns_401(client):
     """With no session, scheduling routes are not reachable."""
-    create = client.post("/api/service-calls", json={"description": "x", "category": "y"})
+    create = client.post("/api/service-calls", json={"description": "x"})
     assert create.status_code == 401
 
     read = client.get(
@@ -124,14 +124,13 @@ def test_open_service_call_returns_201(client, auth):
     cust_id = auth(role=Role.CUSTOMER)
     response = client.post(
         "/api/service-calls",
-        json={"description": "Fix broken boiler", "category": "plumbing"},
+        json={"description": "Fix broken boiler"},
     )
     assert response.status_code == 201
     data = response.json()
     # Identity comes from the session, not the body.
     assert data["customer_id"] == str(cust_id)
     assert data["description"] == "Fix broken boiler"
-    assert data["category"] == "plumbing"
     assert data["status"] == "OPEN"
     assert uuid.UUID(data["id"])
 
@@ -141,7 +140,7 @@ def test_open_service_call_wrong_role_returns_403(client, auth):
     auth(role=Role.TECHNICIAN)
     response = client.post(
         "/api/service-calls",
-        json={"description": "x", "category": "y"},
+        json={"description": "x"},
     )
     assert response.status_code == 403
 
@@ -215,7 +214,7 @@ def test_book_appointment_returns_200_and_is_persisted(client, auth, pg_session_
     cust_id = auth(role=Role.CUSTOMER)
     sc_resp = client.post(
         "/api/service-calls",
-        json={"description": "AC repair", "category": "hvac"},
+        json={"description": "AC repair"},
     )
     assert sc_resp.status_code == 201
     sc_id = sc_resp.json()["id"]
@@ -261,7 +260,7 @@ def test_book_against_another_customers_service_call_returns_403(client, auth):
     owner = auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"description": "Owned by someone else", "category": "general"},
+        json={"description": "Owned by someone else"},
     ).json()
     assert sc["customer_id"] == str(owner)
 
@@ -290,11 +289,11 @@ def test_booking_overlapping_slot_returns_409(client, auth):
 
     sc1 = client.post(
         "/api/service-calls",
-        json={"description": "Job 1", "category": "electric"},
+        json={"description": "Job 1"},
     ).json()
     sc2 = client.post(
         "/api/service-calls",
-        json={"description": "Job 2", "category": "electric"},
+        json={"description": "Job 2"},
     ).json()
 
     r1 = client.post(
@@ -330,7 +329,7 @@ def _book_one(client, auth, *, tech_id, start_hour, day):
     cust_id = auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"description": "Pipe fix", "category": "plumbing"},
+        json={"description": "Pipe fix"},
     ).json()
     book = client.post(
         "/api/appointments",
@@ -377,7 +376,7 @@ def test_cancel_appointment_succeeds(client, auth):
     cust_id = auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"description": "Window seal", "category": "general"},
+        json={"description": "Window seal"},
     ).json()
     tech_id = uuid.uuid4()
     book = client.post(
@@ -404,7 +403,7 @@ def test_add_details_succeeds(client, auth):
     auth(role=Role.CUSTOMER)
     sc = client.post(
         "/api/service-calls",
-        json={"description": "Leaky tap", "category": "plumbing"},
+        json={"description": "Leaky tap"},
     ).json()
     tech_id = uuid.uuid4()
     book = client.post(

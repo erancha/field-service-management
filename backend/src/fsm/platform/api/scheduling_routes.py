@@ -190,7 +190,6 @@ def open_service_call(
             sc = svc.open_service_call(
                 customer_id=user.id,
                 description=body.description,
-                category=body.category,
             )
             uow.commit()
     except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
@@ -200,7 +199,6 @@ def open_service_call(
         id=sc.id,
         customer_id=sc.customer_id,
         description=sc.description,
-        category=sc.category,
         status=sc.status.value,
         created_at=sc.created_at,
     )

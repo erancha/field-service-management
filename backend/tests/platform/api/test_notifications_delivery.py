@@ -69,7 +69,7 @@ class TestNotificationsDelivery:
         try:
             sc_resp = client.post(
                 "/api/service-calls",
-                json={"description": "Notification test", "category": "general"},
+                json={"description": "Notification test"},
             )
             assert sc_resp.status_code == 201
             sc_id = sc_resp.json()["id"]

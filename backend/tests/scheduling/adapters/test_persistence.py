@@ -47,7 +47,6 @@ def _make_service_call() -> ServiceCall:
         id=uuid.uuid4(),
         customer_id=uuid.uuid4(),
         description="Fix boiler",
-        category="plumbing",
         status=ServiceCallStatus.OPEN,
         created_at=_utc(2024, 1, 1),
     )
@@ -257,7 +256,6 @@ class TestSqlAlchemyServiceCallRepository:
         assert fetched.id == sc.id
         assert fetched.customer_id == sc.customer_id
         assert fetched.description == sc.description
-        assert fetched.category == sc.category
         assert fetched.status == sc.status
 
     def test_get_missing_raises_not_found(self, session):

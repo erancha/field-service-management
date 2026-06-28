@@ -31,14 +31,12 @@ class ServiceCallService:
         self,
         customer_id: UUID,
         description: str,
-        category: str,
     ) -> ServiceCall:
         """Create a new OPEN service call, persist it, and return it."""
         sc = ServiceCall(
             id=self._new_id(),
             customer_id=customer_id,
             description=description,
-            category=category,
             status=ServiceCallStatus.OPEN,
             created_at=self._clock(),
         )

@@ -10,7 +10,6 @@ interface OpenServiceCallProps {
 
 export function OpenServiceCall({ onCreated }: OpenServiceCallProps) {
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -19,7 +18,7 @@ export function OpenServiceCall({ onCreated }: OpenServiceCallProps) {
     setError(null)
     setLoading(true)
     try {
-      const sc = await createServiceCall({ description, category })
+      const sc = await createServiceCall({ description })
       onCreated(sc)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create service call')
@@ -43,17 +42,7 @@ export function OpenServiceCall({ onCreated }: OpenServiceCallProps) {
             placeholder="Describe the issue…"
           />
         </label>
-        <label>
-          Category:
-          <input
-            type="text"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            required
-            placeholder="e.g. plumbing, electrical…"
-          />
-        </label>
-        <Button type="submit" loading={loading} disabled={!description.trim() || !category.trim()}>
+        <Button type="submit" loading={loading} disabled={!description.trim()}>
           Open Service Call
         </Button>
       </form>

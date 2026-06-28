@@ -45,7 +45,6 @@ def _make_service_call(*, status: ServiceCallStatus = ServiceCallStatus.OPEN) ->
         id=uuid.uuid4(),
         customer_id=uuid.uuid4(),
         description="Fix boiler",
-        category="plumbing",
         status=status,
         created_at=_utc(2024, 1, 1),
     )

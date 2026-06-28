@@ -2,7 +2,6 @@ export interface ServiceCall {
   id: string
   customer_id: string
   description: string
-  category: string
   status: string
   created_at: string
 }
@@ -54,7 +53,6 @@ export interface ApiError {
 
 export interface CreateServiceCallRequest {
   description: string
-  category: string
 }
 
 export interface CreateAppointmentRequest {

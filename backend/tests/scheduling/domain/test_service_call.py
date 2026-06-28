@@ -19,7 +19,6 @@ def _new_call(**kwargs) -> ServiceCall:
         id=uuid.uuid4(),
         customer_id=uuid.uuid4(),
         description="Fix HVAC unit",
-        category="HVAC",
         status=ServiceCallStatus.OPEN,
         created_at=_now(),
     )

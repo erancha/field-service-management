@@ -51,7 +51,6 @@ def _row_to_service_call(row: ServiceCallRow) -> ServiceCall:
         id=row.id,
         customer_id=row.customer_id,
         description=row.description,
-        category=row.category,
         status=ServiceCallStatus(row.status),
         created_at=row.created_at,
     )
@@ -62,7 +61,6 @@ def _service_call_to_row(sc: ServiceCall) -> ServiceCallRow:
         id=sc.id,
         customer_id=sc.customer_id,
         description=sc.description,
-        category=sc.category,
         status=sc.status.value,
         created_at=sc.created_at,
     )
@@ -127,7 +125,6 @@ class SqlAlchemyServiceCallRepository:
             raise NotFoundError(f"ServiceCall {service_call.id!r} not found")
         row.customer_id = service_call.customer_id
         row.description = service_call.description
-        row.category = service_call.category
         row.status = service_call.status.value
         row.created_at = service_call.created_at
         self._session.flush()

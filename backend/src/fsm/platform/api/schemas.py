@@ -18,7 +18,6 @@ from pydantic import BaseModel, ConfigDict
 
 class OpenServiceCallRequest(BaseModel):
     description: str
-    category: str
 
 
 class ServiceCallResponse(BaseModel):
@@ -27,7 +26,6 @@ class ServiceCallResponse(BaseModel):
     id: UUID
     customer_id: UUID
     description: str
-    category: str
     status: str
     created_at: datetime
 

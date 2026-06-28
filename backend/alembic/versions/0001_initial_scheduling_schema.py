@@ -30,7 +30,6 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("customer_id", UUID(as_uuid=True), nullable=False),
         sa.Column("description", sa.String, nullable=False),
-        sa.Column("category", sa.String, nullable=False),
         sa.Column("status", sa.String, nullable=False),
         sa.Column("created_at", TIMESTAMP(timezone=True), nullable=False),
     )
