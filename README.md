@@ -1,7 +1,22 @@
 # Field Service Management
 
 A platform for service agencies (think elevator or appliance maintenance) that runs the whole job
-lifecycle from a single source of truth. The full vision spans five pieces:
+lifecycle from a single source of truth. It is built **slice by slice**, each module getting its own
+design → plan → implementation cycle.
+
+## Status
+
+**Slice 1 — Scheduling — is feature-complete:** it delivers the calendar-and-booking core of the
+vision below. Google OIDC sign-in with roles, one-click technician calendar connect, customer
+self-booking with a database-enforced no-double-booking guarantee, two-way Google Calendar sync
+(outbound projection + inbound reconcile), central holiday exclusions, per-technician working hours
+and time off, and in-app + email/.ics notifications (`.ics` = a calendar-invite attachment the
+recipient can add to their own calendar). Google, email, and holiday integrations are driven by
+environment variables and degrade gracefully when unset.
+
+## The full vision
+
+Five pieces, of which Slice 1 above is the scheduling core:
 
 - **Back office** — customers, sites, and contacts; an asset catalog with per-device fault history; a
   scheduling dashboard tracking every call open → assigned → en route → in progress → done.
@@ -16,17 +31,7 @@ lifecycle from a single source of truth. The full vision spans five pieces:
   GPS verification, mandatory photo evidence, full audit trail, and parts/inventory control.
 
 **Full product scope** is captured in the [vision document](https://docs.google.com/document/d/1bX7L_CL6hBIfpJVCkpRFYk6hIZ7OxD7dSugnPWCKLsY/edit),
-  from which the five pieces above are summarized.
-
-The platform is built **slice by slice**, each module getting its own design → plan → implementation cycle.
-
-**Slice 1 — Scheduling** — is **feature-complete:** it delivers the calendar-and-booking core of that
-vision. Google OIDC sign-in with roles, one-click technician calendar connect, customer self-booking
-with a database-enforced no-double-booking guarantee, two-way Google Calendar sync (outbound
-projection + inbound reconcile), central holiday exclusions, per-technician working hours and time
-off, and in-app + email/.ics notifications (`.ics` = a calendar-invite attachment the recipient can
-add to their own calendar). Google, email, and holiday integrations are driven by environment
-variables and degrade gracefully when unset.
+from which the five pieces above are summarized.
 
 ## Overview
 
@@ -155,8 +160,3 @@ frontend gates (typecheck, lint, build):
 
 Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker must be running. See
 [docs/testing.md](docs/testing.md) for the test taxonomy.
-
-## Documentation
-
-- [Testing](docs/testing.md) — the test taxonomy (unit, integration, API, contract, architecture)
-  and how to run it.
