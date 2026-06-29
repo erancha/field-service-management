@@ -4,6 +4,8 @@ A platform for service agencies (think elevator or appliance maintenance) that r
 lifecycle from a single source of truth. It is built **slice by slice**, each module getting its own
 design → plan → implementation cycle.
 
+**Contents:** [Status](#status) · [Vision](#the-full-vision) · [Overview](#overview) · [Architecture](#architecture) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Security](#security--authentication) · [Communication](#communication-rest--sse) · [Database schema](#database-schema)
+
 ## Status
 
 **Slice 1 — Scheduling — is feature-complete:** it delivers the calendar-and-booking core of the
@@ -12,7 +14,8 @@ self-booking with a database-enforced no-double-booking guarantee, two-way Googl
 (outbound projection + inbound reconcile), central holiday exclusions, per-technician working hours
 and time off, and in-app + email/.ics notifications (`.ics` = a calendar-invite attachment the
 recipient can add to their own calendar). Google, email, and holiday integrations are driven by
-environment variables and degrade gracefully when unset.
+environment variables and degrade gracefully when unset. Google is the only sign-in path, and every
+booking and scheduling action needs a signed-in session.
 
 ## The full vision
 
@@ -63,7 +66,7 @@ import-linter — a forbidden import fails the build, not just code review.
 Prerequisites: **Python**, **Docker** (for PostgreSQL), and **Node.js + npm** (to build the React
 frontend, which the API serves at `/`).
 
-### 1. Configure (`backend/.env`)
+### 1. Configuration (`backend/.env`)
 
 ```bash
 ./scripts/init-env.sh   # writes backend/.env from backend/.env.example, generating FSM_TOKEN_KEY + SESSION_SECRET
@@ -79,7 +82,7 @@ Each key — what it does, when it is required, and how to obtain it — is docu
 [`backend/.env.example`](backend/.env.example), which also contains the Google Cloud Console setup
 steps. Refer to it there rather than duplicating the list here.
 
-### 2. Run it
+### 2. Runtime
 
 One launcher, **one** `backend/.env`, two run modes that reach the roles at the **same URLs**, each
 completing Google sign-in. Docker is the default (a closer-to-production stack); `--host` runs the
@@ -116,26 +119,6 @@ directly.
 | Customer | http://localhost:8002 |
 | Back office | http://localhost:8003 |
 
-### Google sign-in
-
-Google is the only sign-in path, and every booking and scheduling action needs a signed-in session.
-Google completes a sign-in only on a host whose callback URL is registered on the OAuth client, and
-it accepts a loopback redirect URI only as bare `localhost`/`127.0.0.1` with a port — not a
-`*.localhost` subdomain. So each role signs in on its own `localhost` port, and you register these
-four callbacks (see `backend/.env.example`):
-
-```
-http://localhost:8001/auth/google/callback
-http://localhost:8002/auth/google/callback
-http://localhost:8003/auth/google/callback
-http://localhost:8001/calendar/connect/callback     ← technician calendar connect
-```
-
-The app derives the callback from the host each request arrives on, so the role process that started
-the sign-in also completes it: sign in at `http://localhost:8003` and you land there as admin. This
-works identically in either mode. A production deployment fronts the roles by hostname over `https`
-and registers those `https://…` callbacks instead.
-
 ## Scripts
 
 All live in `scripts/`; run with `-h`/`--help` for full usage.
@@ -160,3 +143,26 @@ frontend gates (typecheck, lint, build):
 
 Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker must be running. See
 [docs/testing.md](docs/testing.md) for the test taxonomy.
+
+## Security & authentication
+
+Google OIDC is the only sign-in path, and every booking and scheduling route requires a signed-in
+session; the session is a signed cookie and a role is assigned from the role of the process that
+completes the sign-in (the per-role edge), never from client input. The full sign-in sequence between
+the frontend, backend, and Google — with the CSRF, PKCE, and token-encryption properties it relies on,
+plus what scaling a role to several replicas requires — is in [docs/security.md](docs/security.md).
+Per-key configuration lives inline in [`backend/.env.example`](backend/.env.example).
+
+## Communication (REST & SSE)
+
+The frontend drives the system with REST calls and receives live updates over a single Server-Sent
+Events stream, fanned out across the per-role processes by Redis pub/sub.
+[docs/communication.md](docs/communication.md) traces the most prominent live interaction — technician
+onboarding and back-office approval — with sequence diagrams for when the technician's dashboard is
+open and when it is not.
+
+## Database schema
+
+PostgreSQL is the source of truth; Google Calendar is a downstream projection. The entity-relationship
+diagram and the integrity guarantees it encodes (database-enforced no-double-booking, the transactional
+calendar outbox, the append-only appointment audit) are in [docs/data.md](docs/data.md).
