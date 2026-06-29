@@ -260,6 +260,20 @@ body {
   font-weight: 500;
 }
 
+.slot-picker__tech {
+  display: block;
+  font-weight: 600;
+}
+
+.slot-picker__time {
+  display: block;
+  color: var(--color-text-muted);
+}
+
+.slot-picker__slot--selected .slot-picker__time {
+  color: inherit;
+}
+
 .slot-picker__count {
   font-size: 0.875rem;
   color: var(--color-text-muted);

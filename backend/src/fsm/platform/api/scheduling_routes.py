@@ -12,7 +12,7 @@ Domain error mapping:
 from __future__ import annotations
 
 import zoneinfo
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -293,24 +293,37 @@ def get_availability(
     )
 
 
+def _resolve_technician_names(session, technician_ids: set[UUID]) -> dict[UUID, str]:
+    """Map technician ids to their display names.
+
+    A pooled technician always has a CONNECTED calendar, which is only ever created for a
+    signed-in user whose id is this technician_id, so the identity row is guaranteed present.
+    """
+    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+
+    repo = SqlAlchemyUserRepository(session)
+    return {tech_id: repo.get(tech_id).name for tech_id in technician_ids}
+
+
 @router.get("/availability/pool", response_model=PooledAvailabilityResponse)
 def get_availability_pool(
     request: Request,
     date_from: Annotated[date, Query()],
     date_to: Annotated[date, Query()],
     slot_minutes: Annotated[int, Query(ge=1)] = 60,
+    limit: Annotated[int | None, Query(ge=1)] = None,
 ) -> PooledAvailabilityResponse:
     """Return pooled availability slots across all connected technicians (first-available).
 
     Single pool with no skills routing. The candidate pool is the set of technicians who
     have completed calendar onboarding (status=CONNECTED); technicians without a calendar
-    connection are not offered. Each slot is tagged with its technician_id so the
-    customer's choice implicitly selects the earliest-available technician. Results are
-    sorted by start then technician_id.
+    connection are not offered. Each slot is tagged with its technician_id and display name
+    so the customer's choice implicitly selects the earliest-available technician. Results
+    are sorted by start then technician_id; limit caps them to the earliest N when given.
     """
     from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 
-    pooled: list[PooledSlotResponse] = []
+    ranked: list[tuple[UUID, datetime, datetime]] = []
 
     with _build_uow(request) as uow:
         # Only technicians who have connected a real calendar are offered in the pool.
@@ -330,16 +343,25 @@ def get_availability_pool(
                 continue
 
             for slot in slots:
-                pooled.append(
-                    PooledSlotResponse(
-                        technician_id=conn.technician_id,
-                        start=slot.start,
-                        end=slot.end,
-                    )
-                )
+                ranked.append((conn.technician_id, slot.start, slot.end))
 
-    pooled.sort(key=lambda s: (s.start, str(s.technician_id)))
-    return PooledAvailabilityResponse(slots=pooled)
+        ranked.sort(key=lambda r: (r[1], str(r[0])))
+        if limit is not None:
+            ranked = ranked[:limit]
+
+        names = _resolve_technician_names(uow._session, {tech_id for tech_id, _, _ in ranked})
+
+    return PooledAvailabilityResponse(
+        slots=[
+            PooledSlotResponse(
+                technician_id=tech_id,
+                technician_name=names[tech_id],
+                start=start,
+                end=end,
+            )
+            for tech_id, start, end in ranked
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------

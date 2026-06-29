@@ -66,13 +66,31 @@ _DATE_MONDAY = date(2025, 3, 3)
 
 
 def _store_connected_technician(
-    pg_session_factory, tech_id: uuid.UUID, token_key: str
+    pg_session_factory, tech_id: uuid.UUID, token_key: str, name: str = "Pool Technician"
 ) -> str:
-    """Insert a CONNECTED CalendarConnection; return the calendar_id used."""
+    """Insert the technician's app_user and a CONNECTED CalendarConnection; return calendar_id.
+
+    A connected technician is always a signed-in user whose id is the connection's
+    technician_id, so both rows are created together to mirror that invariant.
+    """
+    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+    from fsm.identity.domain.role_status import RoleStatus
+    from fsm.identity.domain.user import User
+
     encrypted = FernetTokenCipher(token_key).encrypt("refresh-token-test")
     cal_id = f"cal-{tech_id}"
     with pg_session_factory() as session:
         with session.begin():
+            SqlAlchemyUserRepository(session).add(
+                User(
+                    id=tech_id,
+                    google_sub=f"sub-{tech_id}",
+                    email=f"{tech_id}@example.com",
+                    name=name,
+                    role=Role.TECHNICIAN,
+                    role_status=RoleStatus.APPROVED,
+                )
+            )
             repo = SqlAlchemyCalendarConnectionRepository(session)
             conn = CalendarConnection(
                 technician_id=tech_id,
@@ -321,3 +339,69 @@ def test_pool_truly_empty_no_connections(authenticate):
         assert resp.json() == {"slots": []}
 
         engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# 5. The optional limit caps the pool to the earliest N slots
+# ---------------------------------------------------------------------------
+
+
+def test_pool_caps_results_to_limit(pg_session_factory, authenticate):
+    """With limit=N the pool returns only the N earliest slots, still start-sorted."""
+    token_key = Fernet.generate_key().decode()
+    tech_a = uuid.uuid4()
+    tech_b = uuid.uuid4()
+    _store_connected_technician(pg_session_factory, tech_a, token_key)
+    _store_connected_technician(pg_session_factory, tech_b, token_key)
+
+    settings = _unconfigured_settings(os.environ["DATABASE_URL"])
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
+    client = TestClient(app)
+
+    resp = client.get(
+        "/api/availability/pool",
+        params={
+            "date_from": _DATE_SUNDAY.isoformat(),
+            "date_to": _DATE_SUNDAY.isoformat(),
+            "slot_minutes": 60,
+            "limit": 5,
+        },
+    )
+
+    assert resp.status_code == 200
+    slots = resp.json()["slots"]
+    assert len(slots) == 5
+    starts = [s["start"] for s in slots]
+    assert starts == sorted(starts)
+
+
+# ---------------------------------------------------------------------------
+# 6. Each slot carries the technician's display name
+# ---------------------------------------------------------------------------
+
+
+def test_pool_slots_include_technician_name(pg_session_factory, authenticate):
+    """A connected technician with an app_user row has their name on every pooled slot."""
+    token_key = Fernet.generate_key().decode()
+    tech = uuid.uuid4()
+    _store_connected_technician(pg_session_factory, tech, token_key, name="Dana Cohen")
+
+    settings = _unconfigured_settings(os.environ["DATABASE_URL"])
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
+    client = TestClient(app)
+
+    resp = client.get(
+        "/api/availability/pool",
+        params={
+            "date_from": _DATE_SUNDAY.isoformat(),
+            "date_to": _DATE_SUNDAY.isoformat(),
+            "slot_minutes": 60,
+        },
+    )
+
+    assert resp.status_code == 200
+    own = [s for s in resp.json()["slots"] if s["technician_id"] == str(tech)]
+    assert own, "expected the seeded technician to contribute slots"
+    assert all(s["technician_name"] == "Dana Cohen" for s in own)

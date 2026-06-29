@@ -11,8 +11,13 @@ export interface TimeSlot {
   end: string
 }
 
-export interface AvailabilityResponse {
-  slots: TimeSlot[]
+export interface PooledSlot extends TimeSlot {
+  technician_id: string
+  technician_name: string
+}
+
+export interface PooledAvailabilityResponse {
+  slots: PooledSlot[]
 }
 
 export interface Appointment {

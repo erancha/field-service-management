@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import type { ServiceCall, TimeSlot } from '../../api/types.ts'
-import { useAvailability } from '../../hooks/useAvailability.ts'
+import { useEffect, useState } from 'react'
+import type { ServiceCall, PooledSlot } from '../../api/types.ts'
+import { usePooledAvailability } from '../../hooks/usePooledAvailability.ts'
 import { useAppointments } from '../../hooks/useAppointments.ts'
-import { SlotPicker } from '../../components/SlotPicker.tsx'
+import { PooledSlotPicker } from '../../components/PooledSlotPicker.tsx'
 import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 import { AppointmentCard } from '../../components/AppointmentCard.tsx'
@@ -11,40 +11,49 @@ interface BookFlowProps {
   serviceCall: ServiceCall
 }
 
-type Step = 'form' | 'slots' | 'booked'
+// The customer is offered the soonest slots across the whole technician pool, so the
+// only choices are which of those slots to take — no technician id or date range to enter.
+const SLOT_COUNT = 5
+const SEARCH_DAYS = 7
+
+function isoDate(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
 
 export function BookFlow({ serviceCall }: BookFlowProps) {
-  const [step, setStep] = useState<Step>('form')
-  const [technicianId, setTechnicianId] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
+  const [booked, setBooked] = useState(false)
+  const [selectedSlot, setSelectedSlot] = useState<PooledSlot | null>(null)
 
-  const availability = useAvailability()
+  const availability = usePooledAvailability()
   const appts = useAppointments()
 
-  async function handleFetchSlots(e: React.FormEvent) {
-    e.preventDefault()
-    await availability.fetch({
-      technician_id: technicianId,
-      date_from: dateFrom,
-      date_to: dateTo,
+  useEffect(() => {
+    const from = new Date()
+    const to = new Date()
+    to.setDate(to.getDate() + (SEARCH_DAYS - 1))
+    void availability.fetch({
+      date_from: isoDate(from),
+      date_to: isoDate(to),
+      limit: SLOT_COUNT,
     })
-    setStep('slots')
-  }
+    // Runs once on mount; availability.fetch resets its own state on each call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleBook() {
     if (!selectedSlot) return
     await appts.book({
       service_call_id: serviceCall.id,
-      technician_id: technicianId,
+      technician_id: selectedSlot.technician_id,
       start: selectedSlot.start,
       end: selectedSlot.end,
     })
-    if (!appts.error) setStep('booked')
+    if (!appts.error) setBooked(true)
   }
 
-  if (step === 'booked' && appts.appointment) {
+  if (booked && appts.appointment) {
     return (
       <div className="book-flow">
         <h3>Appointment Booked</h3>
@@ -60,57 +69,23 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
     )
   }
 
-  if (step === 'slots') {
-    return (
-      <div className="book-flow">
-        <h3>Choose a Slot</h3>
-        <ErrorBanner message={availability.error} onDismiss={() => availability.reset()} />
-        <ErrorBanner message={appts.error} onDismiss={appts.clearError} />
-        {availability.loading && <p>Loading slots…</p>}
-        <SlotPicker
-          slots={availability.slots}
-          selected={selectedSlot}
-          onSelect={setSelectedSlot}
-        />
-        <div className="book-flow__actions">
-          <Button variant="secondary" onClick={() => { setStep('form'); availability.reset() }}>
-            Back
-          </Button>
-          <Button onClick={handleBook} disabled={!selectedSlot} loading={appts.loading}>
-            Book Selected Slot
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="book-flow">
-      <h3>Find Availability</h3>
+      <h3>Next Available Slots</h3>
       <p className="book-flow__sc">Service call: <strong>{serviceCall.description}</strong></p>
-      <form onSubmit={handleFetchSlots} className="form">
-        <label>
-          Technician UUID:
-          <input
-            type="text"
-            value={technicianId}
-            onChange={(e) => setTechnicianId(e.target.value)}
-            required
-            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          />
-        </label>
-        <label>
-          From:
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} required />
-        </label>
-        <label>
-          To:
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} required />
-        </label>
-        <Button type="submit" loading={availability.loading} disabled={!technicianId.trim() || !dateFrom || !dateTo}>
-          Check Availability
+      <ErrorBanner message={availability.error} onDismiss={() => availability.reset()} />
+      <ErrorBanner message={appts.error} onDismiss={appts.clearError} />
+      {availability.loading && <p>Finding the next available slots…</p>}
+      <PooledSlotPicker
+        slots={availability.slots}
+        selected={selectedSlot}
+        onSelect={setSelectedSlot}
+      />
+      <div className="book-flow__actions">
+        <Button onClick={handleBook} disabled={!selectedSlot} loading={appts.loading}>
+          Book Selected Slot
         </Button>
-      </form>
+      </div>
     </div>
   )
 }

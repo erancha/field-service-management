@@ -1,7 +1,7 @@
 import type {
   ServiceCall,
   CreateServiceCallRequest,
-  AvailabilityResponse,
+  PooledAvailabilityResponse,
   Appointment,
   CreateAppointmentRequest,
   RescheduleRequest,
@@ -15,29 +15,27 @@ export async function createServiceCall(
   return apiPost<ServiceCall>('/api/service-calls', data)
 }
 
-export interface AvailabilityParams {
-  technician_id: string
+export interface PooledAvailabilityParams {
   date_from: string
   date_to: string
+  limit?: number
   slot_minutes?: number
-  tz?: string
 }
 
-export async function fetchAvailability(
-  params: AvailabilityParams,
-): Promise<AvailabilityResponse> {
+export async function fetchPooledAvailability(
+  params: PooledAvailabilityParams,
+): Promise<PooledAvailabilityResponse> {
   const query: Record<string, string> = {
-    technician_id: params.technician_id,
     date_from: params.date_from,
     date_to: params.date_to,
+  }
+  if (params.limit !== undefined) {
+    query.limit = String(params.limit)
   }
   if (params.slot_minutes !== undefined) {
     query.slot_minutes = String(params.slot_minutes)
   }
-  if (params.tz) {
-    query.tz = params.tz
-  }
-  return apiGet<AvailabilityResponse>('/api/availability', query)
+  return apiGet<PooledAvailabilityResponse>('/api/availability/pool', query)
 }
 
 export async function createAppointment(

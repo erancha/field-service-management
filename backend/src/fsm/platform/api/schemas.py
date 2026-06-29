@@ -46,6 +46,7 @@ class AvailabilityResponse(BaseModel):
 
 class PooledSlotResponse(BaseModel):
     technician_id: UUID
+    technician_name: str
     start: datetime
     end: datetime
 
