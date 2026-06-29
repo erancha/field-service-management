@@ -1,0 +1,27 @@
+# Normalize all text files to LF in the repo so files edited by Windows tooling
+# (e.g. VSCode) stay usable under WSL/Linux, where CRLF breaks shell shebangs.
+* text=auto eol=lf
+
+# Files that must keep LF regardless of platform autodetection.
+*.sh text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.conf text eol=lf
+*.sql text eol=lf
+*.mako text eol=lf
+*.md text eol=lf
+Dockerfile text eol=lf
+.gitignore text eol=lf
+.dockerignore text eol=lf
+
+# Binary files: never normalize or diff as text.
+*.png binary
+*.svg binary
