@@ -13,9 +13,10 @@ vision below. Google OIDC sign-in with roles, one-click technician calendar conn
 self-booking with a database-enforced no-double-booking guarantee, two-way Google Calendar sync
 (outbound projection + inbound reconcile), central holiday exclusions, per-technician working hours
 and time off, and in-app + email/.ics notifications (`.ics` = a calendar-invite attachment the
-recipient can add to their own calendar). Google, email, and holiday integrations are driven by
-environment variables and degrade gracefully when unset. Google is the only sign-in path, and every
-booking and scheduling action needs a signed-in session.
+recipient can add to their own calendar). Google is required configuration — it is the only sign-in
+path, so its environment variables must be set and every booking and scheduling action needs a
+signed-in session. Email and holiday integrations are driven by environment variables and degrade
+gracefully when unset.
 
 ## The full vision
 
@@ -39,8 +40,7 @@ from which the five pieces above are summarized.
 ## Overview
 
 - **Backend** (`backend/`): Python 3.12+, FastAPI, SQLAlchemy 2.x + PostgreSQL, Alembic.
-- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app for sign-in, opening a service
-  call, picking a slot, and editing appointments; served by the API at `/` when built.
+- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app.
 - **Source of truth** is the Postgres database; external systems (Google Calendar) are downstream
   projections reached through ports, never imported by the core.
 
@@ -63,8 +63,7 @@ import-linter — a forbidden import fails the build, not just code review.
 
 ## Getting started
 
-Prerequisites: **Python**, **Docker** (for PostgreSQL), and **Node.js + npm** (to build the React
-frontend, which the API serves at `/`).
+Prerequisites: **Python**, **Docker**, and **Node.js + npm**.
 
 ### 1. Configuration (`backend/.env`)
 
@@ -164,5 +163,5 @@ open and when it is not.
 ## Database schema
 
 PostgreSQL is the source of truth; Google Calendar is a downstream projection. The entity-relationship
-diagram and the integrity guarantees it encodes (database-enforced no-double-booking, the transactional
+diagram and the integrity guarantees (database-enforced no-double-booking, the transactional
 calendar outbox, the append-only appointment audit) are in [docs/data.md](docs/data.md).
