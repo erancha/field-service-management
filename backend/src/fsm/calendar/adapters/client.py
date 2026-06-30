@@ -18,10 +18,6 @@ _log = logging.getLogger(__name__)
 class GoogleCalendarClient(Protocol):
     """Narrow outbound interface to a Google Calendar API backend."""
 
-    def insert_event(self, calendar_id: str, body: dict) -> dict:
-        """Create a new event on the calendar and return the created resource dict."""
-        ...
-
     def import_event(self, calendar_id: str, body: dict) -> dict:
         """Upsert an event by iCalUID and return the resource dict.
 
@@ -75,9 +71,6 @@ class GoogleApiCalendarClient:
 
     def __init__(self, service: Any) -> None:
         self._service = service
-
-    def insert_event(self, calendar_id: str, body: dict) -> dict:
-        return self._service.events().insert(calendarId=calendar_id, body=body).execute()
 
     def import_event(self, calendar_id: str, body: dict) -> dict:
         return self._service.events().import_(calendarId=calendar_id, body=body).execute()

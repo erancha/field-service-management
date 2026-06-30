@@ -32,14 +32,9 @@ class FakeGoogleCalendarClient:
     def __init__(self, busy: list[tuple[datetime, datetime]] | None = None) -> None:
         self._busy = busy or []
         self._by_ical_uid: dict[str, str] = {}
-        self.inserted: list[tuple[str, dict]] = []
         self.imported: list[tuple[str, dict]] = []
         self.updated: list[tuple[str, str, dict]] = []
         self.deleted: list[tuple[str, str]] = []
-
-    def insert_event(self, calendar_id: str, body: dict) -> dict:
-        self.inserted.append((calendar_id, body))
-        return {"id": "evt-123"}
 
     def import_event(self, calendar_id: str, body: dict) -> dict:
         ical_uid = body.get("iCalUID", "")

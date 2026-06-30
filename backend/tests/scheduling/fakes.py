@@ -89,25 +89,16 @@ class FakeGoogleCalendarClient:
 
     import_event upserts by iCalUID so retried CREATEs resolve to the same event id,
     matching the idempotency guarantee of the real events.import_ API call.
-    insert_event and update_event use sequential ids (evt-1, evt-2, ...).
+    update_event reuses the supplied event id.
     """
 
     def __init__(self) -> None:
         self._counter: int = 0
         self._events: dict[str, dict] = {}
         self._by_ical_uid: dict[str, str] = {}
-        self.inserted: list[dict] = []
         self.updated: list[tuple[str, dict]] = []
         self.deleted: list[str] = []
         self.imported: list[dict] = []
-
-    def insert_event(self, calendar_id: str, body: dict) -> dict:
-        self._counter += 1
-        event_id = f"evt-{self._counter}"
-        stored = dict(body, id=event_id)
-        self._events[event_id] = stored
-        self.inserted.append(stored)
-        return stored
 
     def import_event(self, calendar_id: str, body: dict) -> dict:
         """Upsert by iCalUID — a second call with the same iCalUID returns the same id."""

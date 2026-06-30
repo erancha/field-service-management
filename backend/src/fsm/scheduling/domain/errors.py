@@ -19,12 +19,3 @@ class NotFoundError(SchedulingError):
 
 class SlotUnavailable(SchedulingError):
     """Raised when a requested time slot overlaps an existing active appointment."""
-
-
-class MissingCalendarEvent(SchedulingError):
-    """Raised when an appointment has no external_event_id but a calendar operation requires one.
-
-    Precondition: every appointment that has left the booking flow must carry a
-    non-None external_event_id. This error signals a broken invariant — typically
-    an appointment that was persisted without a completed calendar.create_event call.
-    """

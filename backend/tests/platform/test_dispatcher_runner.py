@@ -210,9 +210,6 @@ class TestAuthDisconnectOnDispatchError:
                 def import_event(self, calendar_id, body):
                     raise RefreshError("invalid_grant: Token has been revoked.")
 
-                def insert_event(self, *a, **kw):
-                    raise RefreshError("invalid_grant: Token has been revoked.")
-
                 def update_event(self, *a, **kw):
                     pass
 
