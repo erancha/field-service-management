@@ -53,15 +53,37 @@ def make_auth_disconnect_handler(
     return _handler
 
 
+def build_customer_name_resolver(session_factory) -> Callable[[UUID], str | None]:
+    """Return a callable resolving a customer user id to their name, or None on any failure.
+
+    Mirrors the notifications recipient_email seam so the scheduling dispatcher stays free of a
+    direct identity-context import; the identity lookup lives here in the composition root.
+    """
+
+    def _resolve(customer_id: UUID) -> str | None:
+        from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+
+        try:
+            with session_factory() as session:
+                user = SqlAlchemyUserRepository(session).get(customer_id)
+                return user.name
+        except Exception:
+            return None
+
+    return _resolve
+
+
 def build_dispatcher(session_factory, settings) -> CalendarProjectionDispatcher:
     """Compose a CalendarProjectionDispatcher wired to the real DB and calendar resolver."""
     uow_factory = lambda: SqlAlchemyUnitOfWork(session_factory)
     calendar_resolver = build_calendar_resolver(session_factory, settings)
     on_calendar_error = make_auth_disconnect_handler(session_factory, settings)
+    customer_name_resolver = build_customer_name_resolver(session_factory)
     return CalendarProjectionDispatcher(
         uow_factory=uow_factory,
         calendar_resolver=calendar_resolver,
         on_calendar_error=on_calendar_error,
+        customer_name_resolver=customer_name_resolver,
     )
 
 
