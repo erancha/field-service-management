@@ -3,7 +3,7 @@
 PostgreSQL is the system's source of truth; Google Calendar is a downstream projection, never a
 store of record. The schema is owned by the bounded contexts<sup>(1)</sup> — `identity`, `scheduling`,
 `calendar`, and `notifications` — and lives in each context's `adapters/orm.py`, with Alembic<sup>(2)</sup>
-migrations under `backend/migrations/versions`.
+migrations under `backend/alembic/versions`.
 
 There is one identity table, `app_user`: technician, customer, and administrator are roles on that
 row, not separate entities. Cross-context references (a technician, a customer) are plain `UUID`<sup>(3)</sup>
@@ -143,7 +143,7 @@ identifier from the IANA database (for example `Europe/Berlin`).
 | Ref | Term | Meaning |
 | --- | --- | --- |
 | (1) | bounded context | A self-contained slice of the domain (`identity`, `scheduling`, `calendar`, `notifications`) that owns its own tables and is migrated and reasoned about independently of the others. |
-| (2) | Alembic | The SQLAlchemy migration tool; each context's schema changes are versioned as migration scripts under `backend/migrations/versions`. |
+| (2) | Alembic | The SQLAlchemy migration tool; each context's schema changes are versioned as migration scripts under `backend/alembic/versions`. |
 | (3) | UUID — Universally Unique Identifier | A 128-bit identifier used as every table's key, so rows can be referenced across contexts without a shared database sequence. |
 | (4) | GiST exclusion constraint | A PostgreSQL constraint backed by a Generalized Search Tree index that rejects rows whose ranges overlap; here it forbids two non-cancelled appointments for one technician from overlapping in time. |
 | (5) | calendar outbox | A table that records pending Google Calendar operations in the same transaction as the appointment change (the transactional-outbox pattern), drained later by a background dispatcher so a calendar outage never loses a booking. |

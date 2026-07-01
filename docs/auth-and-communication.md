@@ -197,27 +197,27 @@ replication never changes which role a sign-in grants.
 
 For example, one back office, two technician, and five customer processes is how
 [`docker-compose.yml`](../docker-compose.yml) is wired — the role is the only difference between the
-backend services, and only the proxy holds a port (trimmed here to the essentials):
+backend services, and only nginx holds a port (trimmed here to the essentials):
 
 ```yaml
-# Everything but FSM_ROLE is shared, so replicas of a role are interchangeable.
+# One built image; role services differ only by FSM_ROLE, so a role's replicas are interchangeable.
 x-fsm: &fsm
-  image: fsm-backend:latest
+  image: fsm-backend:local
+  env_file: [./backend/.env]          # shared SESSION_SECRET → any replica accepts any session cookie
   environment: &env
-    SESSION_SECRET: ${SESSION_SECRET}   # same across all → any replica accepts any session cookie
-    REDIS_URL: redis://redis:6379/0     # carries SSE events across replicas
+    REDIS_URL: redis://redis:6379/0   # carries SSE events across replicas
 
 services:
-  proxy:                                # the only port published to the host
-    image: nginx
-    ports: ["443:443"]
+  nginx:                                # the only service that publishes host ports
+    image: fsm-nginx:local
+    ports: ["8001:8001", "8002:8002", "8003:8003"]
 
   backoffice: { <<: *fsm, environment: { <<: *env, FSM_ROLE: backoffice }, deploy: { replicas: 1 } }
   technician: { <<: *fsm, environment: { <<: *env, FSM_ROLE: technician }, deploy: { replicas: 2 } }
   customer:   { <<: *fsm, environment: { <<: *env, FSM_ROLE: customer   }, deploy: { replicas: 5 } }
 ```
 
-The role services publish no host port, so the proxy reaches them on the Docker network instead. It
+The role services publish no host port, so nginx reaches them on the Docker network instead. It
 does not discover them — the mapping is declared: each role is an `upstream` naming the Compose service
 and the container port its uvicorn listens on (see [`nginx/default.conf`](../nginx/default.conf)):
 
@@ -235,7 +235,7 @@ namespace, not to the machine. Each container has its own namespace and IP, so t
 `8001` on `172.18.0.5:8001` and `172.18.0.6:8001` — distinct addresses, like two separate servers both
 using port 8001. A bind conflict needs the *same* port on the *same* namespace, which is why running the
 roles as bare processes on one host instead requires distinct ports (`8001/8002/8003`), and why no role
-service publishes a host port — only `proxy` does.
+service publishes a host port — only `nginx` does.
 
 Two infrastructure conditions make a multi-replica role safe:
 
