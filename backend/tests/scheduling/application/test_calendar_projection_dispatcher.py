@@ -8,6 +8,8 @@ import pytest
 
 from fsm.scheduling.application.calendar_projection_dispatcher import CalendarProjectionDispatcher
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment_context import AppointmentContext
+from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.outbox import MAX_ATTEMPTS, OutboxOperation
 from tests.scheduling.fakes import (
@@ -15,6 +17,7 @@ from tests.scheduling.fakes import (
     FakeUnitOfWork,
     InMemoryAppointmentRepository,
     InMemoryOutboxRepository,
+    InMemoryServiceCallRepository,
 )
 
 _TZ = timezone.utc
@@ -22,6 +25,8 @@ _NOW = datetime(2024, 6, 10, 8, 0, tzinfo=_TZ)
 _TECH_ID = UUID("cccccccc-0000-0000-0000-000000000001")
 _CUST_ID = UUID("dddddddd-0000-0000-0000-000000000001")
 _SC_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
+_CUSTOMER_NAME = "Ada Lovelace"
+_PROBLEM = "No hot water"
 
 
 def _make_appointment(appt_id: UUID, external_event_id: str | None = None) -> Appointment:
@@ -58,11 +63,27 @@ def calendar() -> FakeCalendarPort:
 
 
 @pytest.fixture
+def service_calls() -> InMemoryServiceCallRepository:
+    repo = InMemoryServiceCallRepository()
+    repo.add(
+        ServiceCall(
+            id=_SC_ID,
+            customer_id=_CUST_ID,
+            description=_PROBLEM,
+            status=ServiceCallStatus.SCHEDULED,
+            created_at=_NOW,
+        )
+    )
+    return repo
+
+
+@pytest.fixture
 def uow(
     outbox: InMemoryOutboxRepository,
     appt_repo: InMemoryAppointmentRepository,
+    service_calls: InMemoryServiceCallRepository,
 ) -> FakeUnitOfWork:
-    return FakeUnitOfWork(outbox=outbox, appointments=appt_repo)
+    return FakeUnitOfWork(outbox=outbox, appointments=appt_repo, service_calls=service_calls)
 
 
 @pytest.fixture
@@ -70,7 +91,11 @@ def dispatcher(
     uow: FakeUnitOfWork,
     calendar: FakeCalendarPort,
 ) -> CalendarProjectionDispatcher:
-    return CalendarProjectionDispatcher(uow_factory=lambda: uow, calendar=calendar)
+    return CalendarProjectionDispatcher(
+        uow_factory=lambda: uow,
+        calendar=calendar,
+        customer_name_resolver=lambda _customer_id: _CUSTOMER_NAME,
+    )
 
 
 class TestCreateEntry:
@@ -550,7 +575,17 @@ class TestPerTechnicianRouting:
     def test_each_technician_receives_only_their_own_event(self):
         appt_repo = InMemoryAppointmentRepository()
         outbox = InMemoryOutboxRepository()
-        uow = FakeUnitOfWork(outbox=outbox, appointments=appt_repo)
+        sc_repo = InMemoryServiceCallRepository()
+        sc_repo.add(
+            ServiceCall(
+                id=_SC_ID,
+                customer_id=_CUST_ID,
+                description=_PROBLEM,
+                status=ServiceCallStatus.SCHEDULED,
+                created_at=_NOW,
+            )
+        )
+        uow = FakeUnitOfWork(outbox=outbox, appointments=appt_repo, service_calls=sc_repo)
 
         cal_a = FakeCalendarPort()
         cal_b = FakeCalendarPort()
@@ -592,3 +627,22 @@ class TestPerTechnicianRouting:
                 calendar=FakeCalendarPort(),
                 calendar_resolver=lambda _: FakeCalendarPort(),
             )
+
+
+class TestContextEnrichment:
+    def test_create_passes_customer_name_and_problem_to_calendar(
+        self,
+        dispatcher: CalendarProjectionDispatcher,
+        appt_repo: InMemoryAppointmentRepository,
+        outbox: InMemoryOutboxRepository,
+        calendar: FakeCalendarPort,
+    ) -> None:
+        appt_id = UUID("aaaaaaaa-0000-0000-0000-000000000010")
+        appt_repo.add(_make_appointment(appt_id))
+        outbox.enqueue(OutboxOperation.CREATE, appt_id)
+
+        dispatcher.run_once()
+
+        [context] = calendar.created_contexts.values()
+        assert context.customer_name == _CUSTOMER_NAME
+        assert context.problem_description == _PROBLEM

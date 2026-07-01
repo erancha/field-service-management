@@ -19,7 +19,7 @@ from fsm.platform.config import Settings
 from fsm.platform.db import create_engine_from_settings, session_factory
 from fsm.platform.dispatcher_runner import build_dispatcher, make_auth_disconnect_handler, run_forever
 from fsm.calendar.adapters.orm import CalendarConnectionRow
-from fsm.scheduling.adapters.orm import AppointmentRow, OutboxRow
+from fsm.scheduling.adapters.orm import AppointmentRow, OutboxRow, ServiceCallRow
 
 
 # ---------------------------------------------------------------------------
@@ -80,15 +80,23 @@ _NOW = datetime(2024, 6, 10, 8, 0, tzinfo=_TZ)
 
 
 def _seed_appointment_and_outbox(session, *, tech_id=None) -> tuple[uuid.UUID, uuid.UUID]:
-    """Insert a minimal AppointmentRow and a PENDING CREATE outbox entry; return (appt_id, outbox_id)."""
+    """Insert a minimal ServiceCallRow, AppointmentRow, and a PENDING CREATE outbox entry; return (appt_id, outbox_id)."""
     appt_id = uuid.uuid4()
     outbox_id = uuid.uuid4()
+    sc_id = uuid.uuid4()
     if tech_id is None:
         tech_id = uuid.uuid4()
 
+    session.add(ServiceCallRow(
+        id=sc_id,
+        customer_id=uuid.uuid4(),
+        description="Test problem",
+        status="OPEN",
+        created_at=_NOW,
+    ))
     session.add(AppointmentRow(
         id=appt_id,
-        service_call_id=uuid.uuid4(),
+        service_call_id=sc_id,
         technician_id=tech_id,
         customer_id=uuid.uuid4(),
         start_at=datetime(2024, 6, 10, 9, 0, tzinfo=_TZ),

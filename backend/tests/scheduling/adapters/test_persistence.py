@@ -534,8 +534,16 @@ class TestOutboxDispatcherIntegration:
         and marks the outbox entry PROCESSED.
         """
         appt = _make_appointment()
+        sc = ServiceCall(
+            id=appt.service_call_id,
+            customer_id=appt.customer_id,
+            description="Fix boiler",
+            status=ServiceCallStatus.OPEN,
+            created_at=_utc(2024, 1, 1),
+        )
 
         with SqlAlchemyUnitOfWork(session_factory) as uow:
+            uow.service_calls.add(sc)
             uow.appointments.add(appt)
             uow.outbox.enqueue(OutboxOperation.CREATE, appt.id)
             uow.commit()

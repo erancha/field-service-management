@@ -152,6 +152,8 @@ class FakeCalendarPort:
         self._ical_uid_to_event_id: dict[str, str] = {}
         self.created_events: dict[str, Appointment] = {}
         self.updated_events: dict[str, Appointment] = {}
+        self.created_contexts: dict[str, AppointmentContext] = {}
+        self.updated_contexts: dict[str, AppointmentContext] = {}
         self.deleted_event_ids: list[str] = []
         self.import_calls: list[tuple[str, Appointment]] = []
 
@@ -176,11 +178,13 @@ class FakeCalendarPort:
             event_id = f"evt-{self._counter}"
             self._ical_uid_to_event_id[ical_uid] = event_id
         self.created_events[event_id] = appointment
+        self.created_contexts[event_id] = context
         self.import_calls.append((event_id, appointment))
         return event_id
 
     def update_event(self, external_event_id: str, appointment: Appointment, context: AppointmentContext) -> None:
         self.updated_events[external_event_id] = appointment
+        self.updated_contexts[external_event_id] = context
 
     def delete_event(self, external_event_id: str) -> None:
         self.deleted_event_ids.append(external_event_id)
@@ -389,9 +393,11 @@ class FakeUnitOfWork:
         self,
         outbox: "InMemoryOutboxRepository",
         appointments: "InMemoryAppointmentRepository",
+        service_calls: "InMemoryServiceCallRepository | None" = None,
     ) -> None:
         self._outbox_real = outbox
         self._appointments_real = appointments
+        self.service_calls = service_calls if service_calls is not None else InMemoryServiceCallRepository()
         self.commit_raises_once: bool = False
         self._raise_on_next_commit: bool = False
         self.outbox: _RollbackableOutboxProxy = _RollbackableOutboxProxy(outbox)

@@ -58,6 +58,7 @@ class CalendarProjectionDispatcher:
         *,
         calendar_resolver: Callable[[UUID], CalendarPort] | None = None,
         on_calendar_error: Callable[[UUID, Exception], None] | None = None,
+        customer_name_resolver: Callable[[UUID], str | None] | None = None,
     ) -> None:
         if calendar is None and calendar_resolver is None:
             raise ValueError(
@@ -74,6 +75,17 @@ class CalendarProjectionDispatcher:
         else:
             self._resolver = calendar_resolver  # type: ignore[assignment]
         self._on_calendar_error = on_calendar_error
+        self._customer_name_resolver: Callable[[UUID], str | None] = (
+            customer_name_resolver if customer_name_resolver is not None else (lambda _customer_id: None)
+        )
+
+    def _build_context(self, uow: UnitOfWork, appt) -> AppointmentContext:
+        """Assemble enrichment context from the service call and the customer-name resolver."""
+        service_call = uow.service_calls.get(appt.service_call_id)
+        return AppointmentContext(
+            customer_name=self._customer_name_resolver(appt.customer_id),
+            problem_description=service_call.description,
+        )
 
     def run_once(self, limit: int = 50) -> int:
         """Claim and process up to `limit` pending outbox entries; return the count processed."""
@@ -104,7 +116,8 @@ class CalendarProjectionDispatcher:
                 calendar = self._resolver(technician_id)
 
                 if entry.operation is OutboxOperation.CREATE:
-                    event_id = calendar.create_event(appt, AppointmentContext())
+                    context = self._build_context(uow, appt)
+                    event_id = calendar.create_event(appt, context)
                     appt.assign_external_event(event_id)
                     uow.appointments.save(appt)
                     uow.outbox.mark_processed(entry.id)
@@ -124,7 +137,8 @@ class CalendarProjectionDispatcher:
                         )
                         uow.commit()
                         return None
-                    calendar.update_event(appt.external_event_id, appt, AppointmentContext())
+                    context = self._build_context(uow, appt)
+                    calendar.update_event(appt.external_event_id, appt, context)
                     uow.outbox.mark_processed(entry.id)
                     uow.commit()
                     return True
