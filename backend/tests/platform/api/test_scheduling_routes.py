@@ -173,6 +173,36 @@ def test_availability_returns_slots(client, auth):
         assert "end" in slot
 
 
+def test_availability_excludes_slots_that_begin_before_now(client, auth, monkeypatch):
+    """The endpoint drops slots whose start is before the current time.
+
+    Freezes the availability clock to 12:30 UTC on a working Monday so only the
+    13:00–17:00 slots remain from the default 09:00–17:00 UTC schedule.
+    """
+    from fsm.platform.api import scheduling_routes
+
+    monkeypatch.setattr(
+        scheduling_routes,
+        "_now_utc",
+        lambda: datetime(2025, 1, 6, 12, 30, tzinfo=timezone.utc),
+    )
+    auth()
+    tech_id = uuid.uuid4()
+    response = client.get(
+        "/api/availability",
+        params={
+            "technician_id": str(tech_id),
+            "date_from": "2025-01-06",  # Monday (default working day)
+            "date_to": "2025-01-06",
+            "slot_minutes": 60,
+            "tz": "UTC",
+        },
+    )
+    assert response.status_code == 200
+    slot_hours = [int(s["start"][11:13]) for s in response.json()["slots"]]
+    assert slot_hours == [13, 14, 15, 16]
+
+
 def test_availability_friday_returns_no_slots(client, auth):
     """Friday is not a working day in the default Israeli schedule."""
     auth()

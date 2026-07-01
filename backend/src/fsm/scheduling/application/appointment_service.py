@@ -72,6 +72,9 @@ class AppointmentService:
 
         The query window is [start_date 00:00, end_date+1 00:00) (half-open), consistent
         with the repository's half-open overlap contract.
+
+        Slots whose start is before the current time are excluded, so a past time is
+        never offered even when start_date is today.
         """
         window_start = datetime(
             start_date.year, start_date.month, start_date.day, 0, 0, tzinfo=tz
@@ -87,7 +90,7 @@ class AppointmentService:
                 technician_id, window_start, window_end
             )
         ]
-        return generate_slots(
+        slots = generate_slots(
             working_hours=working_hours,
             start_date=start_date,
             end_date=end_date,
@@ -96,6 +99,8 @@ class AppointmentService:
             slot_duration=slot_duration,
             tz=tz,
         )
+        now = self._clock()
+        return [slot for slot in slots if slot.start >= now]
 
     def book_appointment(
         self,

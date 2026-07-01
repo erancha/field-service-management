@@ -113,15 +113,16 @@ class TestProposeSlots:
         svc: AppointmentService,
         calendar: FakeCalendarPort,
     ):
-        # Sun 2024-06-09 is index 6 (Sun). WeeklyWorkingHours.default() covers Sun.
-        start_date = date(2024, 6, 9)
-        end_date = date(2024, 6, 9)
+        # Mon 2024-06-10 is a default working day (Sun-Thu); the 08:00 clock is before
+        # the 09:00 window start, so no slot is dropped as past.
+        start_date = date(2024, 6, 10)
+        end_date = date(2024, 6, 10)
         wh = WeeklyWorkingHours.default()
 
         # Mark 09:00-10:00 busy in calendar
         busy_range = TimeRange(
-            start=datetime(2024, 6, 9, 9, 0, tzinfo=_TZ),
-            end=datetime(2024, 6, 9, 10, 0, tzinfo=_TZ),
+            start=datetime(2024, 6, 10, 9, 0, tzinfo=_TZ),
+            end=datetime(2024, 6, 10, 10, 0, tzinfo=_TZ),
         )
         calendar.set_busy(_TECH_ID, [busy_range])
 
@@ -135,7 +136,7 @@ class TestProposeSlots:
         )
 
         # 09:00 slot must be excluded; 10:00-17:00 is 7 hours = 7 slots
-        assert all(s.start >= datetime(2024, 6, 9, 10, 0, tzinfo=_TZ) for s in slots)
+        assert all(s.start >= datetime(2024, 6, 10, 10, 0, tzinfo=_TZ) for s in slots)
         assert len(slots) == 7
 
     def test_returns_free_slots_excluding_existing_appointments(
@@ -143,8 +144,8 @@ class TestProposeSlots:
         svc: AppointmentService,
         appt_repo: InMemoryAppointmentRepository,
     ):
-        start_date = date(2024, 6, 9)
-        end_date = date(2024, 6, 9)
+        start_date = date(2024, 6, 10)
+        end_date = date(2024, 6, 10)
         wh = WeeklyWorkingHours.default()
 
         # Seed an appointment that occupies 10:00-11:00
@@ -154,8 +155,8 @@ class TestProposeSlots:
             technician_id=_TECH_ID,
             customer_id=_CUST_ID,
             time_range=TimeRange(
-                start=datetime(2024, 6, 9, 10, 0, tzinfo=_TZ),
-                end=datetime(2024, 6, 9, 11, 0, tzinfo=_TZ),
+                start=datetime(2024, 6, 10, 10, 0, tzinfo=_TZ),
+                end=datetime(2024, 6, 10, 11, 0, tzinfo=_TZ),
             ),
             status=AppointmentStatus.SCHEDULED,
             details=None,
@@ -184,16 +185,16 @@ class TestProposeSlots:
         appt_repo: InMemoryAppointmentRepository,
         calendar: FakeCalendarPort,
     ):
-        start_date = date(2024, 6, 9)
-        end_date = date(2024, 6, 9)
+        start_date = date(2024, 6, 10)
+        end_date = date(2024, 6, 10)
         wh = WeeklyWorkingHours.default()
 
         # Calendar busy: 09:00-10:00
         calendar.set_busy(
             _TECH_ID,
             [TimeRange(
-                start=datetime(2024, 6, 9, 9, 0, tzinfo=_TZ),
-                end=datetime(2024, 6, 9, 10, 0, tzinfo=_TZ),
+                start=datetime(2024, 6, 10, 9, 0, tzinfo=_TZ),
+                end=datetime(2024, 6, 10, 10, 0, tzinfo=_TZ),
             )],
         )
         # Appointment busy: 11:00-12:00
@@ -203,8 +204,8 @@ class TestProposeSlots:
             technician_id=_TECH_ID,
             customer_id=_CUST_ID,
             time_range=TimeRange(
-                start=datetime(2024, 6, 9, 11, 0, tzinfo=_TZ),
-                end=datetime(2024, 6, 9, 12, 0, tzinfo=_TZ),
+                start=datetime(2024, 6, 10, 11, 0, tzinfo=_TZ),
+                end=datetime(2024, 6, 10, 12, 0, tzinfo=_TZ),
             ),
             status=AppointmentStatus.SCHEDULED,
             details=None,
@@ -226,6 +227,40 @@ class TestProposeSlots:
         assert 9 not in slot_starts
         assert 11 not in slot_starts
         assert len(slots) == 6
+
+    def test_excludes_slots_that_begin_before_now(
+        self,
+        appt_repo: InMemoryAppointmentRepository,
+        sc_repo: InMemoryServiceCallRepository,
+        calendar: FakeCalendarPort,
+        notifications: FakeNotificationPort,
+        outbox: InMemoryOutboxRepository,
+    ):
+        # Mon 2024-06-10 mid-window: slots starting before 12:30 are in the past.
+        now = datetime(2024, 6, 10, 12, 30, tzinfo=_TZ)
+        svc = AppointmentService(
+            appointments=appt_repo,
+            service_calls=sc_repo,
+            calendar=calendar,
+            notifications=notifications,
+            outbox=outbox,
+            clock=lambda: now,
+            new_id=lambda: _APPT_ID,
+        )
+        wh = WeeklyWorkingHours.default()
+
+        slots = svc.propose_slots(
+            technician_id=_TECH_ID,
+            working_hours=wh,
+            tz=_TZ,
+            start_date=date(2024, 6, 10),
+            end_date=date(2024, 6, 10),
+            slot_duration=timedelta(hours=1),
+        )
+
+        # 09:00–12:00 slots begin before 12:30 and are excluded; 13:00–16:00 remain.
+        assert all(s.start >= now for s in slots)
+        assert [s.start.hour for s in slots] == [13, 14, 15, 16]
 
 
 # ---------------------------------------------------------------------------

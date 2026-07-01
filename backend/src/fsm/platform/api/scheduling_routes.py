@@ -12,7 +12,7 @@ Domain error mapping:
 from __future__ import annotations
 
 import zoneinfo
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -209,6 +209,15 @@ def open_service_call(
 # ---------------------------------------------------------------------------
 
 
+def _now_utc() -> datetime:
+    """Current UTC instant used to exclude availability slots that begin in the past.
+
+    Isolated as a module-level function so tests asserting availability for fixed
+    historical dates can freeze it and observe deterministic slot sets.
+    """
+    return datetime.now(timezone.utc)
+
+
 def _compute_slots(
     request: Request,
     uow,
@@ -255,6 +264,7 @@ def _compute_slots(
         calendar=calendar,
         notifications=LoggingNotificationPort(),
         outbox=uow.outbox,
+        clock=_now_utc,
     )
     return svc.propose_slots(
         technician_id=technician_id,
