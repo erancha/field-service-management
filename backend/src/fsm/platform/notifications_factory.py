@@ -2,9 +2,9 @@
 
 Builds a DeliveringNotificationPort wired to the caller's SQLAlchemy session
 so that feed writes participate in the same transaction as the appointment change.
-SMTP is used when smtp_host and smtp_from are both configured; otherwise the
-LoggingEmailSender fallback is used so the in-app feed still works without an
-SMTP server.
+SMTP is used when a host and a sender account are configured (smtp_sender_address,
+which defaults to the SMTP login); otherwise the LoggingEmailSender fallback is used
+so the in-app feed still works without an SMTP server.
 """
 from __future__ import annotations
 
@@ -27,7 +27,8 @@ def build_notifications(session: Session, settings) -> NotificationPort:
     """
     feed_repo = SqlAlchemyNotificationFeedRepository(session)
 
-    if settings.smtp_host and settings.smtp_from:
+    sender_address = settings.smtp_sender_address
+    if settings.smtp_host and sender_address:
         password = (
             settings.smtp_password.get_secret_value()
             if settings.smtp_password is not None
@@ -38,7 +39,7 @@ def build_notifications(session: Session, settings) -> NotificationPort:
             port=settings.smtp_port,
             username=settings.smtp_username,
             password=password,
-            from_addr=settings.smtp_from,
+            from_addr=sender_address,
             use_tls=settings.smtp_use_tls,
         )
     else:

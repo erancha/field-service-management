@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,8 +45,15 @@ class Settings(BaseSettings):
 
     smtp_host: str | None = None
     smtp_port: int = 587
-    smtp_username: str | None = None
-    smtp_password: SecretStr | None = None
+    # Account we authenticate to the relay as. In the Gmail model this address is also the sender,
+    # so smtp_sender_address defaults the From header to it. Read from the conventional SMTP_USER.
+    smtp_username: str | None = Field(
+        default=None, validation_alias=AliasChoices("smtp_user", "smtp_username")
+    )
+    # For Gmail, a 16-character App Password. Read from the conventional SMTP_PASS.
+    smtp_password: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("smtp_pass", "smtp_password")
+    )
     smtp_from: str | None = None
     smtp_use_tls: bool = True
 
@@ -76,6 +83,16 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.strip() == "":
             return None
         return value
+
+    @property
+    def smtp_sender_address(self) -> str | None:
+        """From address for outbound mail: the SMTP account, unless smtp_from overrides it.
+
+        The relay account we authenticate as is also the sender, so From defaults to smtp_username;
+        smtp_from is set only when the sender must differ from the login. None when no account is
+        configured, in which case outbound SMTP is disabled.
+        """
+        return self.smtp_from or self.smtp_username
 
     @property
     def admin_email_set(self) -> frozenset[str]:
