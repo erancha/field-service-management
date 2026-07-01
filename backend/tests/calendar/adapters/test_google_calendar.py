@@ -14,6 +14,7 @@ import pytest
 from fsm.calendar.adapters.client import GoogleCalendarClient
 from fsm.calendar.adapters.google_calendar import GoogleCalendarAdapter
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
 
 
@@ -113,16 +114,23 @@ def appointment_no_details() -> Appointment:
     )
 
 
+@pytest.fixture()
+def context() -> AppointmentContext:
+    return AppointmentContext(customer_name="Ada Lovelace", problem_description="No hot water")
+
+
 # ---------------------------------------------------------------------------
 # create_event
 # ---------------------------------------------------------------------------
 
 class TestCreateEvent:
-    def test_returns_event_id_from_client(self, appointment: Appointment) -> None:
+    def test_returns_event_id_from_client(
+        self, appointment: Appointment, context: AppointmentContext
+    ) -> None:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        event_id = adapter.create_event(appointment)
+        event_id = adapter.create_event(appointment, context)
 
         assert event_id == "evt-123"
 
@@ -298,3 +306,65 @@ class TestGetBusy:
         assert len(result) == 2
         assert result[0] == TimeRange(*intervals[0])
         assert result[1] == TimeRange(*intervals[1])
+
+
+# ---------------------------------------------------------------------------
+# _build_body / context rendering
+# ---------------------------------------------------------------------------
+
+class TestBuildBody:
+    def test_title_combines_customer_and_problem(
+        self, appointment: Appointment, context: AppointmentContext
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment, context)
+
+        body = client.imported[0][1]
+        assert body["summary"] == "Ada Lovelace — No hot water"
+
+    def test_description_combines_problem_and_details(
+        self, appointment: Appointment, context: AppointmentContext
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment, context)
+
+        body = client.imported[0][1]
+        assert body["description"] == "No hot water\n\nCheck HVAC unit"
+
+    def test_description_is_problem_only_when_no_details(
+        self, appointment_no_details: Appointment, context: AppointmentContext
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment_no_details, context)
+
+        body = client.imported[0][1]
+        assert body["description"] == "No hot water"
+
+    def test_title_falls_back_when_context_empty(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment_no_details, AppointmentContext())
+
+        body = client.imported[0][1]
+        assert body["summary"] == "Field service appointment"
+        assert "description" not in body
+
+    def test_long_problem_is_truncated_in_title(self, appointment_no_details: Appointment) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+        long_problem = "x" * 80
+        ctx = AppointmentContext(customer_name="Ada", problem_description=long_problem)
+
+        adapter.create_event(appointment_no_details, ctx)
+
+        body = client.imported[0][1]
+        assert body["summary"] == f"Ada — {'x' * 59}…"

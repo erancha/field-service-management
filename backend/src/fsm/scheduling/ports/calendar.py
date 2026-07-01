@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from fsm.scheduling.domain.appointment import Appointment
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
 
 
@@ -31,11 +32,13 @@ class CalendarPort(Protocol):
         """
         ...
 
-    def create_event(self, appointment: Appointment) -> str:
+    def create_event(self, appointment: Appointment, context: AppointmentContext) -> str:
         """Create a calendar event for the appointment and return the external event id."""
         ...
 
-    def update_event(self, external_event_id: str, appointment: Appointment) -> None:
+    def update_event(
+        self, external_event_id: str, appointment: Appointment, context: AppointmentContext
+    ) -> None:
         """Update the calendar event identified by external_event_id to reflect the appointment."""
         ...
 
