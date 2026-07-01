@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     fsm_role: str = "unknown"
     # Comma-separated emails granted ADMIN on first back-office sign-in. The only path to ADMIN.
     admin_emails: str | None = None
-    # Redis pub/sub URL backing cross-process SSE delivery. Absent in host mode (single process
-    # per role), where the in-memory event bus suffices.
+    # Redis pub/sub broker backing cross-process SSE delivery. Both the Docker and host deployments
+    # run one process per role and set this; when unset (the test suite, or a single-process run with
+    # no broker) the in-memory event bus is used instead.
     redis_url: str | None = None
 
     google_client_id: str | None = None

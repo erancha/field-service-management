@@ -5,9 +5,10 @@ Two channel shapes exist: ``user:{id}`` (delivered only to that user's streams) 
 (delivered to every connected back-office stream). Channel membership is the entitlement boundary —
 a stream only ever receives events for channels it is allowed to subscribe to (see entitled_channels).
 
-InMemoryEventBus fans out within a single process and is used in host mode and tests. RedisEventBus
-carries events between the per-role processes (customer/technician/back-office) of the container
-deployment, where an in-process bus cannot reach across process boundaries.
+RedisEventBus carries events between the per-role processes (customer/technician/back-office); both
+the Docker and host deployments run one process per role, so an in-process bus cannot reach across
+them and a shared broker is required. InMemoryEventBus fans out within a single process and backs
+the test suite and any single-process run started without a broker configured.
 """
 from __future__ import annotations
 
