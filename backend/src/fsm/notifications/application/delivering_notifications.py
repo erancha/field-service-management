@@ -23,6 +23,16 @@ def _utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
+def _format_local(dt: datetime) -> str:
+    """Render an appointment time as a human-readable local wall-clock string.
+
+    The appointment start is already tz-aware in its local zone, so it is formatted as-is
+    without a UTC offset; the recipient reads the time in their own local terms rather than
+    an ISO offset such as +03:00.
+    """
+    return dt.strftime("%A, %d %B %Y at %H:%M")
+
+
 class DeliveringNotificationPort:
     """NotificationPort that writes in-app feed rows and sends email.
 
@@ -57,7 +67,7 @@ class DeliveringNotificationPort:
         subject = "Appointment booked"
         body = (
             f"Your appointment (id={appointment.id}) has been booked for "
-            f"{appointment.time_range.start.isoformat()}."
+            f"{_format_local(appointment.time_range.start)}."
         )
         ics = build_ics(appointment)
 
@@ -72,7 +82,7 @@ class DeliveringNotificationPort:
         subject = "Appointment rescheduled"
         body = (
             f"Your appointment (id={appointment.id}) has been rescheduled to "
-            f"{appointment.time_range.start.isoformat()}."
+            f"{_format_local(appointment.time_range.start)}."
         )
         ics = build_ics(appointment)
 

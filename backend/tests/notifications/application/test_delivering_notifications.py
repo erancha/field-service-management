@@ -132,6 +132,17 @@ class TestAppointmentBooked:
         assert appt.customer_id in user_ids
         assert appt.technician_id in user_ids
 
+    def test_body_shows_readable_local_time_not_iso_offset(self):
+        appt = _make_appointment()
+        email = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), email, {appt.customer_id: "c@example.com"})
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in email.sent if m["to"] == "c@example.com"]
+        assert "Tuesday, 10 June 2025 at 09:00" in msg["body"]
+        assert "2025-06-10T09:00:00" not in msg["body"]
+
     def test_sends_two_emails_when_both_have_addresses(self):
         cust_id = uuid.uuid4()
         tech_id = uuid.uuid4()
