@@ -18,6 +18,7 @@ import pytest
 
 from fsm.calendar.adapters.google_calendar import GoogleCalendarAdapter
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
 from tests.scheduling.fakes import FakeCalendarPort, FakeGoogleCalendarClient
 
@@ -83,7 +84,7 @@ class TestCreateEvent:
     def test_returns_non_empty_string_id(self, calendar: CalendarPortImpl) -> None:
         appointment = _make_appointment()
 
-        event_id = calendar.create_event(appointment)
+        event_id = calendar.create_event(appointment, AppointmentContext())
 
         assert isinstance(event_id, str)
         assert len(event_id) > 0
@@ -97,8 +98,8 @@ class TestCreateEvent:
         """
         appointment = _make_appointment(appointment_id=uuid.UUID("12345678-1234-5678-1234-567812345678"))
 
-        id1 = calendar.create_event(appointment)
-        id2 = calendar.create_event(appointment)
+        id1 = calendar.create_event(appointment, AppointmentContext())
+        id2 = calendar.create_event(appointment, AppointmentContext())
 
         assert id1 == id2, (
             "create_event must be idempotent: repeated calls for the same appointment "
@@ -113,13 +114,13 @@ class TestCreateEvent:
 class TestUpdateEvent:
     def test_does_not_raise_for_existing_event(self, calendar: CalendarPortImpl) -> None:
         appointment = _make_appointment()
-        event_id = calendar.create_event(appointment)
+        event_id = calendar.create_event(appointment, AppointmentContext())
 
         # A second appointment representing the rescheduled version.
         updated = _make_appointment(appointment_id=appointment.id)
 
         # Must not raise.
-        calendar.update_event(event_id, updated)
+        calendar.update_event(event_id, updated, AppointmentContext())
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +130,7 @@ class TestUpdateEvent:
 class TestDeleteEvent:
     def test_does_not_raise_for_existing_event(self, calendar: CalendarPortImpl) -> None:
         appointment = _make_appointment()
-        event_id = calendar.create_event(appointment)
+        event_id = calendar.create_event(appointment, AppointmentContext())
 
         # Must not raise.
         calendar.delete_event(event_id)

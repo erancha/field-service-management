@@ -18,6 +18,7 @@ from fsm.scheduling.domain import (
     ServiceCallStatus,
     TimeRange,
 )
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports import (
     AppointmentRepository,
     CalendarPort,
@@ -254,28 +255,28 @@ class TestFakeCalendarPort:
         cal = FakeCalendarPort()
         appt1 = _make_appointment()
         appt2 = _make_appointment()
-        id1 = cal.create_event(appt1)
-        id2 = cal.create_event(appt2)
+        id1 = cal.create_event(appt1, AppointmentContext())
+        id2 = cal.create_event(appt2, AppointmentContext())
         assert id1 == "evt-1"
         assert id2 == "evt-2"
 
     def test_create_event_records_appointment(self):
         cal = FakeCalendarPort()
         appt = _make_appointment()
-        event_id = cal.create_event(appt)
+        event_id = cal.create_event(appt, AppointmentContext())
         assert cal.created_events[event_id] is appt
 
     def test_update_event_records_appointment(self):
         cal = FakeCalendarPort()
         appt = _make_appointment()
-        event_id = cal.create_event(appt)
-        cal.update_event(event_id, appt)
+        event_id = cal.create_event(appt, AppointmentContext())
+        cal.update_event(event_id, appt, AppointmentContext())
         assert cal.updated_events[event_id] is appt
 
     def test_delete_event_records_event_id(self):
         cal = FakeCalendarPort()
         appt = _make_appointment()
-        event_id = cal.create_event(appt)
+        event_id = cal.create_event(appt, AppointmentContext())
         cal.delete_event(event_id)
         assert event_id in cal.deleted_event_ids
 

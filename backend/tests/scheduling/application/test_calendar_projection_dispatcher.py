@@ -277,10 +277,10 @@ class TestCalendarExceptionHandling:
             def get_busy(self, *a, **kw):
                 return []
 
-            def create_event(self, appt):
+            def create_event(self, appt, context):
                 raise RuntimeError("calendar unavailable")
 
-            def update_event(self, eid, appt):
+            def update_event(self, eid, appt, context):
                 pass
 
             def delete_event(self, eid):
@@ -317,10 +317,10 @@ class TestCalendarExceptionHandling:
             def get_busy(self, *a, **kw):
                 return []
 
-            def create_event(self, appt):
+            def create_event(self, appt, context):
                 raise RuntimeError("calendar unavailable")
 
-            def update_event(self, eid, appt):
+            def update_event(self, eid, appt, context):
                 pass
 
             def delete_event(self, eid):
@@ -364,13 +364,13 @@ class TestCalendarExceptionHandling:
             def get_busy(self, *a, **kw):
                 return []
 
-            def create_event(self, appt):
+            def create_event(self, appt, context):
                 if fail_count["n"] == 0:
                     fail_count["n"] += 1
                     raise RuntimeError("transient error")
                 return "evt-recovered"
 
-            def update_event(self, eid, appt):
+            def update_event(self, eid, appt, context):
                 pass
 
             def delete_event(self, eid):
@@ -406,10 +406,10 @@ class TestCalendarExceptionHandling:
             def get_busy(self, *a, **kw):
                 return []
 
-            def create_event(self, appt):
+            def create_event(self, appt, context):
                 raise RuntimeError("always broken")
 
-            def update_event(self, eid, appt):
+            def update_event(self, eid, appt, context):
                 pass
 
             def delete_event(self, eid):
@@ -449,10 +449,10 @@ class TestCalendarExceptionHandling:
         raised_exc = RuntimeError("auth revoked")
 
         class ErrorCalendar:
-            def create_event(self, appt):
+            def create_event(self, appt, context):
                 raise raised_exc
 
-            def update_event(self, eid, appt):
+            def update_event(self, eid, appt, context):
                 pass
 
             def delete_event(self, eid):
@@ -495,10 +495,10 @@ class TestCalendarExceptionHandling:
         """A failing on_calendar_error callback must not propagate — retry semantics are preserved."""
 
         class ErrorCalendar:
-            def create_event(self, appt):
+            def create_event(self, appt, context):
                 raise RuntimeError("calendar error")
 
-            def update_event(self, eid, appt):
+            def update_event(self, eid, appt, context):
                 pass
 
             def delete_event(self, eid):

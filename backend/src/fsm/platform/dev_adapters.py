@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from fsm.scheduling.domain.appointment import Appointment
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.calendar import CalendarPort
 from fsm.scheduling.ports.notifications import NotificationPort
@@ -33,10 +34,10 @@ class NullCalendarPort:
     ) -> list[TimeRange]:
         return []
 
-    def create_event(self, appointment: Appointment) -> str:
+    def create_event(self, appointment: Appointment, context: AppointmentContext) -> str:
         return f"null-evt-{uuid4()}"
 
-    def update_event(self, external_event_id: str, appointment: Appointment) -> None:
+    def update_event(self, external_event_id: str, appointment: Appointment, context: AppointmentContext) -> None:
         pass
 
     def delete_event(self, external_event_id: str) -> None:

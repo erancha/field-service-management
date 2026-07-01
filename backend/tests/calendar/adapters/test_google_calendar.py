@@ -138,7 +138,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment)
+        adapter.create_event(appointment, AppointmentContext())
 
         cal_id, _ = client.imported[0]
         assert cal_id == CALENDAR_ID
@@ -148,7 +148,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment)
+        adapter.create_event(appointment, AppointmentContext())
 
         _, body = client.imported[0]
         assert body["iCalUID"] == f"fsm-{appointment.id}@fsm.local"
@@ -157,7 +157,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment)
+        adapter.create_event(appointment, AppointmentContext())
 
         _, body = client.imported[0]
         assert body["summary"] == "Field service appointment"
@@ -166,7 +166,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment)
+        adapter.create_event(appointment, AppointmentContext())
 
         _, body = client.imported[0]
         assert body["start"]["dateTime"] == START.isoformat()
@@ -175,7 +175,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment)
+        adapter.create_event(appointment, AppointmentContext())
 
         _, body = client.imported[0]
         assert body["end"]["dateTime"] == END.isoformat()
@@ -186,7 +186,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment)
+        adapter.create_event(appointment, AppointmentContext())
 
         _, body = client.imported[0]
         assert body["description"] == "Check HVAC unit"
@@ -197,7 +197,7 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.create_event(appointment_no_details)
+        adapter.create_event(appointment_no_details, AppointmentContext())
 
         _, body = client.imported[0]
         assert "description" not in body
@@ -207,8 +207,8 @@ class TestCreateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        id1 = adapter.create_event(appointment)
-        id2 = adapter.create_event(appointment)
+        id1 = adapter.create_event(appointment, AppointmentContext())
+        id2 = adapter.create_event(appointment, AppointmentContext())
 
         assert id1 == id2, "Idempotent import_event must return the same id on retry"
 
@@ -222,7 +222,7 @@ class TestUpdateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.update_event("evt-456", appointment)
+        adapter.update_event("evt-456", appointment, AppointmentContext())
 
         cal_id, event_id, _ = client.updated[0]
         assert cal_id == CALENDAR_ID
@@ -232,7 +232,7 @@ class TestUpdateEvent:
         client = FakeGoogleCalendarClient()
         adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
 
-        adapter.update_event("evt-456", appointment)
+        adapter.update_event("evt-456", appointment, AppointmentContext())
 
         _, _, body = client.updated[0]
         assert body["summary"] == "Field service appointment"

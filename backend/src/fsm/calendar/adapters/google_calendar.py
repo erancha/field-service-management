@@ -62,9 +62,7 @@ class GoogleCalendarAdapter:
         intervals = self._client.query_busy(self._calendar_id, start, end)
         return [TimeRange(s, e) for s, e in intervals]
 
-    def create_event(
-        self, appointment: Appointment, context: AppointmentContext = AppointmentContext()
-    ) -> str:
+    def create_event(self, appointment: Appointment, context: AppointmentContext) -> str:
         body = self._build_body(appointment, context)
         body["iCalUID"] = f"fsm-{appointment.id}@fsm.local"
         result = self._client.import_event(self._calendar_id, body)
@@ -74,7 +72,7 @@ class GoogleCalendarAdapter:
         self,
         external_event_id: str,
         appointment: Appointment,
-        context: AppointmentContext = AppointmentContext(),
+        context: AppointmentContext,
     ) -> None:
         body = self._build_body(appointment, context)
         self._client.update_event(self._calendar_id, external_event_id, body)
@@ -101,7 +99,7 @@ class GoogleCalendarAdapter:
             "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
         }
         description_parts = [
-            part for part in (context.problem_description, appointment.details) if part
+            part for part in (context.problem_description, appointment.details) if part and part.strip()
         ]
         if description_parts:
             body["description"] = "\n\n".join(description_parts)

@@ -24,6 +24,7 @@ import logging
 from typing import Callable
 from uuid import UUID
 
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.calendar import CalendarPort
 from fsm.scheduling.ports.outbox import OutboxOperation
 from fsm.scheduling.ports.unit_of_work import UnitOfWork
@@ -103,7 +104,7 @@ class CalendarProjectionDispatcher:
                 calendar = self._resolver(technician_id)
 
                 if entry.operation is OutboxOperation.CREATE:
-                    event_id = calendar.create_event(appt)
+                    event_id = calendar.create_event(appt, AppointmentContext())
                     appt.assign_external_event(event_id)
                     uow.appointments.save(appt)
                     uow.outbox.mark_processed(entry.id)
@@ -123,7 +124,7 @@ class CalendarProjectionDispatcher:
                         )
                         uow.commit()
                         return None
-                    calendar.update_event(appt.external_event_id, appt)
+                    calendar.update_event(appt.external_event_id, appt, AppointmentContext())
                     uow.outbox.mark_processed(entry.id)
                     uow.commit()
                     return True

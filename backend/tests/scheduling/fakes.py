@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.errors import NotFoundError
 from fsm.scheduling.domain.service_call import ServiceCall
 from fsm.scheduling.domain.time_range import TimeRange
@@ -166,7 +167,7 @@ class FakeCalendarPort:
     ) -> list[TimeRange]:
         return list(self._busy.get(technician_id, []))
 
-    def create_event(self, appointment: Appointment) -> str:
+    def create_event(self, appointment: Appointment, context: AppointmentContext) -> str:
         ical_uid = f"fsm-{appointment.id}@fsm.local"
         if ical_uid in self._ical_uid_to_event_id:
             event_id = self._ical_uid_to_event_id[ical_uid]
@@ -178,7 +179,7 @@ class FakeCalendarPort:
         self.import_calls.append((event_id, appointment))
         return event_id
 
-    def update_event(self, external_event_id: str, appointment: Appointment) -> None:
+    def update_event(self, external_event_id: str, appointment: Appointment, context: AppointmentContext) -> None:
         self.updated_events[external_event_id] = appointment
 
     def delete_event(self, external_event_id: str) -> None:
