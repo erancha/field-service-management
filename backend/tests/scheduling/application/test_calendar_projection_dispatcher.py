@@ -646,3 +646,20 @@ class TestContextEnrichment:
         [context] = calendar.created_contexts.values()
         assert context.customer_name == _CUSTOMER_NAME
         assert context.problem_description == _PROBLEM
+
+    def test_update_passes_customer_name_and_problem_to_calendar(
+        self,
+        dispatcher: CalendarProjectionDispatcher,
+        appt_repo: InMemoryAppointmentRepository,
+        outbox: InMemoryOutboxRepository,
+        calendar: FakeCalendarPort,
+    ) -> None:
+        appt_id = UUID("aaaaaaaa-0000-0000-0000-000000000040")
+        appt_repo.add(_make_appointment(appt_id, external_event_id="evt-existing"))
+        outbox.enqueue(OutboxOperation.UPDATE, appt_id)
+
+        dispatcher.run_once()
+
+        context = calendar.updated_contexts["evt-existing"]
+        assert context.customer_name == _CUSTOMER_NAME
+        assert context.problem_description == _PROBLEM

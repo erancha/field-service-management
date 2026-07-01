@@ -24,6 +24,7 @@ import logging
 from typing import Callable
 from uuid import UUID
 
+from fsm.scheduling.domain.appointment import Appointment
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.calendar import CalendarPort
 from fsm.scheduling.ports.outbox import OutboxOperation
@@ -79,7 +80,7 @@ class CalendarProjectionDispatcher:
             customer_name_resolver if customer_name_resolver is not None else (lambda _customer_id: None)
         )
 
-    def _build_context(self, uow: UnitOfWork, appt) -> AppointmentContext:
+    def _build_context(self, uow: UnitOfWork, appt: Appointment) -> AppointmentContext:
         """Assemble enrichment context from the service call and the customer-name resolver."""
         service_call = uow.service_calls.get(appt.service_call_id)
         return AppointmentContext(
