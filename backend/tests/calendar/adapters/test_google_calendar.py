@@ -368,3 +368,18 @@ class TestBuildBody:
 
         body = client.imported[0][1]
         assert body["summary"] == f"Ada — {'x' * 59}…"
+
+    def test_whitespace_only_problem_excluded_from_title_and_description(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(
+            appointment_no_details,
+            AppointmentContext(customer_name="Ada", problem_description="   "),
+        )
+
+        body = client.imported[0][1]
+        assert body["summary"] == "Ada"
+        assert "description" not in body
