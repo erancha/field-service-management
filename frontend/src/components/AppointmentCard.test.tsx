@@ -19,7 +19,9 @@ function makeAppointment(overrides: Partial<Appointment> = {}): Appointment {
     customer_id: 'cust-1',
     start: '2026-07-05T09:00:00+03:00',
     end: '2026-07-05T10:00:00+03:00',
-    status: 'booked',
+    // The API serializes statuses uppercase; tests must use the same casing to catch
+    // case-sensitive comparisons in the component.
+    status: 'SCHEDULED',
     ...overrides,
   }
 }
@@ -97,7 +99,7 @@ describe('AppointmentCard cancelled state', () => {
   it('offers no actions on a cancelled appointment', () => {
     render(
       <AppointmentCard
-        appointment={makeAppointment({ status: 'cancelled' })}
+        appointment={makeAppointment({ status: 'CANCELLED' })}
         onReschedule={vi.fn()}
         onCancel={vi.fn()}
         onAddDetails={vi.fn()}
@@ -105,5 +107,13 @@ describe('AppointmentCard cancelled state', () => {
     )
 
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('applies the cancelled styling modifier despite the uppercase API status', () => {
+    const { container } = render(
+      <AppointmentCard appointment={makeAppointment({ status: 'CANCELLED' })} />,
+    )
+
+    expect(container.querySelector('.appointment-card--cancelled')).not.toBeNull()
   })
 })

@@ -50,12 +50,15 @@ export function AppointmentCard({
     setShowDetails(!showDetails)
   }
 
-  const isCancelled = appointment.status === 'cancelled'
+  // The API serializes statuses uppercase (SCHEDULED/RESCHEDULED/CANCELLED); the CSS modifier
+  // classes are lowercase, so all status handling goes through this normalized value.
+  const status = appointment.status.toLowerCase()
+  const isCancelled = status === 'cancelled'
 
   return (
-    <div className={`appointment-card appointment-card--${appointment.status}`}>
+    <div className={`appointment-card appointment-card--${status}`}>
       <div className="appointment-card__header">
-        <span className="appointment-card__status">{appointment.status}</span>
+        <span className="appointment-card__status">{status}</span>
         <span className="appointment-card__id">#{appointment.id.slice(0, 8)}</span>
       </div>
       <div className="appointment-card__times">
