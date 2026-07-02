@@ -23,6 +23,10 @@ class NotificationPort(Protocol):
         """Notify relevant parties that an appointment has been rescheduled."""
         ...
 
+    def appointment_updated(self, appointment: Appointment) -> None:
+        """Notify relevant parties that an appointment's content changed without moving in time."""
+        ...
+
     def appointment_cancelled(self, appointment: Appointment) -> None:
         """Notify relevant parties that an appointment has been cancelled."""
         ...

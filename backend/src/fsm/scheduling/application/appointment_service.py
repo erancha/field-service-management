@@ -204,12 +204,18 @@ class AppointmentService:
         return appt
 
     def add_details(self, appointment_id: UUID, text: str) -> Appointment:
-        """Attach free-text details to an appointment and enqueue a calendar UPDATE."""
+        """Attach free-text details to an appointment and propagate them to both calendars.
+
+        The outbox UPDATE projects the details into the technician's Google event; the
+        appointment_updated notification re-sends the customer's ICS invitation (with a
+        higher SEQUENCE) so their calendar entry picks up the details too.
+        """
         appt = self._appointments.get(appointment_id)
         now = self._clock()
         appt.add_details(text, now=now)
         self._appointments.save(appt)
         self._outbox.enqueue(OutboxOperation.UPDATE, appt.id)
+        self._notifications.appointment_updated(appt)
         return appt
 
     def _guard_no_overlap(

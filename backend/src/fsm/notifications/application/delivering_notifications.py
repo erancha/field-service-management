@@ -65,6 +65,10 @@ class DeliveringNotificationPort:
     (customer name, problem description). The resolver never raises; a failed lookup degrades
     the affected field to None, so the port calls it unguarded.
 
+    organizer_address is the email address used as the ICS ORGANIZER, matching the SMTP From.
+    When set, appointment notifications include iTIP invitations (REQUEST for booking/reschedule,
+    CANCEL for cancellation); otherwise plain events are sent.
+
     Feed writes share the caller's transaction via the session-bound feed_repo.
     Email sends are best-effort: any exception is caught and logged so that
     notification failures never propagate into the booking transaction.
@@ -77,12 +81,14 @@ class DeliveringNotificationPort:
         recipient_email: Callable[[uuid.UUID], str | None],
         context_resolver: Callable[[object], object],
         *,
+        organizer_address: str | None = None,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._feed_repo = feed_repo
         self._email_sender = email_sender
         self._recipient_email = recipient_email
         self._context_resolver = context_resolver
+        self._organizer_address = organizer_address
         self._clock = clock
 
     # ------------------------------------------------------------------
@@ -97,12 +103,16 @@ class DeliveringNotificationPort:
             f"Your appointment has been booked for "
             f"{_format_local(appointment.time_range.start)}.{_context_lines(context)}"
         )
-        ics = build_ics(appointment, context)
+        customer_email = self._recipient_email(appointment.customer_id)
+        ics = build_ics(
+            appointment, context,
+            method="REQUEST", organizer=self._organizer_address, attendee=customer_email,
+        )
 
         self._add_feed(appointment.customer_id, NotificationKind.BOOKED, subject, body, now)
         self._add_feed(appointment.technician_id, NotificationKind.BOOKED, subject, body, now)
 
-        self._send_email(appointment.customer_id, subject, body, ics=ics)
+        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
         self._send_email(appointment.technician_id, subject, body, ics=None)
 
     def appointment_rescheduled(self, appointment) -> None:
@@ -113,12 +123,41 @@ class DeliveringNotificationPort:
             f"Your appointment has been rescheduled to "
             f"{_format_local(appointment.time_range.start)}.{_context_lines(context)}"
         )
-        ics = build_ics(appointment, context)
+        customer_email = self._recipient_email(appointment.customer_id)
+        ics = build_ics(
+            appointment, context,
+            method="REQUEST", organizer=self._organizer_address, attendee=customer_email,
+        )
 
         self._add_feed(appointment.customer_id, NotificationKind.RESCHEDULED, subject, body, now)
         self._add_feed(appointment.technician_id, NotificationKind.RESCHEDULED, subject, body, now)
 
-        self._send_email(appointment.customer_id, subject, body, ics=ics)
+        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
+        self._send_email(appointment.technician_id, subject, body, ics=None)
+
+    def appointment_updated(self, appointment) -> None:
+        now = self._clock()
+        context = self._context_resolver(appointment)
+        subject = _subject("Appointment updated", context)
+        context_block = _context_lines(context)
+        details = (appointment.details or "").strip()
+        details_block = (
+            ("\n" if context_block else "\n\n") + f"Details: {details}" if details else ""
+        )
+        body = (
+            f"Your appointment for {_format_local(appointment.time_range.start)} "
+            f"has been updated.{context_block}{details_block}"
+        )
+        customer_email = self._recipient_email(appointment.customer_id)
+        ics = build_ics(
+            appointment, context,
+            method="REQUEST", organizer=self._organizer_address, attendee=customer_email,
+        )
+
+        self._add_feed(appointment.customer_id, NotificationKind.UPDATED, subject, body, now)
+        self._add_feed(appointment.technician_id, NotificationKind.UPDATED, subject, body, now)
+
+        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
         self._send_email(appointment.technician_id, subject, body, ics=None)
 
     def appointment_cancelled(self, appointment) -> None:
@@ -126,11 +165,16 @@ class DeliveringNotificationPort:
         context = self._context_resolver(appointment)
         subject = _subject("Appointment cancelled", context)
         body = f"Your appointment has been cancelled.{_context_lines(context)}"
+        customer_email = self._recipient_email(appointment.customer_id)
+        ics = build_ics(
+            appointment, context,
+            method="CANCEL", organizer=self._organizer_address, attendee=customer_email,
+        )
 
         self._add_feed(appointment.customer_id, NotificationKind.CANCELLED, subject, body, now)
         self._add_feed(appointment.technician_id, NotificationKind.CANCELLED, subject, body, now)
 
-        self._send_email(appointment.customer_id, subject, body, ics=None)
+        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
         self._send_email(appointment.technician_id, subject, body, ics=None)
 
     # ------------------------------------------------------------------
@@ -162,9 +206,11 @@ class DeliveringNotificationPort:
         body: str,
         *,
         ics: str | None,
+        email: str | None = None,
     ) -> None:
         try:
-            email = self._recipient_email(user_id)
+            if email is None:
+                email = self._recipient_email(user_id)
             if email is None:
                 return
             self._email_sender.send(email, subject, body, ics)

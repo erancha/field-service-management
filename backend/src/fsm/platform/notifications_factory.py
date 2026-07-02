@@ -87,4 +87,5 @@ def build_notifications(session: Session, settings) -> NotificationPort:
         email_sender=email_sender,
         recipient_email=recipient_email,
         context_resolver=appointment_context,
+        organizer_address=sender_address,
     )

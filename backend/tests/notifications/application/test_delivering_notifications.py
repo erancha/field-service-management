@@ -81,12 +81,17 @@ class _FakeAppointment:
     customer_id: uuid.UUID
     technician_id: uuid.UUID
     time_range: _FakeTimeRange
+    created_at: datetime
+    updated_at: datetime
+    details: str | None = None
 
 
 def _make_appointment(
     customer_id: uuid.UUID | None = None,
     technician_id: uuid.UUID | None = None,
+    details: str | None = None,
 ) -> _FakeAppointment:
+    fixed_time = datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc)
     return _FakeAppointment(
         id=uuid.uuid4(),
         customer_id=customer_id or uuid.uuid4(),
@@ -95,6 +100,9 @@ def _make_appointment(
             start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
             end=datetime(2025, 6, 10, 10, 0, tzinfo=timezone.utc),
         ),
+        created_at=fixed_time,
+        updated_at=fixed_time,
+        details=details,
     )
 
 
@@ -103,7 +111,7 @@ def _make_appointment(
 # ---------------------------------------------------------------------------
 
 
-def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=None):
+def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=None, organizer="ops@fsm.example"):
     from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
 
     fixed_time = datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc)
@@ -112,6 +120,7 @@ def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=N
         email_sender=email_sender,
         recipient_email=lambda uid: emails.get(uid),
         context_resolver=lambda _appt: context if context is not None else AppointmentContext(),
+        organizer_address=organizer,
         clock=lambda: fixed_time,
     )
 
@@ -251,7 +260,7 @@ class TestAppointmentCancelled:
         assert len(feed.added) == 2
         assert all(n.kind == NotificationKind.CANCELLED for n in feed.added)
 
-    def test_sends_emails_to_both_without_ics(self):
+    def test_sends_emails_to_both(self):
         cust_id = uuid.uuid4()
         tech_id = uuid.uuid4()
         appt = _make_appointment(customer_id=cust_id, technician_id=tech_id)
@@ -263,7 +272,6 @@ class TestAppointmentCancelled:
         port.appointment_cancelled(appt)
 
         assert len(sender.sent) == 2
-        assert all(m["ics"] is None for m in sender.sent)
 
     def test_email_failure_does_not_raise(self):
         cust_id = uuid.uuid4()
@@ -349,3 +357,87 @@ class TestNotificationContext:
         assert all("Problem: No hot water" in m["body"] for m in sender.sent)
         assert sender.sent[0]["subject"] == "Appointment rescheduled — No hot water"
         assert sender.sent[1]["subject"] == "Appointment cancelled — No hot water"
+
+
+class TestAppointmentUpdated:
+    def test_writes_two_feed_rows_with_updated_kind(self):
+        appt = _make_appointment(details="Gate code 4321")
+        feed = FakeFeedRepository()
+        port = _port(appt, feed, FakeEmailSender(), {})
+
+        port.appointment_updated(appt)
+
+        assert len(feed.added) == 2
+        assert {n.user_id for n in feed.added} == {appt.customer_id, appt.technician_id}
+        assert all(n.kind == NotificationKind.UPDATED for n in feed.added)
+
+    def test_customer_email_carries_a_request_ics_and_technician_none(self):
+        cust_id, tech_id = uuid.uuid4(), uuid.uuid4()
+        appt = _make_appointment(customer_id=cust_id, technician_id=tech_id,
+                                 details="Gate code 4321")
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender,
+                     {cust_id: "cara@example.com", tech_id: "t@example.com"})
+
+        port.appointment_updated(appt)
+
+        cust = next(m for m in sender.sent if m["to"] == "cara@example.com")
+        tech = next(m for m in sender.sent if m["to"] == "t@example.com")
+        assert "METHOD:REQUEST" in cust["ics"]
+        assert tech["ics"] is None
+
+    def test_body_carries_the_details_and_subject_says_updated(self):
+        appt = _make_appointment(details="Gate code 4321")
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender,
+                     {appt.customer_id: "cara@example.com"})
+
+        port.appointment_updated(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "cara@example.com"]
+        assert msg["subject"].startswith("Appointment updated")
+        assert "has been updated" in msg["body"]
+        assert "Details: Gate code 4321" in msg["body"]
+
+    def test_ics_description_carries_the_details(self):
+        appt = _make_appointment(details="Gate code 4321")
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender,
+                     {appt.customer_id: "cara@example.com"})
+
+        port.appointment_updated(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "cara@example.com"]
+        ics_unfolded = msg["ics"].replace("\r\n ", "")
+        assert "DESCRIPTION:Gate code 4321" in ics_unfolded
+
+
+class TestIcsInvitation:
+    def test_booked_customer_ics_is_a_request_addressed_to_the_customer(self):
+        cust_id = uuid.uuid4()
+        appt = _make_appointment(customer_id=cust_id)
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender, {cust_id: "cara@example.com"})
+
+        port.appointment_booked(appt)
+
+        cust = next(m for m in sender.sent if m["to"] == "cara@example.com")
+        assert "METHOD:REQUEST" in cust["ics"]
+        assert "ORGANIZER:mailto:ops@fsm.example" in cust["ics"]
+        assert "ATTENDEE" in cust["ics"]
+        ics_unfolded = cust["ics"].replace("\r\n ", "")
+        assert "cara@example.com" in ics_unfolded
+
+    def test_cancel_now_attaches_a_cancel_ics_for_the_customer_only(self):
+        cust_id, tech_id = uuid.uuid4(), uuid.uuid4()
+        appt = _make_appointment(customer_id=cust_id, technician_id=tech_id)
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender,
+                     {cust_id: "cara@example.com", tech_id: "t@example.com"})
+
+        port.appointment_cancelled(appt)
+
+        cust = next(m for m in sender.sent if m["to"] == "cara@example.com")
+        tech = next(m for m in sender.sent if m["to"] == "t@example.com")
+        assert "METHOD:CANCEL" in cust["ics"]
+        assert tech["ics"] is None

@@ -48,16 +48,29 @@ def _escape_text(value: str) -> str:
     )
 
 
-def build_ics(appointment, context) -> str:
+def build_ics(
+    appointment,
+    context,
+    *,
+    method: str = "REQUEST",
+    organizer: str | None = None,
+    attendee: str | None = None,
+) -> str:
     """Return a VCALENDAR string with one VEVENT describing the appointment.
 
-    UID is deterministic: fsm-{appointment_id}@fsm.local. DTSTART/DTEND are
-    expressed in UTC using the Zulu suffix (…Z). DTSTAMP is set to the same
-    value as DTSTART so the output is reproducible in tests.
+    UID is deterministic (fsm-{appointment_id}@fsm.local); DTSTART/DTEND/DTSTAMP use UTC Zulu.
+    DTSTAMP is the appointment's updated_at, so it advances on every change rather than staying
+    pinned to DTSTART. SEQUENCE is int(updated_at − created_at) so each change carries a higher
+    value and clients treat a re-sent invitation as an update rather than a duplicate.
 
-    context is a duck-typed AppointmentContext supplying customer/problem enrichment: SUMMARY
-    comes from context.summary_line(), LOCATION from the service address, and DESCRIPTION
-    carries the problem plus a phone contact line when present.
+    When organizer and attendee are both present the event is emitted as an iTIP invitation:
+    METHOD (REQUEST for a live booking, CANCEL to withdraw it), matching STATUS, ORGANIZER, and
+    ATTENDEE. With either absent it degrades to a plain event, so a dev run without a configured
+    sender still produces valid output.
+
+    context is a duck-typed AppointmentContext: SUMMARY from context.summary_line(), LOCATION from
+    the service address, DESCRIPTION from the problem, the appointment's free-text details, and a
+    phone contact line — each included when present, mirroring the technician's Google event body.
     """
     start = appointment.time_range.start.astimezone(timezone.utc)
     end = appointment.time_range.end.astimezone(timezone.utc)
@@ -68,14 +81,18 @@ def build_ics(appointment, context) -> str:
     uid = f"fsm-{appointment.id}@fsm.local"
     dtstart = _fmt(start)
     dtend = _fmt(end)
-    dtstamp = _fmt(start)
+    # SEQUENCE and DTSTAMP both key off updated_at, which must be non-decreasing across an
+    # appointment's changes — a clock step-backward between two revisions would misorder them.
+    dtstamp = _fmt(appointment.updated_at.astimezone(timezone.utc))
+    sequence = int((appointment.updated_at - appointment.created_at).total_seconds())
 
     problem = (context.problem_description or "").strip()
+    details = (appointment.details or "").strip()
     phone = (context.customer_phone or "").strip()
     address = (context.service_address or "").strip()
 
     description_text = "\n".join(
-        part for part in (problem, f"Phone: {phone}" if phone else "") if part
+        part for part in (problem, details, f"Phone: {phone}" if phone else "") if part
     )
     summary = _fold(f"SUMMARY:{_escape_text(context.summary_line())}")
     location_line = f"{_fold(f'LOCATION:{_escape_text(address)}')}\r\n" if address else ""
@@ -83,15 +100,33 @@ def build_ics(appointment, context) -> str:
         f"{_fold(f'DESCRIPTION:{_escape_text(description_text)}')}\r\n" if description_text else ""
     )
 
+    org = (organizer or "").strip()
+    att = (attendee or "").strip()
+    itip = bool(org and att)
+    method_line = f"METHOD:{method}\r\n" if itip else ""
+    status = "CANCELLED" if method == "CANCEL" else "CONFIRMED"
+    status_line = f"STATUS:{status}\r\n" if itip else ""
+    organizer_line = f"{_fold(f'ORGANIZER:mailto:{org}')}\r\n" if itip else ""
+    attendee_line = (
+        f"{_fold('ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:' + att)}\r\n"
+        if itip
+        else ""
+    )
+
     return (
         "BEGIN:VCALENDAR\r\n"
         "VERSION:2.0\r\n"
         "PRODID:-//FSM//Field Service Management//EN\r\n"
+        f"{method_line}"
         "BEGIN:VEVENT\r\n"
         f"UID:{uid}\r\n"
         f"DTSTAMP:{dtstamp}\r\n"
         f"DTSTART:{dtstart}\r\n"
         f"DTEND:{dtend}\r\n"
+        f"SEQUENCE:{sequence}\r\n"
+        f"{organizer_line}"
+        f"{attendee_line}"
+        f"{status_line}"
         f"{summary}\r\n"
         f"{location_line}"
         f"{description_line}"

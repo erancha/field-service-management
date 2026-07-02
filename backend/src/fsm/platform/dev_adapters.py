@@ -71,6 +71,12 @@ class LoggingNotificationPort:
             appointment.time_range.start.isoformat(),
         )
 
+    def appointment_updated(self, appointment: Appointment) -> None:
+        _log.info(
+            "Notification — appointment_updated: appointment_id=%s",
+            appointment.id,
+        )
+
     def appointment_cancelled(self, appointment: Appointment) -> None:
         _log.info(
             "Notification — appointment_cancelled: appointment_id=%s",

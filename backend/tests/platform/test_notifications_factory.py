@@ -49,3 +49,14 @@ def test_context_resolver_degrades_to_empty_context_and_logs_errors_on_lookup_fa
     assert any(str(appointment.service_call_id) in m for m in messages)
     assert any(str(appointment.customer_id) in m for m in messages)
     assert all(r.exc_info is not None for r in caplog.records)
+
+
+def test_factory_passes_smtp_sender_as_organizer_address() -> None:
+    from fsm.platform.notifications_factory import build_notifications
+
+    class _Settings:
+        smtp_host = None
+        smtp_sender_address = "ops@fsm.example"
+
+    port = build_notifications(session=_RaisingSession(), settings=_Settings())
+    assert port._organizer_address == "ops@fsm.example"

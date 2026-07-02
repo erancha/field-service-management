@@ -718,18 +718,19 @@ class TestAddDetails:
         stored = appt_repo.get(appt.id)
         assert stored.details == "Bring ladder"
 
-    def test_add_details_is_content_edit_not_lifecycle_transition(
+    def test_add_details_emits_updated_notification_not_lifecycle_transition(
         self,
         svc: AppointmentService,
         sc_repo: InMemoryServiceCallRepository,
         notifications: FakeNotificationPort,
         outbox: InMemoryOutboxRepository,
     ):
-        """Adding details is a content edit projected to the calendar; it emits no notification."""
+        """Adding details fires appointment_updated so the customer's ICS invitation is re-sent;
+        it is not a booked/rescheduled/cancelled lifecycle transition."""
         appt = self._book(svc, sc_repo, outbox)
         notifications.calls.clear()
-        svc.add_details(appt.id, "Bring ladder")
-        assert notifications.calls == []
+        updated = svc.add_details(appt.id, "Bring ladder")
+        assert [(kind, a.id) for kind, a in notifications.calls] == [("updated", updated.id)]
 
 
 # ---------------------------------------------------------------------------

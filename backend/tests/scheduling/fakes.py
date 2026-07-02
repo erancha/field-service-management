@@ -294,6 +294,9 @@ class FakeNotificationPort:
     def appointment_rescheduled(self, appointment: Appointment) -> None:
         self.calls.append(("rescheduled", appointment))
 
+    def appointment_updated(self, appointment: Appointment) -> None:
+        self.calls.append(("updated", appointment))
+
     def appointment_cancelled(self, appointment: Appointment) -> None:
         self.calls.append(("cancelled", appointment))
 
