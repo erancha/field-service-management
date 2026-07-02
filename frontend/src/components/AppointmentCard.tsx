@@ -41,6 +41,15 @@ export function AppointmentCard({
     }
   }
 
+  // Saving sends the full text as the appointment's details, so editing must start from the
+  // current details — an empty form would silently discard them on save.
+  function toggleDetailsForm() {
+    if (!showDetails) {
+      setDetailsText(appointment.details ?? '')
+    }
+    setShowDetails(!showDetails)
+  }
+
   const isCancelled = appointment.status === 'cancelled'
 
   return (
@@ -74,8 +83,8 @@ export function AppointmentCard({
           )}
           {onAddDetails && (
             <>
-              <Button variant="secondary" onClick={() => setShowDetails(!showDetails)}>
-                Add Details
+              <Button variant="secondary" onClick={toggleDetailsForm}>
+                {appointment.details ? 'Edit Details' : 'Add Details'}
               </Button>
               {showDetails && (
                 <div className="appointment-card__details-form">

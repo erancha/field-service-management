@@ -58,6 +58,41 @@ describe('AppointmentCard reschedule', () => {
   })
 })
 
+describe('AppointmentCard details', () => {
+  it('labels the action Add Details when the appointment has none', () => {
+    render(<AppointmentCard appointment={makeAppointment()} onAddDetails={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /add details/i })).toBeInTheDocument()
+  })
+
+  it('labels the action Edit Details and pre-fills the form with the existing text', async () => {
+    render(
+      <AppointmentCard
+        appointment={makeAppointment({ details: 'Gate code 4321' })}
+        onAddDetails={vi.fn()}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /edit details/i }))
+    expect(screen.getByRole('textbox')).toHaveValue('Gate code 4321')
+  })
+
+  it('saves the edited text rather than only the newly typed text', async () => {
+    const onAddDetails = vi.fn()
+    const appointment = makeAppointment({ details: 'Gate code 4321' })
+    render(<AppointmentCard appointment={appointment} onAddDetails={onAddDetails} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /edit details/i }))
+    const textarea = screen.getByRole('textbox')
+    await userEvent.type(textarea, ', dog in the yard')
+    await userEvent.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(onAddDetails).toHaveBeenCalledWith(
+      appointment.id,
+      'Gate code 4321, dog in the yard',
+    )
+  })
+})
+
 describe('AppointmentCard cancelled state', () => {
   it('offers no actions on a cancelled appointment', () => {
     render(
