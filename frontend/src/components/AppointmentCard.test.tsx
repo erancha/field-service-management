@@ -60,6 +60,59 @@ describe('AppointmentCard reschedule', () => {
   })
 })
 
+describe('AppointmentCard focused editing', () => {
+  it('hides Reschedule and Cancel Appointment while editing details', async () => {
+    render(
+      <AppointmentCard
+        appointment={makeAppointment({ details: 'Gate code 4321' })}
+        onReschedule={vi.fn()}
+        onCancel={vi.fn()}
+        onAddDetails={vi.fn()}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /edit details/i }))
+
+    expect(screen.queryByRole('button', { name: /^reschedule$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /cancel appointment/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument()
+  })
+
+  it('hides Cancel Appointment while rescheduling', async () => {
+    render(
+      <AppointmentCard
+        appointment={makeAppointment()}
+        onReschedule={vi.fn()}
+        onCancel={vi.fn()}
+        onAddDetails={vi.fn()}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /^reschedule$/i }))
+    await screen.findByRole('button', { name: /–/ })
+
+    expect(screen.queryByRole('button', { name: /cancel appointment/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /edit details|add details/i })).toBeNull()
+  })
+
+  it('restores the action row when the edit is dismissed', async () => {
+    render(
+      <AppointmentCard
+        appointment={makeAppointment({ details: 'Gate code 4321' })}
+        onCancel={vi.fn()}
+        onAddDetails={vi.fn()}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /edit details/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+    expect(screen.getByRole('button', { name: /edit details/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /cancel appointment/i })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+})
+
 describe('AppointmentCard details', () => {
   it('labels the action Add Details when the appointment has none', () => {
     render(<AppointmentCard appointment={makeAppointment()} onAddDetails={vi.fn()} />)

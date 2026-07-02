@@ -22,14 +22,15 @@ export function AppointmentCard({
   onAddDetails,
   loading = false,
 }: AppointmentCardProps) {
-  const [showReschedule, setShowReschedule] = useState(false)
+  // At most one editing surface is open at a time; while one is open the card hides its other
+  // actions so a destructive Cancel Appointment never sits beside an edit form's Save.
+  const [editing, setEditing] = useState<'none' | 'reschedule' | 'details'>('none')
   const [detailsText, setDetailsText] = useState('')
-  const [showDetails, setShowDetails] = useState(false)
 
   function handleReschedule(start: string, end: string) {
     if (onReschedule) {
       onReschedule(appointment.id, start, end)
-      setShowReschedule(false)
+      setEditing('none')
     }
   }
 
@@ -37,17 +38,15 @@ export function AppointmentCard({
     if (onAddDetails && detailsText.trim()) {
       onAddDetails(appointment.id, detailsText.trim())
       setDetailsText('')
-      setShowDetails(false)
+      setEditing('none')
     }
   }
 
   // Saving sends the full text as the appointment's details, so editing must start from the
   // current details — an empty form would silently discard them on save.
-  function toggleDetailsForm() {
-    if (!showDetails) {
-      setDetailsText(appointment.details ?? '')
-    }
-    setShowDetails(!showDetails)
+  function openDetailsForm() {
+    setDetailsText(appointment.details ?? '')
+    setEditing('details')
   }
 
   // The API serializes statuses uppercase (SCHEDULED/RESCHEDULED/CANCELLED); the CSS modifier
@@ -68,47 +67,55 @@ export function AppointmentCard({
       {appointment.details && (
         <p className="appointment-card__details">{appointment.details}</p>
       )}
-      {!isCancelled && (
+      {!isCancelled && editing === 'none' && (
         <div className="appointment-card__actions">
           {onReschedule && (
-            <>
-              <Button variant="secondary" onClick={() => setShowReschedule(!showReschedule)} loading={loading}>
-                Reschedule
-              </Button>
-              {showReschedule && (
-                <ReschedulePicker
-                  technicianId={appointment.technician_id}
-                  onConfirm={handleReschedule}
-                  loading={loading}
-                />
-              )}
-            </>
+            <Button variant="secondary" onClick={() => setEditing('reschedule')} loading={loading}>
+              Reschedule
+            </Button>
           )}
           {onAddDetails && (
-            <>
-              <Button variant="secondary" onClick={toggleDetailsForm}>
-                {appointment.details ? 'Edit Details' : 'Add Details'}
-              </Button>
-              {showDetails && (
-                <div className="appointment-card__details-form">
-                  <textarea
-                    value={detailsText}
-                    onChange={(e) => setDetailsText(e.target.value)}
-                    placeholder="Enter appointment details…"
-                    rows={3}
-                  />
-                  <Button onClick={handleAddDetails} disabled={!detailsText.trim()} loading={loading}>
-                    Save
-                  </Button>
-                </div>
-              )}
-            </>
+            <Button variant="secondary" onClick={openDetailsForm}>
+              {appointment.details ? 'Edit Details' : 'Add Details'}
+            </Button>
           )}
           {onCancel && (
             <Button variant="danger" onClick={() => onCancel(appointment.id)} loading={loading}>
               Cancel Appointment
             </Button>
           )}
+        </div>
+      )}
+
+      {!isCancelled && editing === 'reschedule' && onReschedule && (
+        <div className="appointment-card__edit">
+          <ReschedulePicker
+            technicianId={appointment.technician_id}
+            onConfirm={handleReschedule}
+            loading={loading}
+          />
+          <Button variant="secondary" onClick={() => setEditing('none')}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {!isCancelled && editing === 'details' && onAddDetails && (
+        <div className="appointment-card__details-form">
+          <textarea
+            value={detailsText}
+            onChange={(e) => setDetailsText(e.target.value)}
+            placeholder="Enter appointment details…"
+            rows={3}
+          />
+          <div className="appointment-card__form-actions">
+            <Button onClick={handleAddDetails} disabled={!detailsText.trim()} loading={loading}>
+              Save
+            </Button>
+            <Button variant="secondary" onClick={() => setEditing('none')}>
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
     </div>

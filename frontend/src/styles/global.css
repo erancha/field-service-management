@@ -364,6 +364,18 @@ body {
   width: 100%;
 }
 
+.appointment-card__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.appointment-card__form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .appointment-card__reschedule label,
 .appointment-card__details-form label {
   display: flex;
