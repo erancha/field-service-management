@@ -12,35 +12,6 @@ from fsm.scheduling.domain.appointment import Appointment
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
 
-_TITLE_PROBLEM_LIMIT = 60
-
-
-def _summarize_problem(text: str) -> str:
-    """Return the first line of text, truncated to the title limit with an ellipsis when longer."""
-    stripped = text.strip()
-    if not stripped:
-        return ""
-    first_line = stripped.splitlines()[0]
-    if len(first_line) <= _TITLE_PROBLEM_LIMIT:
-        return first_line
-    return first_line[: _TITLE_PROBLEM_LIMIT - 1].rstrip() + "…"
-
-
-def _summary(context: AppointmentContext) -> str:
-    """Compose the event title from whatever context is available.
-
-    Falls back to a generic title when neither customer name nor problem is known.
-    """
-    name = (context.customer_name or "").strip()
-    problem = _summarize_problem(context.problem_description or "")
-    if name and problem:
-        return f"{name} — {problem}"
-    if name:
-        return name
-    if problem:
-        return problem
-    return "Field service appointment"
-
 
 class GoogleCalendarAdapter:
     """Implements fsm.scheduling.ports.CalendarPort via the thin GoogleCalendarClient seam."""
@@ -94,7 +65,7 @@ class GoogleCalendarAdapter:
             f"appointment.time_range.end must be tz-aware; got naive datetime {end!r}"
         )
         body: dict = {
-            "summary": _summary(context),
+            "summary": context.summary_line(),
             "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
         }

@@ -11,7 +11,7 @@ _log = logging.getLogger(__name__)
 class SmtpEmailSender:
     """EmailSender that delivers via SMTP using the stdlib smtplib.
 
-    When `ics` is provided it is attached as text/calendar;method=REQUEST.
+    When `ics` is provided it is attached as text/calendar with method=REQUEST and charset=utf-8.
     TLS is used when use_tls is True (STARTTLS on the configured port).
     """
 
@@ -49,7 +49,7 @@ class SmtpEmailSender:
                 ics.encode(),
                 maintype="text",
                 subtype="calendar",
-                params={"method": "REQUEST"},
+                params={"method": "REQUEST", "charset": "utf-8"},
                 filename="invite.ics",
             )
 

@@ -1,19 +1,63 @@
 """iCalendar (.ics) builder for appointment notifications.
 
 Builds a minimal but valid VCALENDAR/VEVENT string using only the stdlib.
-No third-party dependencies are introduced.
 """
 from __future__ import annotations
 
 from datetime import timezone
 
 
-def build_ics(appointment) -> str:
+_FOLD_LIMIT = 75
+
+
+def _fold(line: str) -> str:
+    """Fold a content line per RFC 5545 3.1: no physical line exceeds 75 octets.
+
+    Splits on UTF-8 octet boundaries only (never inside a multi-byte character) and prefixes
+    each continuation with a single space, which itself counts toward that line's 75-octet cap.
+    """
+    encoded = line.encode("utf-8")
+    if len(encoded) <= _FOLD_LIMIT:
+        return line
+
+    parts: list[str] = []
+    first = True
+    while encoded:
+        limit = _FOLD_LIMIT if first else _FOLD_LIMIT - 1
+        cut = min(limit, len(encoded))
+        while cut > 0:
+            try:
+                chunk = encoded[:cut].decode("utf-8")
+                break
+            except UnicodeDecodeError:
+                cut -= 1
+        parts.append(chunk)
+        encoded = encoded[cut:]
+        first = False
+    return "\r\n ".join(parts)
+
+
+def _escape_text(value: str) -> str:
+    """Escape an iCalendar TEXT value per RFC 5545: backslash, semicolon, comma, newlines."""
+    return (
+        value.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+    )
+
+
+def build_ics(appointment, context) -> str:
     """Return a VCALENDAR string with one VEVENT describing the appointment.
 
     UID is deterministic: fsm-{appointment_id}@fsm.local. DTSTART/DTEND are
     expressed in UTC using the Zulu suffix (…Z). DTSTAMP is set to the same
     value as DTSTART so the output is reproducible in tests.
+
+    context is a duck-typed AppointmentContext supplying customer/problem enrichment:
+    SUMMARY comes from context.summary_line(); a DESCRIPTION line carries the full problem
+    description when one is present.
     """
     start = appointment.time_range.start.astimezone(timezone.utc)
     end = appointment.time_range.end.astimezone(timezone.utc)
@@ -26,6 +70,10 @@ def build_ics(appointment) -> str:
     dtend = _fmt(end)
     dtstamp = _fmt(start)
 
+    problem = (context.problem_description or "").strip()
+    summary = _fold(f"SUMMARY:{_escape_text(context.summary_line())}")
+    description_line = f"{_fold(f'DESCRIPTION:{_escape_text(problem)}')}\r\n" if problem else ""
+
     return (
         "BEGIN:VCALENDAR\r\n"
         "VERSION:2.0\r\n"
@@ -35,7 +83,8 @@ def build_ics(appointment) -> str:
         f"DTSTAMP:{dtstamp}\r\n"
         f"DTSTART:{dtstart}\r\n"
         f"DTEND:{dtend}\r\n"
-        "SUMMARY:Field service appointment\r\n"
+        f"{summary}\r\n"
+        f"{description_line}"
         "END:VEVENT\r\n"
         "END:VCALENDAR\r\n"
     )

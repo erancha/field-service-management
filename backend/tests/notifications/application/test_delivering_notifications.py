@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.notifications.domain.notification import Notification, NotificationKind
 from fsm.notifications.ports.feed_repository import NotificationFeedRepository
 from fsm.notifications.ports.email_sender import EmailSender
@@ -102,7 +103,7 @@ def _make_appointment(
 # ---------------------------------------------------------------------------
 
 
-def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str]):
+def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=None):
     from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
 
     fixed_time = datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc)
@@ -110,6 +111,7 @@ def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str]):
         feed_repo=feed_repo,
         email_sender=email_sender,
         recipient_email=lambda uid: emails.get(uid),
+        context_resolver=lambda _appt: context if context is not None else AppointmentContext(),
         clock=lambda: fixed_time,
     )
 
@@ -273,3 +275,77 @@ class TestAppointmentCancelled:
         port.appointment_cancelled(appt)
 
         assert len(feed.added) == 2
+
+
+class TestNotificationContext:
+    _CTX = AppointmentContext(customer_name="Ada Lovelace", problem_description="No hot water")
+
+    def test_booked_subject_leads_with_problem(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
+                     context=self._CTX)
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
+        assert msg["subject"] == "Appointment booked — No hot water"
+
+    def test_booked_body_names_customer_and_problem_without_bare_id(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
+                     context=self._CTX)
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
+        assert "Customer: Ada Lovelace" in msg["body"]
+        assert "Problem: No hot water" in msg["body"]
+        assert str(appt.id) not in msg["body"]
+
+    def test_booked_ics_carries_context(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
+                     context=self._CTX)
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
+        assert "SUMMARY:Ada Lovelace — No hot water" in msg["ics"]
+
+    def test_empty_context_keeps_generic_subject_and_clean_body(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"})
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
+        assert msg["subject"] == "Appointment booked"
+        assert "Customer:" not in msg["body"]
+        assert "Problem:" not in msg["body"]
+
+    def test_feed_rows_carry_enriched_subject(self):
+        appt = _make_appointment()
+        feed = FakeFeedRepository()
+        port = _port(appt, feed, FakeEmailSender(), {}, context=self._CTX)
+
+        port.appointment_booked(appt)
+
+        assert all(n.subject == "Appointment booked — No hot water" for n in feed.added)
+
+    def test_rescheduled_and_cancelled_bodies_carry_context(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        emails = {appt.customer_id: "c@example.com"}
+
+        port = _port(appt, FakeFeedRepository(), sender, emails, context=self._CTX)
+        port.appointment_rescheduled(appt)
+        port.appointment_cancelled(appt)
+
+        assert len(sender.sent) == 2
+        assert all("Problem: No hot water" in m["body"] for m in sender.sent)
+        assert sender.sent[0]["subject"] == "Appointment rescheduled — No hot water"
+        assert sender.sent[1]["subject"] == "Appointment cancelled — No hot water"

@@ -33,12 +33,37 @@ def _format_local(dt: datetime) -> str:
     return dt.strftime("%A, %d %B %Y at %H:%M")
 
 
+def _subject(base: str, context) -> str:
+    problem = context.problem_summary()
+    return f"{base} — {problem}" if problem else base
+
+
+def _context_lines(context) -> str:
+    """Render the customer/problem block appended to email and feed bodies.
+
+    Returns '' when the context carries nothing so an unenriched body has no dangling
+    separator.
+    """
+    lines = []
+    name = (context.customer_name or "").strip()
+    problem = (context.problem_description or "").strip()
+    if name:
+        lines.append(f"Customer: {name}")
+    if problem:
+        lines.append(f"Problem: {problem}")
+    return "\n\n" + "\n".join(lines) if lines else ""
+
+
 class DeliveringNotificationPort:
     """NotificationPort that writes in-app feed rows and sends email.
 
     recipient_email resolves a user_id to an email address (or None when the
     user has no address). This callable is injected to avoid importing the
     identity context from within notifications.
+
+    context_resolver maps an appointment to a duck-typed AppointmentContext for enrichment
+    (customer name, problem description). The resolver never raises; a failed lookup degrades
+    the affected field to None, so the port calls it unguarded.
 
     Feed writes share the caller's transaction via the session-bound feed_repo.
     Email sends are best-effort: any exception is caught and logged so that
@@ -50,12 +75,14 @@ class DeliveringNotificationPort:
         feed_repo: NotificationFeedRepository,
         email_sender: EmailSender,
         recipient_email: Callable[[uuid.UUID], str | None],
+        context_resolver: Callable[[object], object],
         *,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._feed_repo = feed_repo
         self._email_sender = email_sender
         self._recipient_email = recipient_email
+        self._context_resolver = context_resolver
         self._clock = clock
 
     # ------------------------------------------------------------------
@@ -64,12 +91,13 @@ class DeliveringNotificationPort:
 
     def appointment_booked(self, appointment) -> None:
         now = self._clock()
-        subject = "Appointment booked"
+        context = self._context_resolver(appointment)
+        subject = _subject("Appointment booked", context)
         body = (
-            f"Your appointment (id={appointment.id}) has been booked for "
-            f"{_format_local(appointment.time_range.start)}."
+            f"Your appointment has been booked for "
+            f"{_format_local(appointment.time_range.start)}.{_context_lines(context)}"
         )
-        ics = build_ics(appointment)
+        ics = build_ics(appointment, context)
 
         self._add_feed(appointment.customer_id, NotificationKind.BOOKED, subject, body, now)
         self._add_feed(appointment.technician_id, NotificationKind.BOOKED, subject, body, now)
@@ -79,12 +107,13 @@ class DeliveringNotificationPort:
 
     def appointment_rescheduled(self, appointment) -> None:
         now = self._clock()
-        subject = "Appointment rescheduled"
+        context = self._context_resolver(appointment)
+        subject = _subject("Appointment rescheduled", context)
         body = (
-            f"Your appointment (id={appointment.id}) has been rescheduled to "
-            f"{_format_local(appointment.time_range.start)}."
+            f"Your appointment has been rescheduled to "
+            f"{_format_local(appointment.time_range.start)}.{_context_lines(context)}"
         )
-        ics = build_ics(appointment)
+        ics = build_ics(appointment, context)
 
         self._add_feed(appointment.customer_id, NotificationKind.RESCHEDULED, subject, body, now)
         self._add_feed(appointment.technician_id, NotificationKind.RESCHEDULED, subject, body, now)
@@ -94,8 +123,9 @@ class DeliveringNotificationPort:
 
     def appointment_cancelled(self, appointment) -> None:
         now = self._clock()
-        subject = "Appointment cancelled"
-        body = f"Your appointment (id={appointment.id}) has been cancelled."
+        context = self._context_resolver(appointment)
+        subject = _subject("Appointment cancelled", context)
+        body = f"Your appointment has been cancelled.{_context_lines(context)}"
 
         self._add_feed(appointment.customer_id, NotificationKind.CANCELLED, subject, body, now)
         self._add_feed(appointment.technician_id, NotificationKind.CANCELLED, subject, body, now)

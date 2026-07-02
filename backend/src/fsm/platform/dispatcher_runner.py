@@ -16,6 +16,7 @@ from uuid import UUID
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.platform.calendar_errors import is_auth_error
 from fsm.platform.calendar_resolver import build_calendar_resolver
+from fsm.platform.identity_lookup import load_user
 from fsm.scheduling.adapters.unit_of_work import SqlAlchemyUnitOfWork
 from fsm.scheduling.application.calendar_projection_dispatcher import CalendarProjectionDispatcher
 
@@ -61,13 +62,12 @@ def build_customer_name_resolver(session_factory) -> Callable[[UUID], str | None
     """
 
     def _resolve(customer_id: UUID) -> str | None:
-        from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
-
         try:
             with session_factory() as session:
-                user = SqlAlchemyUserRepository(session).get(customer_id)
-                return user.name
+                user = load_user(session, customer_id)
+                return user.name if user else None
         except Exception:
+            _log.exception("Session for customer-name lookup failed; customer_id=%s", customer_id)
             return None
 
     return _resolve

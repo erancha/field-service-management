@@ -84,6 +84,7 @@ class TestNotificationsDelivery:
                 },
             )
             assert book_resp.status_code == 200
+            appt_id = book_resp.json()["id"]
         finally:
             client.app.dependency_overrides.pop(require_user, None)
 
@@ -103,3 +104,6 @@ class TestNotificationsDelivery:
         assert len(tech_rows) == 1, "Expected one notification row for the technician"
         assert cust_rows[0].kind == "BOOKED"
         assert tech_rows[0].kind == "BOOKED"
+        assert cust_rows[0].subject == "Appointment booked — Notification test"
+        assert "Problem: Notification test" in cust_rows[0].body
+        assert str(appt_id) not in cust_rows[0].body

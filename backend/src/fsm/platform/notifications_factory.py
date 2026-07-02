@@ -8,6 +8,7 @@ so the in-app feed still works without an SMTP server.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy.orm import Session
@@ -15,7 +16,12 @@ from sqlalchemy.orm import Session
 from fsm.notifications.adapters.feed_repository import SqlAlchemyNotificationFeedRepository
 from fsm.notifications.adapters.smtp_email_sender import LoggingEmailSender, SmtpEmailSender
 from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
+from fsm.platform.identity_lookup import load_user
+from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.notifications import NotificationPort
+
+_log = logging.getLogger(__name__)
 
 
 def build_notifications(session: Session, settings) -> NotificationPort:
@@ -23,7 +29,11 @@ def build_notifications(session: Session, settings) -> NotificationPort:
 
     The feed repository shares `session` so notification rows are written
     atomically with the appointment mutation that triggered them. Email is
-    best-effort and does not affect the transaction outcome.
+    best-effort and does not affect the transaction outcome. The context
+    resolver shares the same session; every appointment is created against an
+    existing service call and customer, so a failed lookup indicates corrupt
+    data — it is logged as an error and the notification goes out with generic
+    wording rather than failing the booking.
     """
     feed_repo = SqlAlchemyNotificationFeedRepository(session)
 
@@ -46,17 +56,33 @@ def build_notifications(session: Session, settings) -> NotificationPort:
         email_sender = LoggingEmailSender()
 
     def recipient_email(user_id: uuid.UUID) -> str | None:
-        from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+        user = load_user(session, user_id)
+        return user.email if user else None
 
+    def appointment_context(appointment) -> AppointmentContext:
         try:
-            repo = SqlAlchemyUserRepository(session)
-            user = repo.get(user_id)
-            return user.email
+            problem = (
+                SqlAlchemyServiceCallRepository(session)
+                .get(appointment.service_call_id)
+                .description
+            )
         except Exception:
-            return None
+            _log.exception(
+                "Service call lookup failed for appointment_id=%s service_call_id=%s; "
+                "notification will use generic wording",
+                appointment.id,
+                appointment.service_call_id,
+            )
+            problem = None
+        user = load_user(session, appointment.customer_id)
+        return AppointmentContext(
+            customer_name=user.name if user else None,
+            problem_description=problem,
+        )
 
     return DeliveringNotificationPort(
         feed_repo=feed_repo,
         email_sender=email_sender,
         recipient_email=recipient_email,
+        context_resolver=appointment_context,
     )
