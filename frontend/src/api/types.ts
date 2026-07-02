@@ -20,6 +20,10 @@ export interface PooledAvailabilityResponse {
   slots: PooledSlot[]
 }
 
+export interface AvailabilityResponse {
+  slots: TimeSlot[]
+}
+
 export interface Appointment {
   id: string
   service_call_id: string

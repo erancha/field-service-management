@@ -7,6 +7,7 @@ import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 import { AppointmentCard } from '../../components/AppointmentCard.tsx'
 import { AddressNudge } from '../profile/AddressNudge.tsx'
+import { searchWindow } from '../../utils/slots.ts'
 
 interface BookFlowProps {
   serviceCall: ServiceCall
@@ -15,13 +16,6 @@ interface BookFlowProps {
 // The customer is offered the soonest slots across the whole technician pool, so the
 // only choices are which of those slots to take — no technician id or date range to enter.
 const SLOT_COUNT = 5
-const SEARCH_DAYS = 7
-
-function isoDate(d: Date): string {
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${month}-${day}`
-}
 
 export function BookFlow({ serviceCall }: BookFlowProps) {
   const [booked, setBooked] = useState(false)
@@ -31,12 +25,8 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
   const appts = useAppointments()
 
   useEffect(() => {
-    const from = new Date()
-    const to = new Date()
-    to.setDate(to.getDate() + (SEARCH_DAYS - 1))
     void availability.fetch({
-      date_from: isoDate(from),
-      date_to: isoDate(to),
+      ...searchWindow(),
       limit: SLOT_COUNT,
     })
     // Runs once on mount; availability.fetch resets its own state on each call.

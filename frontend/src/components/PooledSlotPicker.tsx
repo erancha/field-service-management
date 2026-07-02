@@ -1,10 +1,5 @@
 import type { PooledSlot } from '../api/types.ts'
-
-function formatSlotTime(slot: PooledSlot): string {
-  const start = new Date(slot.start)
-  const end = new Date(slot.end)
-  return `${start.toLocaleDateString()} ${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-}
+import { formatSlotRange, SEARCH_DAYS } from '../utils/slots.ts'
 
 // Pooled slots from different technicians can share a start time, so identity is the
 // (technician, start) pair — comparing start alone would highlight unrelated slots.
@@ -24,7 +19,7 @@ interface PooledSlotPickerProps {
 
 export function PooledSlotPicker({ slots, selected, onSelect }: PooledSlotPickerProps) {
   if (slots.length === 0) {
-    return <p className="no-slots">No available slots in the next 7 days.</p>
+    return <p className="no-slots">No available slots in the next {SEARCH_DAYS} days.</p>
   }
   return (
     <div className="slot-picker">
@@ -38,7 +33,7 @@ export function PooledSlotPicker({ slots, selected, onSelect }: PooledSlotPicker
               type="button"
             >
               <span className="slot-picker__tech">{slot.technician_name}</span>
-              <span className="slot-picker__time">{formatSlotTime(slot)}</span>
+              <span className="slot-picker__time">{formatSlotRange(slot.start, slot.end)}</span>
             </button>
           </li>
         ))}

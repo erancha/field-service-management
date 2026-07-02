@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Appointment } from '../api/types.ts'
 import { Button } from './Button.tsx'
+import { ReschedulePicker } from './ReschedulePicker.tsx'
 
 interface AppointmentCardProps {
   appointment: Appointment
@@ -22,14 +23,12 @@ export function AppointmentCard({
   loading = false,
 }: AppointmentCardProps) {
   const [showReschedule, setShowReschedule] = useState(false)
-  const [newStart, setNewStart] = useState('')
-  const [newEnd, setNewEnd] = useState('')
   const [detailsText, setDetailsText] = useState('')
   const [showDetails, setShowDetails] = useState(false)
 
-  function handleReschedule() {
-    if (onReschedule && newStart && newEnd) {
-      onReschedule(appointment.id, newStart, newEnd)
+  function handleReschedule(start: string, end: string) {
+    if (onReschedule) {
+      onReschedule(appointment.id, start, end)
       setShowReschedule(false)
     }
   }
@@ -65,19 +64,11 @@ export function AppointmentCard({
                 Reschedule
               </Button>
               {showReschedule && (
-                <div className="appointment-card__reschedule">
-                  <label>
-                    New start:
-                    <input type="datetime-local" value={newStart} onChange={(e) => setNewStart(e.target.value)} />
-                  </label>
-                  <label>
-                    New end:
-                    <input type="datetime-local" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
-                  </label>
-                  <Button onClick={handleReschedule} disabled={!newStart || !newEnd} loading={loading}>
-                    Confirm
-                  </Button>
-                </div>
+                <ReschedulePicker
+                  technicianId={appointment.technician_id}
+                  onConfirm={handleReschedule}
+                  loading={loading}
+                />
               )}
             </>
           )}
