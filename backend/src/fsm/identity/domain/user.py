@@ -25,6 +25,9 @@ class User:
     role and role_status are orthogonal: role is the access the user is claiming, role_status
     whether that access is granted. role_decided_at / role_decided_by record the administrator
     decision that last set role_status (both None until a decision is made).
+
+    display_name, address, and phone are self-service profile fields; sign-in reconciliation
+    syncs only email and name from Google claims, so these survive every re-sign-in.
     """
 
     id: uuid.UUID
@@ -35,12 +38,21 @@ class User:
     role_status: RoleStatus
     role_decided_at: dt.datetime | None = None
     role_decided_by: uuid.UUID | None = None
+    display_name: str | None = None
+    address: str | None = None
+    phone: str | None = None
 
     def __post_init__(self) -> None:
         if not self.google_sub:
             raise InvalidUser("google_sub must not be empty.")
         if not self.email:
             raise InvalidUser("email must not be empty.")
+
+    @property
+    def preferred_name(self) -> str:
+        """Name to render for this user: the self-chosen display name when set, else the
+        Google-synced name."""
+        return self.display_name or self.name
 
     def grant_role(self, role: Role) -> None:
         """Assign a role with immediate effect, clearing any prior decision.

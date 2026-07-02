@@ -204,3 +204,26 @@ class TestListPendingTechnicians:
 
         pending = svc.list_pending_technicians()
         assert [u.id for u in pending] == [_FIXED_ID]
+
+
+class TestProfileFieldsSurviveSignIn:
+    def test_reconcile_syncs_claims_but_keeps_profile_fields(self, auth, repo):
+        auth.register(
+            "token-2",
+            VerifiedIdentity(_IDENTITY.google_sub, "renamed@example.com", "Renamed User"),
+        )
+        svc = IdentityService(
+            auth=auth, users=repo, new_id=lambda: _FIXED_ID, now=lambda: _FIXED_NOW
+        )
+        user = svc.sign_in(_CREDENTIAL, host=SignInHost.CUSTOMER, admin_emails=_ADMIN_EMAILS).user
+        user.display_name = "Dana"
+        user.address = "12 Main St"
+        user.phone = "+972-50-000-0000"
+
+        again = svc.sign_in("token-2", host=SignInHost.CUSTOMER, admin_emails=_ADMIN_EMAILS).user
+
+        assert again.name == "Renamed User"
+        assert again.email == "renamed@example.com"
+        assert again.display_name == "Dana"
+        assert again.address == "12 Main St"
+        assert again.phone == "+972-50-000-0000"

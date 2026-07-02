@@ -59,3 +59,15 @@ class TestSummaryLine:
     def test_whitespace_only_parts_are_treated_as_absent(self) -> None:
         ctx = AppointmentContext(customer_name="  ", problem_description=" \n ")
         assert ctx.summary_line() == "Field service appointment"
+
+
+def test_holds_address_and_phone() -> None:
+    ctx = AppointmentContext(service_address="12 Main St", customer_phone="+972-50-123")
+    assert ctx.service_address == "12 Main St"
+    assert ctx.customer_phone == "+972-50-123"
+
+
+def test_address_and_phone_default_to_none() -> None:
+    ctx = AppointmentContext()
+    assert ctx.service_address is None
+    assert ctx.customer_phone is None

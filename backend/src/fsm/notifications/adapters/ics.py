@@ -55,9 +55,9 @@ def build_ics(appointment, context) -> str:
     expressed in UTC using the Zulu suffix (…Z). DTSTAMP is set to the same
     value as DTSTART so the output is reproducible in tests.
 
-    context is a duck-typed AppointmentContext supplying customer/problem enrichment:
-    SUMMARY comes from context.summary_line(); a DESCRIPTION line carries the full problem
-    description when one is present.
+    context is a duck-typed AppointmentContext supplying customer/problem enrichment: SUMMARY
+    comes from context.summary_line(), LOCATION from the service address, and DESCRIPTION
+    carries the problem plus a phone contact line when present.
     """
     start = appointment.time_range.start.astimezone(timezone.utc)
     end = appointment.time_range.end.astimezone(timezone.utc)
@@ -71,8 +71,17 @@ def build_ics(appointment, context) -> str:
     dtstamp = _fmt(start)
 
     problem = (context.problem_description or "").strip()
+    phone = (context.customer_phone or "").strip()
+    address = (context.service_address or "").strip()
+
+    description_text = "\n".join(
+        part for part in (problem, f"Phone: {phone}" if phone else "") if part
+    )
     summary = _fold(f"SUMMARY:{_escape_text(context.summary_line())}")
-    description_line = f"{_fold(f'DESCRIPTION:{_escape_text(problem)}')}\r\n" if problem else ""
+    location_line = f"{_fold(f'LOCATION:{_escape_text(address)}')}\r\n" if address else ""
+    description_line = (
+        f"{_fold(f'DESCRIPTION:{_escape_text(description_text)}')}\r\n" if description_text else ""
+    )
 
     return (
         "BEGIN:VCALENDAR\r\n"
@@ -84,6 +93,7 @@ def build_ics(appointment, context) -> str:
         f"DTSTART:{dtstart}\r\n"
         f"DTEND:{dtend}\r\n"
         f"{summary}\r\n"
+        f"{location_line}"
         f"{description_line}"
         "END:VEVENT\r\n"
         "END:VCALENDAR\r\n"

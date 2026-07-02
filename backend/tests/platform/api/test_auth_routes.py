@@ -341,3 +341,78 @@ def test_me_returns_401_without_session(pg_session_factory):
 
     response = client.get("/auth/me")
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Profile: GET fields + PATCH /auth/me
+# ---------------------------------------------------------------------------
+
+
+def _signed_in_client(pg_session_factory) -> TestClient:
+    """Client whose session is signed in through the full callback flow with fake Google seams."""
+    settings = _settings_with_google(os.environ["DATABASE_URL"])
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    app.state.token_exchange_override = _make_fake_token_exchange("fake-id-token")
+    app.state.auth_adapter_override = _make_fake_auth_adapter(_fake_identity())
+    client = TestClient(app, follow_redirects=False)
+
+    login_resp = client.get("/auth/google/login")
+    from urllib.parse import parse_qs, urlparse
+
+    state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
+    callback = client.get(f"/auth/google/callback?code=fake-code&state={state}")
+    assert callback.status_code == 307
+    return client
+
+
+class TestProfileEndpoints:
+    def test_patch_me_requires_authentication(self, pg_session_factory):
+        settings = _settings_with_google(os.environ["DATABASE_URL"])
+        app = create_app(session_factory=pg_session_factory, settings=settings)
+        client = TestClient(app)
+        assert client.patch("/auth/me", json={"address": "12 Main St"}).status_code == 401
+
+    def test_patch_sets_fields_and_me_returns_them(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        resp = client.patch(
+            "/auth/me",
+            json={"display_name": "Dana", "address": "12 Main St", "phone": "+972-50-123"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["display_name"] == "Dana"
+        assert body["address"] == "12 Main St"
+        assert body["phone"] == "+972-50-123"
+        assert body["name"]  # Google-synced name is always present
+
+        me = client.get("/auth/me").json()
+        assert me["display_name"] == "Dana"
+        assert me["address"] == "12 Main St"
+        assert me["phone"] == "+972-50-123"
+
+    def test_absent_field_is_left_unchanged(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        client.patch("/auth/me", json={"display_name": "Dana", "address": "12 Main St"})
+        resp = client.patch("/auth/me", json={"address": "5 Oak Ave"})
+        body = resp.json()
+        assert body["address"] == "5 Oak Ave"
+        assert body["display_name"] == "Dana"
+
+    def test_empty_or_whitespace_field_clears_to_null(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        client.patch("/auth/me", json={"display_name": "Dana", "phone": "+972-50-123"})
+        resp = client.patch("/auth/me", json={"display_name": "", "phone": "   "})
+        body = resp.json()
+        assert body["display_name"] is None
+        assert body["phone"] is None
+
+    def test_values_are_stripped_before_storage(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        resp = client.patch("/auth/me", json={"address": "  12 Main St  "})
+        assert resp.json()["address"] == "12 Main St"
+
+    def test_over_length_field_is_rejected(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        assert client.patch("/auth/me", json={"display_name": "x" * 121}).status_code == 422
+        assert client.patch("/auth/me", json={"address": "x" * 501}).status_code == 422
+        assert client.patch("/auth/me", json={"phone": "x" * 41}).status_code == 422

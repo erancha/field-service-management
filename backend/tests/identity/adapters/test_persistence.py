@@ -143,3 +143,38 @@ class TestSqlAlchemyUserRepository:
         repo.add(user1)
         with pytest.raises(DuplicateGoogleSub):
             repo.add(user2)
+
+    def test_profile_fields_round_trip(self, session):
+        repo = SqlAlchemyUserRepository(session)
+        user = _make_user(google_sub="sub-profile")
+        user.display_name = "Dana"
+        user.address = "12 Main St, Springfield"
+        user.phone = "+972-50-123-4567"
+        repo.add(user)
+        fetched = repo.get(user.id)
+        assert fetched.display_name == "Dana"
+        assert fetched.address == "12 Main St, Springfield"
+        assert fetched.phone == "+972-50-123-4567"
+
+    def test_profile_fields_default_to_null(self, session):
+        repo = SqlAlchemyUserRepository(session)
+        user = _make_user(google_sub="sub-noprofile")
+        repo.add(user)
+        fetched = repo.get(user.id)
+        assert fetched.display_name is None
+        assert fetched.address is None
+        assert fetched.phone is None
+
+    def test_save_persists_profile_changes_and_clears(self, session):
+        repo = SqlAlchemyUserRepository(session)
+        user = _make_user(google_sub="sub-profile-save")
+        repo.add(user)
+        user.display_name = "Dana"
+        user.phone = "+972-50-123-4567"
+        repo.save(user)
+        assert repo.get(user.id).display_name == "Dana"
+        user.display_name = None
+        repo.save(user)
+        fetched = repo.get(user.id)
+        assert fetched.display_name is None
+        assert fetched.phone == "+972-50-123-4567"

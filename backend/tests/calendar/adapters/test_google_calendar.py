@@ -383,3 +383,52 @@ class TestBuildBody:
         body = client.imported[0][1]
         assert body["summary"] == "Ada"
         assert "description" not in body
+
+
+class TestLocationAndPhone:
+    def test_location_set_from_service_address(self, appointment: Appointment) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment, AppointmentContext(service_address="12 Main St"))
+
+        body = client.imported[0][1]
+        assert body["location"] == "12 Main St"
+
+    def test_location_omitted_when_address_absent_or_blank(
+        self, appointment: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment, AppointmentContext(service_address="   "))
+
+        body = client.imported[0][1]
+        assert "location" not in body
+
+    def test_phone_appended_to_description(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+        context = AppointmentContext(
+            problem_description="No hot water", customer_phone="+972-50-123"
+        )
+
+        adapter.create_event(appointment_no_details, context)
+
+        body = client.imported[0][1]
+        assert body["description"] == "No hot water\n\nPhone: +972-50-123"
+
+    def test_phone_alone_still_produces_description(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(
+            appointment_no_details, AppointmentContext(customer_phone="+972-50-123")
+        )
+
+        body = client.imported[0][1]
+        assert body["description"] == "Phone: +972-50-123"

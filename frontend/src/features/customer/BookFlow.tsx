@@ -6,6 +6,7 @@ import { PooledSlotPicker } from '../../components/PooledSlotPicker.tsx'
 import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 import { AppointmentCard } from '../../components/AppointmentCard.tsx'
+import { AddressNudge } from '../profile/AddressNudge.tsx'
 
 interface BookFlowProps {
   serviceCall: ServiceCall
@@ -72,6 +73,7 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
   return (
     <div className="book-flow">
       <h3>Next Available Slots</h3>
+      <AddressNudge />
       <p className="book-flow__sc">Service call: <strong>{serviceCall.description}</strong></p>
       <ErrorBanner message={availability.error} onDismiss={() => availability.reset()} />
       <ErrorBanner message={appts.error} onDismiss={appts.clearError} />

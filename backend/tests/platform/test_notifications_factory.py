@@ -43,6 +43,8 @@ def test_context_resolver_degrades_to_empty_context_and_logs_errors_on_lookup_fa
 
     assert context.customer_name is None
     assert context.problem_description is None
+    assert context.service_address is None
+    assert context.customer_phone is None
     messages = [r.getMessage() for r in caplog.records]
     assert any(str(appointment.service_call_id) in m for m in messages)
     assert any(str(appointment.customer_id) in m for m in messages)

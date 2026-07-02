@@ -26,6 +26,8 @@ _TECH_ID = UUID("cccccccc-0000-0000-0000-000000000001")
 _CUST_ID = UUID("dddddddd-0000-0000-0000-000000000001")
 _SC_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 _CUSTOMER_NAME = "Ada Lovelace"
+_ADDRESS = "12 Main St, Springfield"
+_PHONE = "+972-50-123-4567"
 _PROBLEM = "No hot water"
 
 
@@ -94,7 +96,11 @@ def dispatcher(
     return CalendarProjectionDispatcher(
         uow_factory=lambda: uow,
         calendar=calendar,
-        customer_name_resolver=lambda _customer_id: _CUSTOMER_NAME,
+        customer_context_resolver=lambda _customer_id: AppointmentContext(
+            customer_name=_CUSTOMER_NAME,
+            service_address=_ADDRESS,
+            customer_phone=_PHONE,
+        ),
     )
 
 
@@ -646,6 +652,8 @@ class TestContextEnrichment:
         [context] = calendar.created_contexts.values()
         assert context.customer_name == _CUSTOMER_NAME
         assert context.problem_description == _PROBLEM
+        assert context.service_address == _ADDRESS
+        assert context.customer_phone == _PHONE
 
     def test_update_passes_customer_name_and_problem_to_calendar(
         self,
@@ -663,3 +671,5 @@ class TestContextEnrichment:
         context = calendar.updated_contexts["evt-existing"]
         assert context.customer_name == _CUSTOMER_NAME
         assert context.problem_description == _PROBLEM
+        assert context.service_address == _ADDRESS
+        assert context.customer_phone == _PHONE

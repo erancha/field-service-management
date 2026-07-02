@@ -19,6 +19,7 @@ from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.identity_lookup import load_user
 from fsm.scheduling.adapters.unit_of_work import SqlAlchemyUnitOfWork
 from fsm.scheduling.application.calendar_projection_dispatcher import CalendarProjectionDispatcher
+from fsm.scheduling.domain.appointment_context import AppointmentContext
 
 _log = logging.getLogger(__name__)
 
@@ -54,21 +55,30 @@ def make_auth_disconnect_handler(
     return _handler
 
 
-def build_customer_name_resolver(session_factory) -> Callable[[UUID], str | None]:
-    """Return a callable resolving a customer user id to their name, or None on any failure.
+def build_customer_context_resolver(session_factory) -> Callable[[UUID], AppointmentContext]:
+    """Return a callable resolving a customer id to their profile context (preferred name,
+    address, phone), or an empty context on any failure.
 
     Mirrors the notifications recipient_email seam so the scheduling dispatcher stays free of a
     direct identity-context import; the identity lookup lives here in the composition root.
     """
 
-    def _resolve(customer_id: UUID) -> str | None:
+    def _resolve(customer_id: UUID) -> AppointmentContext:
         try:
             with session_factory() as session:
                 user = load_user(session, customer_id)
-                return user.name if user else None
+                if user is None:
+                    return AppointmentContext()
+                return AppointmentContext(
+                    customer_name=user.preferred_name,
+                    service_address=user.address,
+                    customer_phone=user.phone,
+                )
         except Exception:
-            _log.exception("Session for customer-name lookup failed; customer_id=%s", customer_id)
-            return None
+            _log.exception(
+                "Session for customer-context lookup failed; customer_id=%s", customer_id
+            )
+            return AppointmentContext()
 
     return _resolve
 
@@ -78,12 +88,12 @@ def build_dispatcher(session_factory, settings) -> CalendarProjectionDispatcher:
     uow_factory = lambda: SqlAlchemyUnitOfWork(session_factory)
     calendar_resolver = build_calendar_resolver(session_factory, settings)
     on_calendar_error = make_auth_disconnect_handler(session_factory, settings)
-    customer_name_resolver = build_customer_name_resolver(session_factory)
+    customer_context_resolver = build_customer_context_resolver(session_factory)
     return CalendarProjectionDispatcher(
         uow_factory=uow_factory,
         calendar_resolver=calendar_resolver,
         on_calendar_error=on_calendar_error,
-        customer_name_resolver=customer_name_resolver,
+        customer_context_resolver=customer_context_resolver,
     )
 
 

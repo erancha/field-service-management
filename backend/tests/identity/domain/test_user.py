@@ -1,4 +1,6 @@
 """Tests for the User entity."""
+from __future__ import annotations
+
 import datetime as dt
 import uuid
 
@@ -99,3 +101,31 @@ class TestRoleDecision:
         assert user.role_status == RoleStatus.REJECTED
         assert user.role_decided_by == admin_id
         assert user.role_decided_at == at
+
+
+def _make_user(**overrides) -> User:
+    defaults = dict(
+        id=uuid.uuid4(),
+        google_sub="sub-1",
+        email="a@example.com",
+        name="Google Name",
+        role=Role.CUSTOMER,
+        role_status=RoleStatus.APPROVED,
+    )
+    defaults.update(overrides)
+    return User(**defaults)
+
+
+def test_profile_fields_default_to_none() -> None:
+    user = _make_user()
+    assert user.display_name is None
+    assert user.address is None
+    assert user.phone is None
+
+
+def test_preferred_name_prefers_display_name() -> None:
+    assert _make_user(display_name="Dana").preferred_name == "Dana"
+
+
+def test_preferred_name_falls_back_to_google_name() -> None:
+    assert _make_user().preferred_name == "Google Name"

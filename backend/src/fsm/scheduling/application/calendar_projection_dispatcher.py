@@ -20,6 +20,7 @@ projected to their own provisioned calendar.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Callable
 from uuid import UUID
@@ -50,6 +51,9 @@ class CalendarProjectionDispatcher:
     via the injected resolver callable so each technician's events reach their own
     calendar. Pass calendar= (a single CalendarPort) as a convenience shortcut; it is
     silently wrapped into a resolver that always returns the same port.
+
+    Customer profile context (name, address, phone) comes from the injected resolver
+    and is merged with the service-call problem at build time.
     """
 
     def __init__(
@@ -59,7 +63,7 @@ class CalendarProjectionDispatcher:
         *,
         calendar_resolver: Callable[[UUID], CalendarPort] | None = None,
         on_calendar_error: Callable[[UUID, Exception], None] | None = None,
-        customer_name_resolver: Callable[[UUID], str | None] | None = None,
+        customer_context_resolver: Callable[[UUID], AppointmentContext] | None = None,
     ) -> None:
         if calendar is None and calendar_resolver is None:
             raise ValueError(
@@ -76,15 +80,18 @@ class CalendarProjectionDispatcher:
         else:
             self._resolver = calendar_resolver  # type: ignore[assignment]
         self._on_calendar_error = on_calendar_error
-        self._customer_name_resolver: Callable[[UUID], str | None] = (
-            customer_name_resolver if customer_name_resolver is not None else (lambda _customer_id: None)
+        self._customer_context_resolver: Callable[[UUID], AppointmentContext] = (
+            customer_context_resolver
+            if customer_context_resolver is not None
+            else (lambda _customer_id: AppointmentContext())
         )
 
     def _build_context(self, uow: UnitOfWork, appt: Appointment) -> AppointmentContext:
-        """Assemble enrichment context from the service call and the customer-name resolver."""
+        """Assemble enrichment context: customer profile fields come from the injected
+        resolver, the problem from the service call."""
         service_call = uow.service_calls.get(appt.service_call_id)
-        return AppointmentContext(
-            customer_name=self._customer_name_resolver(appt.customer_id),
+        return dataclasses.replace(
+            self._customer_context_resolver(appt.customer_id),
             problem_description=service_call.description,
         )
 

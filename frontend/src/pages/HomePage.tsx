@@ -5,6 +5,7 @@ import { TechnicianPage } from './TechnicianPage.tsx'
 import { AdminPage } from './AdminPage.tsx'
 import { TechnicianWaiting } from '../features/technician/TechnicianWaiting.tsx'
 import { TechnicianDeclined } from '../features/technician/TechnicianDeclined.tsx'
+import { OnboardingGate } from '../features/profile/OnboardingGate.tsx'
 
 export function HomePage() {
   const { auth, refresh } = useAuth()
@@ -30,7 +31,11 @@ export function HomePage() {
       return <TechnicianWaiting userId={user.user_id} email={user.email} onDecided={refresh} />
     }
 
-    return <CustomerPage customerId={user.user_id} email={user.email} />
+    return (
+      <OnboardingGate user={user}>
+        <CustomerPage customerId={user.user_id} email={user.email} />
+      </OnboardingGate>
+    )
   }
 
   return (

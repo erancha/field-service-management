@@ -76,8 +76,10 @@ def build_notifications(session: Session, settings) -> NotificationPort:
             problem = None
         user = load_user(session, appointment.customer_id)
         return AppointmentContext(
-            customer_name=user.name if user else None,
+            customer_name=user.preferred_name if user else None,
             problem_description=problem,
+            service_address=user.address if user else None,
+            customer_phone=user.phone if user else None,
         )
 
     return DeliveringNotificationPort(

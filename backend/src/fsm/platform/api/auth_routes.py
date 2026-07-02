@@ -4,6 +4,7 @@ Wiring:
 - GET  /auth/google/login    → redirect to Google authorization page (or 503 if unconfigured)
 - GET  /auth/google/callback → exchange code, verify ID token, upsert user, set session
 - GET  /auth/me              → return current session user or 401
+- PATCH /auth/me             → update the caller's own profile (display_name, address, phone)
 - POST /auth/logout          → clear the session
 
 Injectable seams on app.state allow tests to bypass real Google without patching globals:
@@ -16,15 +17,16 @@ import os
 import secrets
 from typing import Callable
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 from fsm.identity.application.identity_service import IdentityService, SignInHost
 from fsm.identity.domain.errors import BackOfficeAccessDenied
 from fsm.identity.ports.auth import AuthPort
-from fsm.platform.api.auth_deps import resolve_current_user
+from fsm.platform.api.auth_deps import SessionUser, require_user
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
+from fsm.platform.api.schemas import UpdateProfileRequest
 from fsm.platform.events import ADMINS_CHANNEL, publish_to_app
 
 router = APIRouter(prefix="/auth")
@@ -181,12 +183,29 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
     return RedirectResponse("/", status_code=307)
 
 
+_PROFILE_FIELDS = ("display_name", "address", "phone")
+
+
+def _me_payload(user) -> dict:
+    """JSON shape shared by GET and PATCH /auth/me."""
+    return {
+        "user_id": str(user.id),
+        "email": user.email,
+        "role": user.role.value,
+        "role_status": user.role_status.value,
+        "name": user.name,
+        "display_name": user.display_name,
+        "address": user.address,
+        "phone": user.phone,
+    }
+
+
 @router.get("/me")
 def auth_me(request: Request):
-    """Return the caller's identity with role and status resolved from the database.
+    """Return the caller's identity with role, status, and profile resolved from the database.
 
-    The session carries only user_id; the live role/status come from the current user record so a
-    just-approved technician sees their new status without re-authenticating.
+    The session carries only user_id; the live record is loaded per request so a just-approved
+    technician or a just-edited profile is reflected without re-authenticating.
     """
     user_id = request.session.get("user_id")
     if not user_id:
@@ -196,17 +215,35 @@ def auth_me(request: Request):
     factory = _get_session_factory(request.app)
     with factory() as session:
         try:
-            current = resolve_current_user(UUID(user_id), SqlAlchemyUserRepository(session))
+            user = SqlAlchemyUserRepository(session).get(UUID(user_id))
         except Exception:
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
-    return JSONResponse(
-        {
-            "user_id": str(current.id),
-            "email": current.email,
-            "role": current.role.value,
-            "role_status": current.role_status.value,
-        }
-    )
+    return JSONResponse(_me_payload(user))
+
+
+@router.patch("/me")
+def update_me(
+    body: UpdateProfileRequest,
+    request: Request,
+    session_user: SessionUser = Depends(require_user),
+):
+    """Update the caller's own profile fields.
+
+    Identity comes only from the session (require_user); a field absent from the payload is
+    left unchanged, a present field is stripped and stored, empty becoming NULL.
+    """
+    factory = _get_session_factory(request.app)
+    with factory() as session:
+        repo = SqlAlchemyUserRepository(session)
+        user = repo.get(session_user.id)
+        for field in _PROFILE_FIELDS:
+            if field in body.model_fields_set:
+                value = getattr(body, field)
+                cleaned = value.strip() if value else ""
+                setattr(user, field, cleaned or None)
+        repo.save(user)
+        session.commit()
+    return JSONResponse(_me_payload(user))
 
 
 @router.post("/logout")

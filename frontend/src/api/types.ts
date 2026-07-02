@@ -39,6 +39,16 @@ export interface CurrentUser {
   email: string
   role: Role | string
   role_status: RoleStatus | string
+  name: string
+  display_name: string | null
+  address: string | null
+  phone: string | null
+}
+
+export interface ProfileUpdate {
+  display_name?: string
+  address?: string
+  phone?: string
 }
 
 export interface CalendarStatus {

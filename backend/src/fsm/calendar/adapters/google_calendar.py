@@ -69,9 +69,17 @@ class GoogleCalendarAdapter:
             "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
         }
+        address = (context.service_address or "").strip()
+        if address:
+            body["location"] = address
         description_parts = [
-            part for part in (context.problem_description, appointment.details) if part and part.strip()
+            part
+            for part in (context.problem_description, appointment.details)
+            if part and part.strip()
         ]
+        phone = (context.customer_phone or "").strip()
+        if phone:
+            description_parts.append(f"Phone: {phone}")
         if description_parts:
             body["description"] = "\n\n".join(description_parts)
         return body

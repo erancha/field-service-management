@@ -166,3 +166,60 @@ class TestBuildIcsLineFolding:
         result = build_ics(self._appt(), ctx)
         for chunk in result.encode("utf-8").split(b"\r\n"):
             chunk.decode("utf-8")
+
+
+class TestBuildIcsLocationAndPhone:
+    def _appt(self):
+        return _make_appointment(
+            start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
+            end=datetime(2025, 6, 10, 10, 0, tzinfo=timezone.utc),
+        )
+
+    def test_location_line_present_and_escaped(self):
+        from fsm.notifications.adapters.ics import build_ics
+
+        ctx = AppointmentContext(service_address="12 Main St, Springfield")
+        assert "LOCATION:12 Main St\\, Springfield" in build_ics(self._appt(), ctx)
+
+    def test_no_location_line_when_address_blank(self):
+        from fsm.notifications.adapters.ics import build_ics
+
+        assert "LOCATION" not in build_ics(self._appt(), AppointmentContext(service_address=" "))
+        assert "LOCATION" not in build_ics(self._appt(), AppointmentContext())
+
+    def test_phone_joins_description(self):
+        from fsm.notifications.adapters.ics import build_ics
+
+        ctx = AppointmentContext(problem_description="No hot water", customer_phone="+972-50-123")
+        assert "DESCRIPTION:No hot water\\nPhone: +972-50-123" in build_ics(self._appt(), ctx)
+
+    def test_phone_alone_produces_description(self):
+        from fsm.notifications.adapters.ics import build_ics
+
+        ctx = AppointmentContext(customer_phone="+972-50-123")
+        assert "DESCRIPTION:Phone: +972-50-123" in build_ics(self._appt(), ctx)
+
+    def test_long_address_is_folded(self):
+        from fsm.notifications.adapters.ics import build_ics
+
+        ctx = AppointmentContext(service_address="Very long street name " * 10)
+        for line in build_ics(self._appt(), ctx).split("\r\n"):
+            assert len(line.encode("utf-8")) <= 75
+
+    def test_folded_location_round_trips_to_escaped_content_line(self):
+        from fsm.notifications.adapters.ics import _escape_text, build_ics
+
+        address = "Building 7, Suite 12; c/o Warehouse \\ Depot, " + "Long Industrial Road, " * 3 + "end"
+        ctx = AppointmentContext(service_address=address)
+        lines = build_ics(self._appt(), ctx).split("\r\n")
+
+        for line in lines:
+            assert len(line.encode("utf-8")) <= 75
+
+        start = next(i for i, line in enumerate(lines) if line.startswith("LOCATION:"))
+        folded = [lines[start]]
+        i = start + 1
+        while i < len(lines) and lines[i].startswith(" "):
+            folded.append(lines[i][1:])
+            i += 1
+        assert "".join(folded) == f"LOCATION:{_escape_text(address)}"

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { ServiceCall } from '../api/types.ts'
 import { OpenServiceCall } from '../features/customer/OpenServiceCall.tsx'
 import { BookFlow } from '../features/customer/BookFlow.tsx'
@@ -26,6 +27,7 @@ export function CustomerPage({ customerId, email }: CustomerPageProps) {
         <h2>Customer Dashboard</h2>
         <div className="page__header-right">
           {email && <span className="page__email">{email}</span>}
+          <Link to="/profile" className="btn btn-secondary">Profile</Link>
           <LogoutButton />
         </div>
       </header>

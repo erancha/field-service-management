@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -135,3 +135,16 @@ class TimezoneRequest(BaseModel):
 
 class TimezoneResponse(BaseModel):
     timezone: str
+
+
+# ---------------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------------
+
+
+class UpdateProfileRequest(BaseModel):
+    """Self-service profile update; a field absent from the payload is left unchanged."""
+
+    display_name: str | None = Field(default=None, max_length=120)
+    address: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=40)

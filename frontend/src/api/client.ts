@@ -47,6 +47,13 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   })
 }
 
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function apiGet<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = params
     ? `${path}?${new URLSearchParams(params).toString()}`

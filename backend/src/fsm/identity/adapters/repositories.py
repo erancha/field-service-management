@@ -42,6 +42,9 @@ def _row_to_user(row: UserRow) -> User:
         role_status=RoleStatus(row.role_status),
         role_decided_at=row.role_decided_at,
         role_decided_by=row.role_decided_by,
+        display_name=row.display_name,
+        address=row.address,
+        phone=row.phone,
     )
 
 
@@ -55,6 +58,9 @@ def _user_to_row(user: User) -> UserRow:
         role_status=user.role_status.value,
         role_decided_at=user.role_decided_at,
         role_decided_by=user.role_decided_by,
+        display_name=user.display_name,
+        address=user.address,
+        phone=user.phone,
     )
 
 
@@ -98,6 +104,9 @@ class SqlAlchemyUserRepository:
         row.role_status = user.role_status.value
         row.role_decided_at = user.role_decided_at
         row.role_decided_by = user.role_decided_by
+        row.display_name = user.display_name
+        row.address = user.address
+        row.phone = user.phone
         self._session.flush()
 
     def get(self, user_id: uuid.UUID) -> User:
