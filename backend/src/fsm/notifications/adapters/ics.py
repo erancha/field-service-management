@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import timezone
 
+from fsm.notifications.ports.appointment_context import AppointmentContextView
 
 _FOLD_LIMIT = 75
 
@@ -50,7 +51,7 @@ def _escape_text(value: str) -> str:
 
 def build_ics(
     appointment,
-    context,
+    context: AppointmentContextView,
     *,
     method: str = "REQUEST",
     organizer: str | None = None,
@@ -68,8 +69,8 @@ def build_ics(
     ATTENDEE. With either absent it degrades to a plain event, so a dev run without a configured
     sender still produces valid output.
 
-    context is a duck-typed AppointmentContext: SUMMARY from context.summary_line(), LOCATION from
-    the service address, and DESCRIPTION built from the assigned technician's name and phone (shown
+    SUMMARY comes from context.summary_line(), LOCATION from the service address, and
+    DESCRIPTION is built from the assigned technician's name and phone (shown
     to the customer), the problem, the appointment's free-text details, and the customer phone
     line — each included when present.
     """

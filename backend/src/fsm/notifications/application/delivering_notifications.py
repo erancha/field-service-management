@@ -13,6 +13,7 @@ from typing import Callable
 
 from fsm.notifications.adapters.ics import build_ics
 from fsm.notifications.domain.notification import Notification, NotificationKind
+from fsm.notifications.ports.appointment_context import AppointmentContextView
 from fsm.notifications.ports.email_sender import EmailSender
 from fsm.notifications.ports.feed_repository import NotificationFeedRepository
 
@@ -33,12 +34,12 @@ def _format_local(dt: datetime, zone: tzinfo) -> str:
     return dt.astimezone(zone).strftime("%A, %d %B %Y at %H:%M")
 
 
-def _subject(base: str, context) -> str:
+def _subject(base: str, context: AppointmentContextView) -> str:
     problem = context.problem_summary()
     return f"{base} — {problem}" if problem else base
 
 
-def _context_lines(context) -> str:
+def _context_lines(context: AppointmentContextView) -> str:
     """Render the customer/problem block appended to email and feed bodies.
 
     Returns '' when the context carries nothing so an unenriched body has no dangling
@@ -67,9 +68,9 @@ class DeliveringNotificationPort:
     user has no address). This callable is injected to avoid importing the
     identity context from within notifications.
 
-    context_resolver maps an appointment to a duck-typed AppointmentContext for enrichment
-    (customer name, problem description). The resolver never raises; a failed lookup degrades
-    the affected field to None, so the port calls it unguarded.
+    context_resolver maps an appointment to an AppointmentContextView for enrichment. The
+    resolver never raises: a failed lookup yields a visible placeholder for fields required on
+    this surface and None for optional ones, so the port calls it unguarded.
 
     organizer_address is the email address used as the ICS ORGANIZER, matching the SMTP From.
     When set, appointment notifications include iTIP invitations (REQUEST for booking/reschedule,
@@ -89,7 +90,7 @@ class DeliveringNotificationPort:
         feed_repo: NotificationFeedRepository,
         email_sender: EmailSender,
         recipient_email: Callable[[uuid.UUID], str | None],
-        context_resolver: Callable[[object], object],
+        context_resolver: Callable[[object], AppointmentContextView],
         *,
         local_zone: Callable[[uuid.UUID], tzinfo],
         organizer_address: str | None = None,
