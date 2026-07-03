@@ -32,8 +32,8 @@ class ReconciliationService:
     - LWW arbitration: discards stale inbound edits based on updated_at comparison
     - DB-authority overlap guard: re-projects the DB's time when a Google edit would
       create a double-booking
-    - Routes cancel/reschedule/content-edit/no-op paths to the correct domain mutation
-      and notification
+    - Routes cancel/reschedule/no-op paths to the correct domain mutation and notification;
+      description-only inbound edits are ignored (the description is a rendered projection)
     """
 
     def __init__(
@@ -99,10 +99,7 @@ class ReconciliationService:
             self._notifications.appointment_rescheduled(appt)
             return
 
-        # Content-only edit: not a lifecycle transition, so it is reflected without a notification.
-        if change.details is not None and change.details != appt.details:
-            appt.add_details(change.details, now=self._clock())
-            self._appointments.save(appt)
-            return
-
-        # Nothing changed: this is a projection echo of our own prior outbound update.
+        # No time or cancellation change: a description-only edit or a projection echo of our
+        # own outbound update. The event description is a rendered composition (problem +
+        # details + phone), not the raw details field, so reflecting it back would overwrite
+        # appt.details with the whole body and compound on every re-projection. Left as a no-op.

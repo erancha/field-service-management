@@ -68,7 +68,6 @@ def _map_event(raw_event: dict) -> InboundEventChange | None:
         appointment_id=appointment_id,
         cancelled=cancelled,
         new_time_range=new_time_range,
-        details=raw_event.get("description"),
         updated_at=_parse_utc(raw_event["updated"]),
     )
 

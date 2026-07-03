@@ -104,7 +104,6 @@ class TestInboundReschedule:
             appointment_id=appt.id,
             cancelled=False,
             new_time_range=new_range,
-            details=None,
             updated_at=_BASE + timedelta(hours=1),
         )
 
@@ -133,7 +132,6 @@ class TestInboundCancel:
             appointment_id=appt.id,
             cancelled=True,
             new_time_range=None,
-            details=None,
             updated_at=_BASE + timedelta(hours=1),
         )
 
@@ -166,7 +164,6 @@ class TestStaleInboundEdit:
             appointment_id=appt.id,
             cancelled=False,
             new_time_range=new_range,
-            details=None,
             updated_at=_BASE,
         )
 
@@ -192,7 +189,6 @@ class TestStaleInboundEdit:
             appointment_id=appt.id,
             cancelled=False,
             new_time_range=None,
-            details="some detail",
             updated_at=_BASE - timedelta(seconds=1),
         )
 
@@ -228,7 +224,6 @@ class TestOverlapDBWins:
             appointment_id=appt.id,
             cancelled=False,
             new_time_range=blocking_range,
-            details=None,
             updated_at=_BASE + timedelta(hours=1),
         )
 
@@ -244,35 +239,8 @@ class TestOverlapDBWins:
         assert pending[0].appointment_id == appt.id
 
 
-class TestContentOnlyEdit:
-    def test_details_updated_without_notification(
-        self,
-        svc: ReconciliationService,
-        appt_repo: InMemoryAppointmentRepository,
-        outbox: InMemoryOutboxRepository,
-        notifications: FakeNotificationPort,
-    ) -> None:
-        appt = _make_appointment(details=None)
-        appt_repo.add(appt)
-
-        change = InboundEventChange(
-            appointment_id=appt.id,
-            cancelled=False,
-            new_time_range=None,
-            details="Bring ladder",
-            updated_at=_BASE + timedelta(hours=1),
-        )
-
-        svc.reconcile(change)
-
-        saved = appt_repo.get(appt.id)
-        assert saved.details == "Bring ladder"
-        assert saved.status == AppointmentStatus.SCHEDULED
-        assert len(notifications.calls) == 0
-
-
 class TestEchoNoOp:
-    def test_echo_with_matching_values_and_newer_timestamp_is_noop(
+    def test_echo_with_matching_time_and_newer_timestamp_is_noop(
         self,
         svc: ReconciliationService,
         appt_repo: InMemoryAppointmentRepository,
@@ -282,12 +250,12 @@ class TestEchoNoOp:
         appt = _make_appointment(details="existing note")
         appt_repo.add(appt)
 
-        # Same time range and same details as in DB, but newer updated_at
+        # Same time range as the DB row, newer updated_at: a projection echo. The event
+        # description Google stamps newer is not reconciled, so nothing mutates.
         change = InboundEventChange(
             appointment_id=appt.id,
             cancelled=False,
             new_time_range=_DEFAULT_RANGE,
-            details="existing note",
             updated_at=_BASE + timedelta(hours=1),
         )
 
@@ -296,6 +264,77 @@ class TestEchoNoOp:
         saved = appt_repo.get(appt.id)
         assert saved.time_range == _DEFAULT_RANGE
         assert saved.details == "existing note"
+        assert saved.status == AppointmentStatus.SCHEDULED
+        assert len(notifications.calls) == 0
+        assert len(outbox.all_entries) == 0
+
+
+class TestEchoDoesNotBlockLaterDrag:
+    def test_drag_after_a_projection_echo_reschedules_and_notifies(
+        self,
+        svc: ReconciliationService,
+        appt_repo: InMemoryAppointmentRepository,
+        notifications: FakeNotificationPort,
+    ) -> None:
+        # A projection echo must leave updated_at untouched so it cannot advance the
+        # last-write-wins floor past a subsequent technician drag. Reflecting the echo as a
+        # details edit (the prior bug) bumped updated_at to wall-clock time and could silently
+        # drop the drag, so neither the DB nor the customer notification saw the reschedule.
+        appt = _make_appointment(details="existing note", updated_at=_BASE)
+        appt_repo.add(appt)
+
+        echo = InboundEventChange(
+            appointment_id=appt.id,
+            cancelled=False,
+            new_time_range=_DEFAULT_RANGE,
+            updated_at=_BASE + timedelta(hours=1),
+        )
+        svc.reconcile(echo)
+
+        dragged_range = TimeRange(
+            start=datetime(2024, 6, 10, 13, 0, tzinfo=_TZ),
+            end=datetime(2024, 6, 10, 15, 0, tzinfo=_TZ),
+        )
+        drag = InboundEventChange(
+            appointment_id=appt.id,
+            cancelled=False,
+            new_time_range=dragged_range,
+            updated_at=_BASE + timedelta(hours=2),
+        )
+        svc.reconcile(drag)
+
+        saved = appt_repo.get(appt.id)
+        assert saved.time_range == dragged_range
+        assert saved.status == AppointmentStatus.RESCHEDULED
+        assert [c[0] for c in notifications.calls] == ["rescheduled"]
+
+
+class TestDescriptionOnlyEditIgnored:
+    def test_description_edit_without_time_change_leaves_details_unchanged(
+        self,
+        svc: ReconciliationService,
+        appt_repo: InMemoryAppointmentRepository,
+        outbox: InMemoryOutboxRepository,
+        notifications: FakeNotificationPort,
+    ) -> None:
+        # The projected event description is a rendered composition (problem + details +
+        # phone), not the raw details. An inbound change carrying no time or cancellation
+        # signal — whether a genuine description edit or a projection echo — must never
+        # overwrite appt.details, which previously compounded on every re-projection.
+        appt = _make_appointment(details="Leaking pipe under sink")
+        appt_repo.add(appt)
+
+        change = InboundEventChange(
+            appointment_id=appt.id,
+            cancelled=False,
+            new_time_range=None,
+            updated_at=_BASE + timedelta(hours=1),
+        )
+
+        svc.reconcile(change)
+
+        saved = appt_repo.get(appt.id)
+        assert saved.details == "Leaking pipe under sink"
         assert saved.status == AppointmentStatus.SCHEDULED
         assert len(notifications.calls) == 0
         assert len(outbox.all_entries) == 0
@@ -312,7 +351,6 @@ class TestUnknownAppointment:
             appointment_id=uuid4(),
             cancelled=False,
             new_time_range=None,
-            details=None,
             updated_at=_BASE + timedelta(hours=1),
         )
 
@@ -342,7 +380,6 @@ class TestAlreadyCancelled:
             appointment_id=appt.id,
             cancelled=False,
             new_time_range=new_range,
-            details=None,
             updated_at=_BASE + timedelta(hours=1),
         )
 

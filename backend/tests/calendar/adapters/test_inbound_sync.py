@@ -82,8 +82,10 @@ class TestGoogleCalendarSyncAdapter:
         assert reschedule.new_time_range is not None
         assert reschedule.new_time_range.start == datetime(2024, 6, 10, 9, 0, tzinfo=timezone.utc)
         assert reschedule.new_time_range.end == datetime(2024, 6, 10, 11, 0, tzinfo=timezone.utc)
-        assert reschedule.details == "bring extra tools"
         assert reschedule.updated_at == datetime(2024, 6, 10, 8, 30, tzinfo=timezone.utc)
+        # The event description is a rendered projection, not a source of truth, so the
+        # adapter surfaces no details signal for reconciliation.
+        assert not hasattr(reschedule, "details")
 
     def test_cancellation_maps_correctly(self):
         adapter = self._make_adapter()
