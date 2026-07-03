@@ -66,7 +66,11 @@ _DATE_MONDAY = date(2025, 3, 3)
 
 
 def _store_connected_technician(
-    pg_session_factory, tech_id: uuid.UUID, token_key: str, name: str = "Pool Technician"
+    pg_session_factory,
+    tech_id: uuid.UUID,
+    token_key: str,
+    name: str = "Pool Technician",
+    display_name: str | None = None,
 ) -> str:
     """Insert the technician's app_user and a CONNECTED CalendarConnection; return calendar_id.
 
@@ -89,6 +93,7 @@ def _store_connected_technician(
                     name=name,
                     role=Role.TECHNICIAN,
                     role_status=RoleStatus.APPROVED,
+                    display_name=display_name,
                 )
             )
             repo = SqlAlchemyCalendarConnectionRepository(session)
@@ -382,10 +387,13 @@ def test_pool_caps_results_to_limit(pg_session_factory, authenticate):
 
 
 def test_pool_slots_include_technician_name(pg_session_factory, authenticate):
-    """A connected technician with an app_user row has their name on every pooled slot."""
+    """Pooled slots carry the technician's preferred name — the self-chosen display name when
+    set — matching the name every notification and calendar event renders afterwards."""
     token_key = Fernet.generate_key().decode()
     tech = uuid.uuid4()
-    _store_connected_technician(pg_session_factory, tech, token_key, name="Dana Cohen")
+    _store_connected_technician(
+        pg_session_factory, tech, token_key, name="Dana Cohen-Google", display_name="Dana Cohen"
+    )
 
     settings = _unconfigured_settings(os.environ["DATABASE_URL"])
     app = create_app(session_factory=pg_session_factory, settings=settings)

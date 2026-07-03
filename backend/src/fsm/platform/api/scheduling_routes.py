@@ -318,7 +318,7 @@ def _resolve_technician_names(session, technician_ids: set[UUID]) -> dict[UUID, 
     from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 
     repo = SqlAlchemyUserRepository(session)
-    return {tech_id: repo.get(tech_id).name for tech_id in technician_ids}
+    return {tech_id: repo.get(tech_id).preferred_name for tech_id in technician_ids}
 
 
 @router.get("/availability/pool", response_model=PooledAvailabilityResponse)
