@@ -7,6 +7,11 @@ from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Service-region timezone assumed wherever no technician-specific timezone is stored: slot
+# generation, the timezone API's fallback, and notification wall-clock rendering.
+DEFAULT_TIMEZONE = "Asia/Jerusalem"
+
+
 class Settings(BaseSettings):
     """Process-wide configuration. Immutable once constructed."""
 

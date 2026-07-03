@@ -51,6 +51,7 @@ from fsm.platform.api.schemas import (
     WorkingHoursResponse,
 )
 from fsm.platform.calendar_resolver import build_calendar_resolver
+from fsm.platform.config import DEFAULT_TIMEZONE
 from fsm.platform.dev_adapters import LoggingNotificationPort, NullCalendarPort
 from fsm.platform.identity_lookup import build_contact_resolver
 from fsm.platform.notifications_factory import build_notifications
@@ -235,7 +236,7 @@ def _compute_slots(
     """Return proposed availability slots for one technician over a date range.
 
     Applies working hours, the technician's stored timezone (falling back to tz_hint
-    or Asia/Jerusalem), holiday exclusions, day-off exclusions, and free/busy
+    or the region default), holiday exclusions, day-off exclusions, and free/busy
     subtraction from the technician's connected calendar. All failure paths degrade
     gracefully rather than raising, mirroring the individual helper functions.
     """
@@ -243,7 +244,7 @@ def _compute_slots(
         SqlAlchemyWorkingHoursRepository,
     )
 
-    tz_info: zoneinfo.ZoneInfo = tz_hint if tz_hint is not None else zoneinfo.ZoneInfo("Asia/Jerusalem")
+    tz_info: zoneinfo.ZoneInfo = tz_hint if tz_hint is not None else zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
     wh_repo = SqlAlchemyWorkingHoursRepository(uow._session)
 
     stored_tz = wh_repo.get_timezone(technician_id)
@@ -289,7 +290,7 @@ def get_availability(
     date_from: Annotated[date, Query()],
     date_to: Annotated[date, Query()],
     slot_minutes: Annotated[int, Query(ge=1)] = 60,
-    tz: Annotated[str, Query()] = "Asia/Jerusalem",
+    tz: Annotated[str, Query()] = DEFAULT_TIMEZONE,
 ) -> AvailabilityResponse:
     """Return available booking slots for a technician over a date range."""
     try:
@@ -522,7 +523,7 @@ def get_timezone(
     request: Request,
     user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
 ) -> TimezoneResponse:
-    """Return the technician's timezone (default Asia/Jerusalem when unset)."""
+    """Return the technician's timezone (the region default when unset)."""
     from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
 
     _assert_self(technician_id, user)
@@ -530,7 +531,7 @@ def get_timezone(
         repo = SqlAlchemyWorkingHoursRepository(uow._session)
         stored = repo.get_timezone(technician_id)
 
-    return TimezoneResponse(timezone=stored if stored is not None else "Asia/Jerusalem")
+    return TimezoneResponse(timezone=stored if stored is not None else DEFAULT_TIMEZONE)
 
 
 # ---------------------------------------------------------------------------
