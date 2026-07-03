@@ -23,7 +23,11 @@ export function HomePage() {
 
     if (user.role === 'TECHNICIAN') {
       if (user.role_status === 'APPROVED') {
-        return <TechnicianPage technicianId={user.user_id} email={user.email} />
+        return (
+          <OnboardingGate user={user}>
+            <TechnicianPage technicianId={user.user_id} email={user.email} />
+          </OnboardingGate>
+        )
       }
       if (user.role_status === 'REJECTED') {
         return <TechnicianDeclined email={user.email} />

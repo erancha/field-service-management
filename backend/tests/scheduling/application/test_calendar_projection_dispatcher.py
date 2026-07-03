@@ -29,6 +29,8 @@ _CUSTOMER_NAME = "Ada Lovelace"
 _ADDRESS = "12 Main St, Springfield"
 _PHONE = "+972-50-123-4567"
 _PROBLEM = "No hot water"
+_TECH_NAME = "Grace Hopper"
+_TECH_PHONE = "+972-50-999-8888"
 
 
 def _make_appointment(appt_id: UUID, external_event_id: str | None = None) -> Appointment:
@@ -100,6 +102,10 @@ def dispatcher(
             customer_name=_CUSTOMER_NAME,
             service_address=_ADDRESS,
             customer_phone=_PHONE,
+        ),
+        technician_context_resolver=lambda _technician_id: AppointmentContext(
+            technician_name=_TECH_NAME,
+            technician_phone=_TECH_PHONE,
         ),
     )
 
@@ -654,6 +660,23 @@ class TestContextEnrichment:
         assert context.problem_description == _PROBLEM
         assert context.service_address == _ADDRESS
         assert context.customer_phone == _PHONE
+
+    def test_create_passes_technician_name_and_phone_to_calendar(
+        self,
+        dispatcher: CalendarProjectionDispatcher,
+        appt_repo: InMemoryAppointmentRepository,
+        outbox: InMemoryOutboxRepository,
+        calendar: FakeCalendarPort,
+    ) -> None:
+        appt_id = UUID("aaaaaaaa-0000-0000-0000-000000000011")
+        appt_repo.add(_make_appointment(appt_id))
+        outbox.enqueue(OutboxOperation.CREATE, appt_id)
+
+        dispatcher.run_once()
+
+        [context] = calendar.created_contexts.values()
+        assert context.technician_name == _TECH_NAME
+        assert context.technician_phone == _TECH_PHONE
 
     def test_update_passes_customer_name_and_problem_to_calendar(
         self,

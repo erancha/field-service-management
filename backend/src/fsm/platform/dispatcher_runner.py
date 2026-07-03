@@ -16,6 +16,7 @@ from uuid import UUID
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.platform.calendar_errors import is_auth_error
 from fsm.platform.calendar_resolver import build_calendar_resolver
+from fsm.platform.context_rendering import required_field
 from fsm.platform.identity_lookup import load_user
 from fsm.scheduling.adapters.unit_of_work import SqlAlchemyUnitOfWork
 from fsm.scheduling.application.calendar_projection_dispatcher import CalendarProjectionDispatcher
@@ -55,30 +56,54 @@ def make_auth_disconnect_handler(
     return _handler
 
 
+def _load_user_via_factory(session_factory, user_id: UUID):
+    """Open a short session and load a user, degrading to None (logged) on any failure.
+
+    Shared by the customer and technician context resolvers so the dispatcher stays free of a
+    direct identity-context import; the identity lookup lives here in the composition root.
+    """
+    try:
+        with session_factory() as session:
+            return load_user(session, user_id)
+    except Exception:
+        _log.exception("Session for context lookup failed; user_id=%s", user_id)
+        return None
+
+
 def build_customer_context_resolver(session_factory) -> Callable[[UUID], AppointmentContext]:
     """Return a callable resolving a customer id to their profile context (preferred name,
-    address, phone), or an empty context on any failure.
+    address, phone) for the technician's calendar event.
 
-    Mirrors the notifications recipient_email seam so the scheduling dispatcher stays free of a
-    direct identity-context import; the identity lookup lives here in the composition root.
+    customer_name, service_address (the event location), and customer_phone are required on the
+    technician's event: a missing value renders as a visible placeholder plus a warning rather than
+    dropping silently.
     """
 
     def _resolve(customer_id: UUID) -> AppointmentContext:
-        try:
-            with session_factory() as session:
-                user = load_user(session, customer_id)
-                if user is None:
-                    return AppointmentContext()
-                return AppointmentContext(
-                    customer_name=user.preferred_name,
-                    service_address=user.address,
-                    customer_phone=user.phone,
-                )
-        except Exception:
-            _log.exception(
-                "Session for customer-context lookup failed; customer_id=%s", customer_id
-            )
-            return AppointmentContext()
+        user = _load_user_via_factory(session_factory, customer_id)
+        return AppointmentContext(
+            customer_name=required_field(user.preferred_name if user else None, "customer name"),
+            service_address=required_field(user.address if user else None, "service address"),
+            customer_phone=required_field(user.phone if user else None, "customer phone"),
+        )
+
+    return _resolve
+
+
+def build_technician_context_resolver(session_factory) -> Callable[[UUID], AppointmentContext]:
+    """Return a callable resolving a technician id to a context carrying their name and phone.
+
+    The technician's own event echoes the contact the customer was given (the same name and phone
+    the notification carries), so the technician can confirm it is correct. Both are required on
+    that surface: a missing value renders as a visible placeholder plus a warning.
+    """
+
+    def _resolve(technician_id: UUID) -> AppointmentContext:
+        user = _load_user_via_factory(session_factory, technician_id)
+        return AppointmentContext(
+            technician_name=required_field(user.preferred_name if user else None, "technician name"),
+            technician_phone=required_field(user.phone if user else None, "technician phone"),
+        )
 
     return _resolve
 
@@ -89,11 +114,13 @@ def build_dispatcher(session_factory, settings) -> CalendarProjectionDispatcher:
     calendar_resolver = build_calendar_resolver(session_factory, settings)
     on_calendar_error = make_auth_disconnect_handler(session_factory, settings)
     customer_context_resolver = build_customer_context_resolver(session_factory)
+    technician_context_resolver = build_technician_context_resolver(session_factory)
     return CalendarProjectionDispatcher(
         uow_factory=uow_factory,
         calendar_resolver=calendar_resolver,
         on_calendar_error=on_calendar_error,
         customer_context_resolver=customer_context_resolver,
+        technician_context_resolver=technician_context_resolver,
     )
 
 

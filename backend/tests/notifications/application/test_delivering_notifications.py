@@ -299,6 +299,26 @@ class TestNotificationContext:
         [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
         assert msg["subject"] == "Appointment booked — No hot water"
 
+    def test_booked_body_names_technician_between_customer_and_problem(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        ctx = AppointmentContext(
+            customer_name="Ada Lovelace",
+            problem_description="No hot water",
+            technician_name="Grace Hopper",
+            technician_phone="+972-50-999",
+        )
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
+                     context=ctx)
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
+        body = msg["body"]
+        assert "Technician: Grace Hopper" in body
+        assert "Technician phone: +972-50-999" in body
+        assert body.index("Customer:") < body.index("Technician:") < body.index("Problem:")
+
     def test_booked_body_names_customer_and_problem_without_bare_id(self):
         appt = _make_appointment()
         sender = FakeEmailSender()

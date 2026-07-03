@@ -52,8 +52,8 @@ class CalendarProjectionDispatcher:
     calendar. Pass calendar= (a single CalendarPort) as a convenience shortcut; it is
     silently wrapped into a resolver that always returns the same port.
 
-    Customer profile context (name, address, phone) comes from the injected resolver
-    and is merged with the service-call problem at build time.
+    Customer profile context (name, address, phone) and the assigned technician's own name and
+    phone come from injected resolvers and are merged with the service-call problem at build time.
     """
 
     def __init__(
@@ -64,6 +64,7 @@ class CalendarProjectionDispatcher:
         calendar_resolver: Callable[[UUID], CalendarPort] | None = None,
         on_calendar_error: Callable[[UUID, Exception], None] | None = None,
         customer_context_resolver: Callable[[UUID], AppointmentContext] | None = None,
+        technician_context_resolver: Callable[[UUID], AppointmentContext] | None = None,
     ) -> None:
         if calendar is None and calendar_resolver is None:
             raise ValueError(
@@ -85,14 +86,22 @@ class CalendarProjectionDispatcher:
             if customer_context_resolver is not None
             else (lambda _customer_id: AppointmentContext())
         )
+        self._technician_context_resolver: Callable[[UUID], AppointmentContext] = (
+            technician_context_resolver
+            if technician_context_resolver is not None
+            else (lambda _technician_id: AppointmentContext())
+        )
 
     def _build_context(self, uow: UnitOfWork, appt: Appointment) -> AppointmentContext:
-        """Assemble enrichment context: customer profile fields come from the injected
-        resolver, the problem from the service call."""
+        """Assemble enrichment context: customer profile fields and the technician's own name and
+        phone come from the injected resolvers, the problem from the service call."""
         service_call = uow.service_calls.get(appt.service_call_id)
+        technician = self._technician_context_resolver(appt.technician_id)
         return dataclasses.replace(
             self._customer_context_resolver(appt.customer_id),
             problem_description=service_call.description,
+            technician_name=technician.technician_name,
+            technician_phone=technician.technician_phone,
         )
 
     def run_once(self, limit: int = 50) -> int:

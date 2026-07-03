@@ -20,6 +20,9 @@ class AppointmentContext:
     service call's reported problem. Both are optional and default to None.
     service_address and customer_phone come from the customer's profile; renderers place them in
     the event location and contact lines.
+    technician_name and technician_phone identify the assigned technician; the notifications
+    resolver populates them for the customer, and the dispatcher resolver populates them for the
+    technician's own event so the technician can confirm the contact the customer was given.
 
     Title composition lives here so the Google event title and the ICS SUMMARY render
     identically and the email subject leads with the same problem summary. Notification
@@ -31,6 +34,8 @@ class AppointmentContext:
     problem_description: str | None = None
     service_address: str | None = None
     customer_phone: str | None = None
+    technician_name: str | None = None
+    technician_phone: str | None = None
 
     def problem_summary(self) -> str:
         """First line of the problem, truncated to the title limit; '' when absent or blank."""

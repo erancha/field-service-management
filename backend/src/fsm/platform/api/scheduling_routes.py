@@ -8,6 +8,7 @@ Domain error mapping:
 - SlotUnavailable / InvalidTransition → 409 Conflict
 - NotFoundError                       → 404 Not Found
 - InvalidTimeRange                    → 400 Bad Request
+- IncompleteContactInfo               → 422 Unprocessable Entity
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fsm.scheduling.application.appointment_service import AppointmentService
 from fsm.scheduling.application.service_call_service import ServiceCallService
 from fsm.scheduling.domain.errors import (
+    IncompleteContactInfo,
     InvalidTimeRange,
     InvalidTransition,
     NotFoundError,
@@ -50,6 +52,7 @@ from fsm.platform.api.schemas import (
 )
 from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.dev_adapters import LoggingNotificationPort, NullCalendarPort
+from fsm.platform.identity_lookup import build_contact_resolver
 from fsm.platform.notifications_factory import build_notifications
 from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
 from fsm.identity.domain.role import Role
@@ -157,6 +160,8 @@ def _map_domain_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, InvalidTimeRange):
         return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, IncompleteContactInfo):
+        return HTTPException(status_code=422, detail=str(exc))
     raise exc
 
 
@@ -560,6 +565,7 @@ def book_appointment(
                 calendar=NullCalendarPort(),
                 notifications=build_notifications(uow.session, _get_settings(request)),
                 outbox=uow.outbox,
+                contact_resolver=build_contact_resolver(uow.session),
             )
             appt = svc.book_appointment(
                 service_call_id=body.service_call_id,
@@ -568,7 +574,13 @@ def book_appointment(
                 time_range=time_range,
             )
             uow.commit()
-    except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
+    except (
+        SlotUnavailable,
+        InvalidTransition,
+        NotFoundError,
+        InvalidTimeRange,
+        IncompleteContactInfo,
+    ) as exc:
         raise _map_domain_error(exc)
 
     return _appt_response(appt)

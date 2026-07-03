@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 from fsm.identity.application.identity_service import IdentityService, SignInHost
 from fsm.identity.domain.errors import BackOfficeAccessDenied
+from fsm.identity.domain.phone import is_valid_phone
 from fsm.identity.ports.auth import AuthPort
 from fsm.platform.api.auth_deps import SessionUser, require_user
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
@@ -232,6 +233,11 @@ def update_me(
     Identity comes only from the session (require_user); a field absent from the payload is
     left unchanged, a present field is stripped and stored, empty becoming NULL.
     """
+    if "phone" in body.model_fields_set:
+        phone = (body.phone or "").strip()
+        if phone and not is_valid_phone(phone):
+            return JSONResponse({"detail": "Invalid phone number"}, status_code=422)
+
     factory = _get_session_factory(request.app)
     with factory() as session:
         repo = SqlAlchemyUserRepository(session)

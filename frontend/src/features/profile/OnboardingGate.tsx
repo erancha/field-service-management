@@ -21,13 +21,26 @@ export function OnboardingGate({ user, children }: OnboardingGateProps) {
     setSkipped(true)
   }
 
+  const isTechnician = user.role === 'TECHNICIAN'
+  const requiredFields: Array<'address' | 'phone'> = isTechnician
+    ? ['phone']
+    : ['address', 'phone']
+  const prompt = isTechnician
+    ? 'Add a phone so customers can reach you if you are running late. Your address is used for dispatch and is never shown to customers.'
+    : 'Add your service address and phone so technicians can find and reach you before booking.'
+
   return (
     <div className="page">
       <header className="page__header">
         <h2>Almost there!</h2>
       </header>
-      <p>Add your service address and phone so technicians can find and reach you.</p>
-      <ProfileForm user={user} onSaved={() => setSaved(true)} onSkip={handleSkip} />
+      <p>{prompt}</p>
+      <ProfileForm
+        user={user}
+        requiredFields={requiredFields}
+        onSaved={() => setSaved(true)}
+        onSkip={handleSkip}
+      />
     </div>
   )
 }

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from fsm.notifications.adapters.feed_repository import SqlAlchemyNotificationFeedRepository
 from fsm.notifications.adapters.smtp_email_sender import LoggingEmailSender, SmtpEmailSender
 from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
+from fsm.platform.context_rendering import required_field
 from fsm.platform.identity_lookup import load_user
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
 from fsm.scheduling.domain.appointment_context import AppointmentContext
@@ -31,9 +32,9 @@ def build_notifications(session: Session, settings) -> NotificationPort:
     atomically with the appointment mutation that triggered them. Email is
     best-effort and does not affect the transaction outcome. The context
     resolver shares the same session; every appointment is created against an
-    existing service call and customer, so a failed lookup indicates corrupt
-    data — it is logged as an error and the notification goes out with generic
-    wording rather than failing the booking.
+    existing service call, customer, and technician, so a failed lookup
+    indicates corrupt data — required customer-facing fields render as visible
+    placeholders (logged as warnings) rather than failing the booking.
     """
     feed_repo = SqlAlchemyNotificationFeedRepository(session)
 
@@ -68,18 +69,23 @@ def build_notifications(session: Session, settings) -> NotificationPort:
             )
         except Exception:
             _log.exception(
-                "Service call lookup failed for appointment_id=%s service_call_id=%s; "
-                "notification will use generic wording",
+                "Service call lookup failed for appointment_id=%s service_call_id=%s",
                 appointment.id,
                 appointment.service_call_id,
             )
             problem = None
-        user = load_user(session, appointment.customer_id)
+        customer = load_user(session, appointment.customer_id)
+        technician = load_user(session, appointment.technician_id)
+        # customer_name, problem, and the technician's name/phone are required on the customer
+        # surface: a missing value renders as a placeholder plus a warning rather than dropping
+        # silently. The customer's own address/phone are optional here and render only when set.
         return AppointmentContext(
-            customer_name=user.preferred_name if user else None,
-            problem_description=problem,
-            service_address=user.address if user else None,
-            customer_phone=user.phone if user else None,
+            customer_name=required_field(customer.preferred_name if customer else None, "customer name"),
+            problem_description=required_field(problem, "problem"),
+            service_address=customer.address if customer else None,
+            customer_phone=customer.phone if customer else None,
+            technician_name=required_field(technician.preferred_name if technician else None, "technician name"),
+            technician_phone=required_field(technician.phone if technician else None, "technician phone"),
         )
 
     return DeliveringNotificationPort(

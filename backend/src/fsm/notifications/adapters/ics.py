@@ -69,8 +69,9 @@ def build_ics(
     sender still produces valid output.
 
     context is a duck-typed AppointmentContext: SUMMARY from context.summary_line(), LOCATION from
-    the service address, DESCRIPTION from the problem, the appointment's free-text details, and a
-    phone contact line — each included when present, mirroring the technician's Google event body.
+    the service address, and DESCRIPTION built from the assigned technician's name and phone (shown
+    to the customer), the problem, the appointment's free-text details, and the customer phone
+    line — each included when present.
     """
     start = appointment.time_range.start.astimezone(timezone.utc)
     end = appointment.time_range.end.astimezone(timezone.utc)
@@ -90,9 +91,19 @@ def build_ics(
     details = (appointment.details or "").strip()
     phone = (context.customer_phone or "").strip()
     address = (context.service_address or "").strip()
+    technician = (context.technician_name or "").strip()
+    technician_phone = (context.technician_phone or "").strip()
 
     description_text = "\n".join(
-        part for part in (problem, details, f"Phone: {phone}" if phone else "") if part
+        part
+        for part in (
+            f"Technician: {technician}" if technician else "",
+            f"Technician phone: {technician_phone}" if technician_phone else "",
+            problem,
+            details,
+            f"Phone: {phone}" if phone else "",
+        )
+        if part
     )
     summary = _fold(f"SUMMARY:{_escape_text(context.summary_line())}")
     location_line = f"{_fold(f'LOCATION:{_escape_text(address)}')}\r\n" if address else ""

@@ -94,6 +94,35 @@ def _utc_iso(year: int, month: int, day: int, hour: int) -> str:
     return datetime(year, month, day, hour, tzinfo=timezone.utc).isoformat()
 
 
+def _seed_contact(pg_session_factory, *user_ids, address="12 Main St", phone="+972-50-100"):
+    """Give each user id a UserRow with an address and phone.
+
+    Booking enforces that the customer has an address+phone and the technician has a phone; these
+    integration tests authenticate via a dependency override that creates no identity row, so any
+    test that books to success seeds the referenced users' contact here first.
+    """
+    from fsm.identity.adapters.orm import UserRow
+
+    with pg_session_factory() as session:
+        with session.begin():
+            for uid in user_ids:
+                row = session.get(UserRow, uid)
+                if row is None:
+                    session.add(UserRow(
+                        id=uid,
+                        google_sub=f"sub-{uid}",
+                        email=f"{uid}@example.com",
+                        name="Test User",
+                        role=Role.CUSTOMER.value,
+                        role_status="APPROVED",
+                        address=address,
+                        phone=phone,
+                    ))
+                else:
+                    row.address = address
+                    row.phone = phone
+
+
 # ---------------------------------------------------------------------------
 # 0. Gating: unauthenticated access is rejected
 # ---------------------------------------------------------------------------
@@ -250,6 +279,7 @@ def test_book_appointment_returns_200_and_is_persisted(client, auth, pg_session_
     sc_id = sc_resp.json()["id"]
 
     tech_id = uuid.uuid4()
+    _seed_contact(pg_session_factory, cust_id, tech_id)
     book_resp = client.post(
         "/api/appointments",
         json={
@@ -285,6 +315,25 @@ def test_book_appointment_returns_200_and_is_persisted(client, auth, pg_session_
         assert matching[0].operation == OutboxOperation.CREATE
 
 
+def test_book_without_required_contact_returns_422(client, auth):
+    """Booking is refused when the customer/technician contact data is incomplete."""
+    auth(role=Role.CUSTOMER)
+    sc_id = client.post("/api/service-calls", json={"description": "No contact yet"}).json()["id"]
+
+    resp = client.post(
+        "/api/appointments",
+        json={
+            "service_call_id": sc_id,
+            "technician_id": str(uuid.uuid4()),
+            "start": _utc_iso(2025, 3, 4, 9),
+            "end": _utc_iso(2025, 3, 4, 10),
+        },
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "customer phone" in detail and "technician phone" in detail
+
+
 def test_book_against_another_customers_service_call_returns_403(client, auth):
     """A customer cannot book against a service call they don't own."""
     owner = auth(role=Role.CUSTOMER)
@@ -313,9 +362,10 @@ def test_book_against_another_customers_service_call_returns_403(client, auth):
 # ---------------------------------------------------------------------------
 
 
-def test_booking_overlapping_slot_returns_409(client, auth):
-    auth(role=Role.CUSTOMER)
+def test_booking_overlapping_slot_returns_409(client, auth, pg_session_factory):
+    cust_id = auth(role=Role.CUSTOMER)
     tech_id = uuid.uuid4()
+    _seed_contact(pg_session_factory, cust_id, tech_id)
 
     sc1 = client.post(
         "/api/service-calls",
@@ -354,9 +404,10 @@ def test_booking_overlapping_slot_returns_409(client, auth):
 # ---------------------------------------------------------------------------
 
 
-def _book_one(client, auth, *, tech_id, start_hour, day):
+def _book_one(client, auth, pg_session_factory, *, tech_id, start_hour, day):
     """Open a service call and book an appointment as a fresh customer; return (appt_id, cust_id)."""
     cust_id = auth(role=Role.CUSTOMER)
+    _seed_contact(pg_session_factory, cust_id, tech_id)
     sc = client.post(
         "/api/service-calls",
         json={"description": "Pipe fix"},
@@ -373,8 +424,8 @@ def _book_one(client, auth, *, tech_id, start_hour, day):
     return book["id"], cust_id
 
 
-def test_reschedule_appointment_succeeds(client, auth):
-    appt_id, _ = _book_one(client, auth, tech_id=uuid.uuid4(), start_hour=9, day=2)
+def test_reschedule_appointment_succeeds(client, auth, pg_session_factory):
+    appt_id, _ = _book_one(client, auth, pg_session_factory, tech_id=uuid.uuid4(), start_hour=9, day=2)
     reschedule_resp = client.post(
         f"/api/appointments/{appt_id}/reschedule",
         json={"start": _utc_iso(2025, 3, 3, 9), "end": _utc_iso(2025, 3, 3, 11)},
@@ -385,9 +436,9 @@ def test_reschedule_appointment_succeeds(client, auth):
     assert data["id"] == appt_id
 
 
-def test_reschedule_by_non_participant_returns_403(client, auth):
+def test_reschedule_by_non_participant_returns_403(client, auth, pg_session_factory):
     """Only the appointment's customer or technician may mutate it."""
-    appt_id, _ = _book_one(client, auth, tech_id=uuid.uuid4(), start_hour=14, day=10)
+    appt_id, _ = _book_one(client, auth, pg_session_factory, tech_id=uuid.uuid4(), start_hour=14, day=10)
     # Switch to an unrelated user.
     auth(user_id=uuid.uuid4(), role=Role.CUSTOMER)
     resp = client.post(
@@ -402,13 +453,14 @@ def test_reschedule_by_non_participant_returns_403(client, auth):
 # ---------------------------------------------------------------------------
 
 
-def test_cancel_appointment_succeeds(client, auth):
+def test_cancel_appointment_succeeds(client, auth, pg_session_factory):
     cust_id = auth(role=Role.CUSTOMER)
+    tech_id = uuid.uuid4()
+    _seed_contact(pg_session_factory, cust_id, tech_id)
     sc = client.post(
         "/api/service-calls",
         json={"description": "Window seal"},
     ).json()
-    tech_id = uuid.uuid4()
     book = client.post(
         "/api/appointments",
         json={
@@ -429,13 +481,14 @@ def test_cancel_appointment_succeeds(client, auth):
 # ---------------------------------------------------------------------------
 
 
-def test_add_details_succeeds(client, auth):
-    auth(role=Role.CUSTOMER)
+def test_add_details_succeeds(client, auth, pg_session_factory):
+    cust_id = auth(role=Role.CUSTOMER)
+    tech_id = uuid.uuid4()
+    _seed_contact(pg_session_factory, cust_id, tech_id)
     sc = client.post(
         "/api/service-calls",
         json={"description": "Leaky tap"},
     ).json()
-    tech_id = uuid.uuid4()
     book = client.post(
         "/api/appointments",
         json={

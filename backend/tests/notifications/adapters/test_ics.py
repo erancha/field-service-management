@@ -228,6 +228,22 @@ class TestBuildIcsLocationAndPhone:
         )
         assert "DESCRIPTION:Gate code 4321" in build_ics(appt, AppointmentContext())
 
+    def test_technician_lines_lead_description_before_problem(self):
+        from fsm.notifications.adapters.ics import build_ics
+
+        ctx = AppointmentContext(
+            problem_description="No hot water",
+            customer_phone="+972-50-123",
+            technician_name="Grace Hopper",
+            technician_phone="+972-50-999",
+        )
+        unfolded = build_ics(self._appt(), ctx).replace("\r\n ", "")
+        assert (
+            "DESCRIPTION:Technician: Grace Hopper\\nTechnician phone: +972-50-999"
+            "\\nNo hot water\\nPhone: +972-50-123"
+            in unfolded
+        )
+
     def test_long_address_is_folded(self):
         from fsm.notifications.adapters.ics import build_ics
 

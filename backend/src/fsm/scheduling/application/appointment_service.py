@@ -14,7 +14,8 @@ from uuid import UUID, uuid4
 
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.availability import generate_slots
-from fsm.scheduling.domain.errors import InvalidTransition, SlotUnavailable
+from fsm.scheduling.domain.contact_info import ContactInfo
+from fsm.scheduling.domain.errors import IncompleteContactInfo, InvalidTransition, SlotUnavailable
 from fsm.scheduling.domain.service_call import ServiceCallStatus
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.domain.working_hours import WeeklyWorkingHours
@@ -34,7 +35,12 @@ class AppointmentService:
     - Computes free slots by merging calendar-busy ranges with existing appointments
     - Enforces no-overlap constraint before booking or rescheduling
     - Persists mutations and enqueues outbox entries in the same transaction
+    - Rejects a booking whose customer or technician lacks required contact data
     - Delegates external calendar projection to CalendarProjectionDispatcher via the outbox
+
+    contact_resolver maps a user id to their ContactInfo, injected so the layer stays identity-free.
+    It is consulted only by book_appointment; when unset, booking treats all contact as absent and
+    rejects (fail closed), so a booking path that forgets to wire it cannot silently skip the check.
     """
 
     def __init__(
@@ -46,6 +52,7 @@ class AppointmentService:
         outbox: OutboxRepository,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         new_id: Callable[[], UUID] = uuid4,
+        contact_resolver: Callable[[UUID], ContactInfo] | None = None,
     ) -> None:
         self._appointments = appointments
         self._service_calls = service_calls
@@ -54,6 +61,7 @@ class AppointmentService:
         self._outbox = outbox
         self._clock = clock
         self._new_id = new_id
+        self._contact_resolver = contact_resolver
 
     def propose_slots(
         self,
@@ -114,6 +122,8 @@ class AppointmentService:
         Validates that the service call exists and is OPEN before any mutation.
         Raises NotFoundError if the service call does not exist.
         Raises InvalidTransition if the service call is not OPEN.
+        Raises IncompleteContactInfo if the customer lacks an address or phone, or the assigned
+        technician lacks a phone.
         Raises SlotUnavailable if time_range overlaps any active appointment for the technician.
 
         external_event_id is left None at booking time; the dispatcher sets it after
@@ -126,6 +136,7 @@ class AppointmentService:
                 f"with status {sc.status.value!r}; only OPEN calls may be booked."
             )
 
+        self._guard_contact_complete(customer_id, technician_id)
         self._guard_no_overlap(technician_id, time_range, exclude_id=None)
 
         now = self._clock()
@@ -217,6 +228,34 @@ class AppointmentService:
         self._outbox.enqueue(OutboxOperation.UPDATE, appt.id)
         self._notifications.appointment_updated(appt)
         return appt
+
+    def _guard_contact_complete(self, customer_id: UUID, technician_id: UUID) -> None:
+        """Reject the booking unless the customer has address+phone and the technician has a phone.
+
+        With no resolver injected, every field reads as absent, so the booking fails closed.
+        """
+        customer = self._resolve_contact(customer_id)
+        technician = self._resolve_contact(technician_id)
+        missing: list[str] = []
+        if not customer.has_address():
+            missing.append("customer address")
+        if not customer.has_phone():
+            missing.append("customer phone")
+        if not technician.has_phone():
+            missing.append("technician phone")
+        if missing:
+            _log.warning(
+                "IncompleteContactInfo: booking rejected; customer_id=%s technician_id=%s missing=%s",
+                customer_id,
+                technician_id,
+                missing,
+            )
+            raise IncompleteContactInfo(missing)
+
+    def _resolve_contact(self, user_id: UUID) -> ContactInfo:
+        if self._contact_resolver is None:
+            return ContactInfo()
+        return self._contact_resolver(user_id)
 
     def _guard_no_overlap(
         self,

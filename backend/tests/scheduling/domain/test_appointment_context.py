@@ -71,3 +71,15 @@ def test_address_and_phone_default_to_none() -> None:
     ctx = AppointmentContext()
     assert ctx.service_address is None
     assert ctx.customer_phone is None
+
+
+def test_holds_technician_name_and_phone() -> None:
+    ctx = AppointmentContext(technician_name="Grace Hopper", technician_phone="+972-50-999")
+    assert ctx.technician_name == "Grace Hopper"
+    assert ctx.technician_phone == "+972-50-999"
+
+
+def test_technician_fields_default_to_none() -> None:
+    ctx = AppointmentContext()
+    assert ctx.technician_name is None
+    assert ctx.technician_phone is None

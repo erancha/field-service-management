@@ -9,18 +9,21 @@ Public types re-exported here:
 - DailyHours, WeeklyWorkingHours: technician availability model
 - ServiceCallStatus, ServiceCall: customer request lifecycle
 - AppointmentStatus, Appointment: scheduled visit lifecycle
+- ContactInfo: per-party contact details a booking depends on
 - SchedulingError, InvalidTimeRange, InvalidTransition, NotFoundError,
-  SlotUnavailable: error hierarchy
+  SlotUnavailable, IncompleteContactInfo: error hierarchy
 - generate_slots: deterministic slot generation for technician availability
 """
 
 from fsm.scheduling.domain.errors import (
+    IncompleteContactInfo,
     InvalidTimeRange,
     InvalidTransition,
     NotFoundError,
     SchedulingError,
     SlotUnavailable,
 )
+from fsm.scheduling.domain.contact_info import ContactInfo
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.domain.working_hours import DailyHours, WeeklyWorkingHours
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
@@ -33,6 +36,8 @@ __all__ = [
     "InvalidTransition",
     "NotFoundError",
     "SlotUnavailable",
+    "IncompleteContactInfo",
+    "ContactInfo",
     "TimeRange",
     "DailyHours",
     "WeeklyWorkingHours",

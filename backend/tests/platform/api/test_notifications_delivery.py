@@ -57,12 +57,28 @@ class TestNotificationsDelivery:
         self, client, pg_session_factory
     ):
         from fsm.notifications.adapters.orm import NotificationRow
+        from fsm.identity.adapters.orm import UserRow
         from fsm.platform.api.auth_deps import require_user, SessionUser
         from fsm.identity.domain.role import Role
 
         # Authenticate as the customer; booking derives customer_id from the session.
         cust_id = uuid.uuid4()
         tech_id = uuid.uuid4()
+
+        # Booking requires the customer to have an address+phone and the technician a phone.
+        with pg_session_factory() as seed:
+            with seed.begin():
+                seed.add(UserRow(
+                    id=cust_id, google_sub=f"sub-{cust_id}", email="cust@example.com",
+                    name="Ada Lovelace", role=Role.CUSTOMER.value, role_status="APPROVED",
+                    address="12 Main St", phone="+972-50-100",
+                ))
+                seed.add(UserRow(
+                    id=tech_id, google_sub=f"sub-{tech_id}", email="tech@example.com",
+                    name="Grace Hopper", role=Role.TECHNICIAN.value, role_status="APPROVED",
+                    phone="+972-50-200",
+                ))
+
         client.app.dependency_overrides[require_user] = lambda: SessionUser(
             id=cust_id, role=Role.CUSTOMER, email="cust@example.com"
         )
@@ -106,4 +122,6 @@ class TestNotificationsDelivery:
         assert tech_rows[0].kind == "BOOKED"
         assert cust_rows[0].subject == "Appointment booked — Notification test"
         assert "Problem: Notification test" in cust_rows[0].body
+        assert "Technician: Grace Hopper" in cust_rows[0].body
+        assert "Technician phone: +972-50-200" in cust_rows[0].body
         assert str(appt_id) not in cust_rows[0].body

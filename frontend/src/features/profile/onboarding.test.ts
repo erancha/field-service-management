@@ -22,20 +22,28 @@ describe('needsOnboarding', () => {
   it('is true for a customer missing address or phone', () => {
     expect(needsOnboarding(user())).toBe(true)
     expect(needsOnboarding(user({ address: '12 Main St' }))).toBe(true)
-    expect(needsOnboarding(user({ phone: '+972-50' }))).toBe(true)
+    expect(needsOnboarding(user({ phone: '054-7586288' }))).toBe(true)
   })
 
   it('is false once both address and phone are set', () => {
-    expect(needsOnboarding(user({ address: '12 Main St', phone: '+972-50' }))).toBe(false)
+    expect(needsOnboarding(user({ address: '12 Main St', phone: '054-7586288' }))).toBe(false)
   })
 
-  it('is false for non-customers', () => {
-    expect(needsOnboarding(user({ role: 'TECHNICIAN' }))).toBe(false)
+  it('is true for a technician missing a phone', () => {
+    expect(needsOnboarding(user({ role: 'TECHNICIAN' }))).toBe(true)
+  })
+
+  it('is false for a technician once a phone is set (address not required to book)', () => {
+    expect(needsOnboarding(user({ role: 'TECHNICIAN', phone: '054-7586288' }))).toBe(false)
+  })
+
+  it('is false for an admin', () => {
     expect(needsOnboarding(user({ role: 'ADMIN' }))).toBe(false)
   })
 
-  it('is false for a customer not yet approved', () => {
+  it('is false for a user not yet approved', () => {
     expect(needsOnboarding(user({ role_status: 'PENDING' }))).toBe(false)
+    expect(needsOnboarding(user({ role: 'TECHNICIAN', role_status: 'PENDING' }))).toBe(false)
     expect(needsOnboarding(user({ role_status: 'REJECTED' }))).toBe(false)
   })
 })

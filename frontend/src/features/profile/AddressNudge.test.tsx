@@ -6,7 +6,7 @@ import { AuthContext } from '../auth/authContext.ts'
 import type { CurrentUser } from '../../api/types.ts'
 import { AddressNudge } from './AddressNudge.tsx'
 
-function renderNudge(address: string | null) {
+function renderNudge(address: string | null, phone: string | null = '054-7586288') {
   const user: CurrentUser = {
     user_id: 'u-1',
     email: 'c@example.com',
@@ -15,7 +15,7 @@ function renderNudge(address: string | null) {
     name: 'Google Name',
     display_name: null,
     address,
-    phone: null,
+    phone,
   }
   render(
     <AuthContext.Provider value={{ auth: { status: 'authenticated', user }, refresh: vi.fn() }}>
@@ -29,23 +29,28 @@ function renderNudge(address: string | null) {
 describe('AddressNudge', () => {
   it('shows the banner with a profile link when the address is missing', () => {
     renderNudge(null)
-    expect(screen.getByText(/add your address/i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /add address/i })).toHaveAttribute('href', '/profile')
+    expect(screen.getByText(/before booking/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /profile/i })).toHaveAttribute('href', '/profile')
   })
 
   it('shows the banner when the address is whitespace-only', () => {
     renderNudge('   ')
-    expect(screen.getByText(/add your address/i)).toBeInTheDocument()
+    expect(screen.getByText(/before booking/i)).toBeInTheDocument()
   })
 
-  it('renders nothing when the address is set', () => {
-    renderNudge('12 Main St')
-    expect(screen.queryByText(/add your address/i)).toBeNull()
+  it('shows the banner when the phone is missing even if the address is set', () => {
+    renderNudge('12 Main St', null)
+    expect(screen.getByText(/before booking/i)).toBeInTheDocument()
+  })
+
+  it('renders nothing when both address and phone are set', () => {
+    renderNudge('12 Main St', '054-7586288')
+    expect(screen.queryByText(/before booking/i)).toBeNull()
   })
 
   it('hides after dismissal', async () => {
     renderNudge(null)
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }))
-    expect(screen.queryByText(/add your address/i)).toBeNull()
+    expect(screen.queryByText(/before booking/i)).toBeNull()
   })
 })

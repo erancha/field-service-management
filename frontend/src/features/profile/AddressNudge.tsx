@@ -6,15 +6,18 @@ export function AddressNudge() {
   const { auth } = useAuth()
   const [dismissed, setDismissed] = useState(false)
 
-  // Backend strips the address before using it as the event location, so a whitespace-only
-  // value yields no usable location — treat it the same as blank and keep nudging.
-  if (dismissed || auth.status !== 'authenticated' || auth.user.address?.trim()) return null
+  if (dismissed || auth.status !== 'authenticated') return null
+  // Booking requires an address (the technician's event location) and a phone (so they can reach
+  // the customer). The backend strips both before use, so a whitespace-only value is treated as
+  // blank and keeps nudging.
+  const complete = Boolean(auth.user.address?.trim() && auth.user.phone?.trim())
+  if (complete) return null
 
   return (
     <div className="nudge">
-      <span>Add your address so the technician can find you.</span>
+      <span>Add your address and phone so the technician can reach you before booking.</span>
       <Link to="/profile" className="btn btn-secondary">
-        Add address
+        Complete profile
       </Link>
       <button className="nudge__dismiss" onClick={() => setDismissed(true)} aria-label="Dismiss">
         ×

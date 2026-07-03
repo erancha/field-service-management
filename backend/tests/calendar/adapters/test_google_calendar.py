@@ -432,3 +432,25 @@ class TestLocationAndPhone:
 
         body = client.imported[0][1]
         assert body["description"] == "Phone: +972-50-123"
+
+    def test_technician_name_and_phone_lead_the_description(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        """The technician's own event echoes the contact the customer was given so the technician
+        can confirm it is correct."""
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+        context = AppointmentContext(
+            problem_description="No hot water",
+            customer_phone="+972-50-123",
+            technician_name="Grace Hopper",
+            technician_phone="+972-50-999",
+        )
+
+        adapter.create_event(appointment_no_details, context)
+
+        body = client.imported[0][1]
+        assert body["description"] == (
+            "Technician: Grace Hopper\nTechnician phone: +972-50-999"
+            "\n\nNo hot water\n\nPhone: +972-50-123"
+        )

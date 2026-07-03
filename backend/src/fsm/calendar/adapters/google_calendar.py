@@ -72,11 +72,24 @@ class GoogleCalendarAdapter:
         address = (context.service_address or "").strip()
         if address:
             body["location"] = address
-        description_parts = [
+        description_parts: list[str] = []
+        # The technician's event echoes the name and phone shown to the customer (grouped as one
+        # block) so the technician can confirm the customer was given correct contact details.
+        technician_lines = [
+            line
+            for line in (
+                f"Technician: {context.technician_name.strip()}" if (context.technician_name or "").strip() else "",
+                f"Technician phone: {context.technician_phone.strip()}" if (context.technician_phone or "").strip() else "",
+            )
+            if line
+        ]
+        if technician_lines:
+            description_parts.append("\n".join(technician_lines))
+        description_parts.extend(
             part
             for part in (context.problem_description, appointment.details)
             if part and part.strip()
-        ]
+        )
         phone = (context.customer_phone or "").strip()
         if phone:
             description_parts.append(f"Phone: {phone}")

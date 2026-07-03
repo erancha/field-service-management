@@ -376,19 +376,19 @@ class TestProfileEndpoints:
         client = _signed_in_client(pg_session_factory)
         resp = client.patch(
             "/auth/me",
-            json={"display_name": "Dana", "address": "12 Main St", "phone": "+972-50-123"},
+            json={"display_name": "Dana", "address": "12 Main St", "phone": "054-7586288"},
         )
         assert resp.status_code == 200
         body = resp.json()
         assert body["display_name"] == "Dana"
         assert body["address"] == "12 Main St"
-        assert body["phone"] == "+972-50-123"
+        assert body["phone"] == "054-7586288"
         assert body["name"]  # Google-synced name is always present
 
         me = client.get("/auth/me").json()
         assert me["display_name"] == "Dana"
         assert me["address"] == "12 Main St"
-        assert me["phone"] == "+972-50-123"
+        assert me["phone"] == "054-7586288"
 
     def test_absent_field_is_left_unchanged(self, pg_session_factory):
         client = _signed_in_client(pg_session_factory)
@@ -400,7 +400,7 @@ class TestProfileEndpoints:
 
     def test_empty_or_whitespace_field_clears_to_null(self, pg_session_factory):
         client = _signed_in_client(pg_session_factory)
-        client.patch("/auth/me", json={"display_name": "Dana", "phone": "+972-50-123"})
+        client.patch("/auth/me", json={"display_name": "Dana", "phone": "054-7586288"})
         resp = client.patch("/auth/me", json={"display_name": "", "phone": "   "})
         body = resp.json()
         assert body["display_name"] is None
@@ -416,3 +416,17 @@ class TestProfileEndpoints:
         assert client.patch("/auth/me", json={"display_name": "x" * 121}).status_code == 422
         assert client.patch("/auth/me", json={"address": "x" * 501}).status_code == 422
         assert client.patch("/auth/me", json={"phone": "x" * 41}).status_code == 422
+
+    def test_malformed_phone_is_rejected(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        # Only 5 digits — not a plausible phone in any country — is rejected, nothing persisted.
+        resp = client.patch("/auth/me", json={"phone": "12345"})
+        assert resp.status_code == 422
+        assert client.get("/auth/me").json()["phone"] is None
+
+    def test_valid_international_phone_is_accepted(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        # A non-Israeli but well-formed number is accepted server-side (the UI warns, never blocks).
+        resp = client.patch("/auth/me", json={"phone": "+1-202-555-0143"})
+        assert resp.status_code == 200
+        assert resp.json()["phone"] == "+1-202-555-0143"

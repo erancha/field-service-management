@@ -10,6 +10,8 @@ from fsm.scheduling.application import AppointmentService
 from fsm.scheduling.domain import (
     Appointment,
     AppointmentStatus,
+    ContactInfo,
+    IncompleteContactInfo,
     InvalidTransition,
     NotFoundError,
     ServiceCall,
@@ -71,6 +73,11 @@ def outbox() -> InMemoryOutboxRepository:
     return InMemoryOutboxRepository()
 
 
+def _complete_contact(_user_id: UUID) -> ContactInfo:
+    """Contact resolver returning full contact for every id, so booking passes the precondition."""
+    return ContactInfo(address="12 Main St", phone="+972-50-1")
+
+
 @pytest.fixture
 def svc(
     appt_repo: InMemoryAppointmentRepository,
@@ -87,6 +94,7 @@ def svc(
         outbox=outbox,
         clock=lambda: _FIXED_NOW,
         new_id=lambda: _APPT_ID,
+        contact_resolver=_complete_contact,
     )
 
 
@@ -246,6 +254,7 @@ class TestProposeSlots:
             outbox=outbox,
             clock=lambda: now,
             new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
         )
         wh = WeeklyWorkingHours.default()
 
@@ -391,6 +400,7 @@ class TestBookAppointment:
             outbox=outbox,
             clock=lambda: _FIXED_NOW,
             new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
         )
         svc2.book_appointment(
             service_call_id=_SC_ID,
@@ -636,6 +646,7 @@ class TestCancelAppointment:
             outbox=outbox,
             clock=lambda: _FIXED_NOW,
             new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
         )
         svc.book_appointment(
             service_call_id=_SC_ID,
@@ -813,6 +824,112 @@ class TestBookAppointmentServiceCallValidation:
         assert len(outbox.all_entries) == 0
 
 
+class TestBookAppointmentContactEnforcement:
+    """book_appointment rejects when the contact data an appointment depends on is incomplete.
+
+    The customer must have an address and a phone; the assigned technician must have a phone.
+    """
+
+    def _svc_with(
+        self,
+        contacts: dict,
+        appt_repo,
+        sc_repo,
+        calendar,
+        notifications,
+        outbox,
+    ) -> AppointmentService:
+        return AppointmentService(
+            appointments=appt_repo,
+            service_calls=sc_repo,
+            calendar=calendar,
+            notifications=notifications,
+            outbox=outbox,
+            clock=lambda: _FIXED_NOW,
+            new_id=lambda: _APPT_ID,
+            contact_resolver=lambda uid: contacts.get(uid, ContactInfo()),
+        )
+
+    def _book(self, service):
+        return service.book_appointment(
+            service_call_id=_SC_ID,
+            technician_id=_TECH_ID,
+            customer_id=_CUST_ID,
+            time_range=_tr(9, 11),
+        )
+
+    def test_rejects_when_customer_lacks_phone(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        service = self._svc_with(
+            {
+                _CUST_ID: ContactInfo(address="12 Main St", phone=None),
+                _TECH_ID: ContactInfo(phone="+972-50-9"),
+            },
+            appt_repo, sc_repo, calendar, notifications, outbox,
+        )
+        with pytest.raises(IncompleteContactInfo) as exc:
+            self._book(service)
+        assert "customer phone" in exc.value.missing
+
+    def test_rejects_when_customer_lacks_address(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        service = self._svc_with(
+            {
+                _CUST_ID: ContactInfo(address="  ", phone="+972-50-1"),
+                _TECH_ID: ContactInfo(phone="+972-50-9"),
+            },
+            appt_repo, sc_repo, calendar, notifications, outbox,
+        )
+        with pytest.raises(IncompleteContactInfo) as exc:
+            self._book(service)
+        assert "customer address" in exc.value.missing
+
+    def test_rejects_when_technician_lacks_phone(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        service = self._svc_with(
+            {
+                _CUST_ID: ContactInfo(address="12 Main St", phone="+972-50-1"),
+                _TECH_ID: ContactInfo(phone=None),
+            },
+            appt_repo, sc_repo, calendar, notifications, outbox,
+        )
+        with pytest.raises(IncompleteContactInfo) as exc:
+            self._book(service)
+        assert "technician phone" in exc.value.missing
+
+    def test_rejection_happens_before_any_mutation_or_notification(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        service = self._svc_with({}, appt_repo, sc_repo, calendar, notifications, outbox)
+        with pytest.raises(IncompleteContactInfo):
+            self._book(service)
+        assert len(list(appt_repo._store)) == 0
+        assert len(outbox.all_entries) == 0
+        assert notifications.calls == []
+        assert sc_repo.get(_SC_ID).status is ServiceCallStatus.OPEN
+
+    def test_succeeds_when_all_contact_present(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        service = self._svc_with(
+            {
+                _CUST_ID: ContactInfo(address="12 Main St", phone="+972-50-1"),
+                _TECH_ID: ContactInfo(phone="+972-50-9"),
+            },
+            appt_repo, sc_repo, calendar, notifications, outbox,
+        )
+        appt = self._book(service)
+        assert appt.status == AppointmentStatus.SCHEDULED
+
+
 # ---------------------------------------------------------------------------
 # Clock purity — mutation methods propagate clock's timestamp exactly
 # ---------------------------------------------------------------------------
@@ -849,6 +966,7 @@ class TestClockPurityOnMutations:
             outbox=outbox,
             clock=lambda: later_now,
             new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
         )
         _seed_open_service_call(sc_repo)
         appt = svc.book_appointment(
@@ -877,6 +995,7 @@ class TestClockPurityOnMutations:
             outbox=outbox,
             clock=lambda: later_now,
             new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
         )
         _seed_open_service_call(sc_repo)
         appt = svc.book_appointment(
@@ -905,6 +1024,7 @@ class TestClockPurityOnMutations:
             outbox=outbox,
             clock=lambda: later_now,
             new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
         )
         _seed_open_service_call(sc_repo)
         appt = svc.book_appointment(

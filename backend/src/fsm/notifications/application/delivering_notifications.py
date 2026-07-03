@@ -46,9 +46,15 @@ def _context_lines(context) -> str:
     """
     lines = []
     name = (context.customer_name or "").strip()
+    technician = (context.technician_name or "").strip()
+    technician_phone = (context.technician_phone or "").strip()
     problem = (context.problem_description or "").strip()
     if name:
         lines.append(f"Customer: {name}")
+    if technician:
+        lines.append(f"Technician: {technician}")
+    if technician_phone:
+        lines.append(f"Technician phone: {technician_phone}")
     if problem:
         lines.append(f"Problem: {problem}")
     return "\n\n" + "\n".join(lines) if lines else ""
