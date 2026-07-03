@@ -61,8 +61,10 @@ def build_ics(
 
     UID is deterministic (fsm-{appointment_id}@fsm.local); DTSTART/DTEND/DTSTAMP use UTC Zulu.
     DTSTAMP is the appointment's updated_at, so it advances on every change rather than staying
-    pinned to DTSTART. SEQUENCE is int(updated_at − created_at) so each change carries a higher
-    value and clients treat a re-sent invitation as an update rather than a duplicate.
+    pinned to DTSTART. SEQUENCE is int(updated_at − created_at), so a later change carries a
+    higher value and clients treat the re-sent invitation as an update rather than a duplicate.
+    Its resolution is one second: changes landing within the same second repeat a SEQUENCE and
+    a client may ignore all but the first — acceptable for human-paced edits.
 
     When organizer and attendee are both present the event is emitted as an iTIP invitation:
     METHOD (REQUEST for a live booking, CANCEL to withdraw it), matching STATUS, ORGANIZER, and

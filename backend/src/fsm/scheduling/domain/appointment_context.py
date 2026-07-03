@@ -1,8 +1,10 @@
 """Transient enrichment data for rendering an appointment into a calendar event or notification.
 
-Assembled per projection from the service call and customer identity; never persisted. Fields
-are optional because resolvers degrade them to None when a lookup fails, in which case
-renderers fall back to generic text.
+Assembled per projection from the service call and the parties' profiles; never persisted.
+Fields are optional at the type level because each surface's resolver populates only what that
+surface renders; a field the surface requires arrives as a visible "[<label> missing]"
+placeholder (with a logged warning) rather than None, so renderers may treat required fields
+as always present while still accepting bare contexts from unenriched paths.
 """
 from __future__ import annotations
 

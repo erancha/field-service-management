@@ -33,6 +33,9 @@ erDiagram
         string role_status "PENDING | APPROVED | REJECTED"
         timestamptz role_decided_at "null until decided"
         uuid role_decided_by "deciding admin"
+        string display_name "self-chosen, preferred over name; nullable"
+        string address "customer: service address; technician: dispatch only; nullable"
+        string phone "required to book (customer and technician); nullable"
     }
 
     SERVICE_CALL {
