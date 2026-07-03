@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import logging
 import uuid
+import zoneinfo
+from datetime import tzinfo
 
 from sqlalchemy.orm import Session
 
 from fsm.notifications.adapters.feed_repository import SqlAlchemyNotificationFeedRepository
 from fsm.notifications.adapters.smtp_email_sender import LoggingEmailSender, SmtpEmailSender
 from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
+from fsm.platform.config import DEFAULT_TIMEZONE
 from fsm.platform.context_rendering import required_field
 from fsm.platform.identity_lookup import load_user
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
+from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.notifications import NotificationPort
 
@@ -60,6 +64,21 @@ def build_notifications(session: Session, settings) -> NotificationPort:
         user = load_user(session, user_id)
         return user.email if user else None
 
+    def local_zone(technician_id: uuid.UUID) -> tzinfo:
+        """Zone notification times render in: the technician's stored timezone, else the
+        region default. Degrades to the default (logged) so a timezone-read failure can
+        never block the notification."""
+        try:
+            stored = SqlAlchemyWorkingHoursRepository(session).get_timezone(technician_id)
+            return zoneinfo.ZoneInfo(stored or DEFAULT_TIMEZONE)
+        except Exception:
+            _log.exception(
+                "Timezone lookup failed for technician_id=%s; using %s",
+                technician_id,
+                DEFAULT_TIMEZONE,
+            )
+            return zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+
     def appointment_context(appointment) -> AppointmentContext:
         try:
             problem = (
@@ -93,5 +112,6 @@ def build_notifications(session: Session, settings) -> NotificationPort:
         email_sender=email_sender,
         recipient_email=recipient_email,
         context_resolver=appointment_context,
+        local_zone=local_zone,
         organizer_address=sender_address,
     )

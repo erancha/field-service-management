@@ -119,3 +119,49 @@ def test_factory_passes_smtp_sender_as_organizer_address() -> None:
 
     port = build_notifications(session=_RaisingSession(), settings=_Settings())
     assert port._organizer_address == "ops@fsm.example"
+
+
+class _StoredTimezoneSession:
+    """Session stub whose working-hours timezone query yields a fixed stored zone."""
+
+    def __init__(self, tz: str) -> None:
+        self._tz = tz
+
+    def query(self, row_type):
+        return self
+
+    def filter(self, *args):
+        return self
+
+    def first(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(timezone=self._tz)
+
+
+def test_local_zone_uses_the_technician_stored_timezone() -> None:
+    import zoneinfo
+
+    from fsm.platform.notifications_factory import build_notifications
+
+    port = build_notifications(
+        session=_StoredTimezoneSession("Europe/London"), settings=_NoSmtpSettings()
+    )
+
+    assert port._local_zone(uuid.uuid4()) == zoneinfo.ZoneInfo("Europe/London")
+
+
+def test_local_zone_degrades_to_the_region_default_when_the_read_fails(caplog) -> None:
+    import logging
+    import zoneinfo
+
+    from fsm.platform.config import DEFAULT_TIMEZONE
+    from fsm.platform.notifications_factory import build_notifications
+
+    port = build_notifications(session=_RaisingSession(), settings=_NoSmtpSettings())
+
+    with caplog.at_level(logging.ERROR):
+        zone = port._local_zone(uuid.uuid4())
+
+    assert zone == zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    assert any("Timezone lookup failed" in r.getMessage() for r in caplog.records)

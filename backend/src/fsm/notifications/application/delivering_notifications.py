@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Callable
 
 from fsm.notifications.adapters.ics import build_ics
@@ -23,14 +23,14 @@ def _utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
-def _format_local(dt: datetime) -> str:
-    """Render an appointment time as a human-readable local wall-clock string.
+def _format_local(dt: datetime, zone: tzinfo) -> str:
+    """Render an appointment time as a human-readable wall-clock string in `zone`.
 
-    The appointment start is already tz-aware in its local zone, so it is formatted as-is
-    without a UTC offset; the recipient reads the time in their own local terms rather than
-    an ISO offset such as +03:00.
+    Appointment datetimes are tz-aware but arrive in whatever zone produced them (the client's
+    offset on booking, UTC when loaded from the database), so the explicit conversion is what
+    guarantees the recipient reads a correct local time with no ISO offset attached.
     """
-    return dt.strftime("%A, %d %B %Y at %H:%M")
+    return dt.astimezone(zone).strftime("%A, %d %B %Y at %H:%M")
 
 
 def _subject(base: str, context) -> str:
@@ -75,6 +75,10 @@ class DeliveringNotificationPort:
     When set, appointment notifications include iTIP invitations (REQUEST for booking/reschedule,
     CANCEL for cancellation); otherwise plain events are sent.
 
+    local_zone maps the appointment's technician_id to the timezone bodies render times in. An
+    appointment is a physical visit, so one zone — the technician's service region — is correct
+    for both parties.
+
     Feed writes share the caller's transaction via the session-bound feed_repo.
     Email sends are best-effort: any exception is caught and logged so that
     notification failures never propagate into the booking transaction.
@@ -87,6 +91,7 @@ class DeliveringNotificationPort:
         recipient_email: Callable[[uuid.UUID], str | None],
         context_resolver: Callable[[object], object],
         *,
+        local_zone: Callable[[uuid.UUID], tzinfo],
         organizer_address: str | None = None,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
@@ -94,8 +99,14 @@ class DeliveringNotificationPort:
         self._email_sender = email_sender
         self._recipient_email = recipient_email
         self._context_resolver = context_resolver
+        self._local_zone = local_zone
         self._organizer_address = organizer_address
         self._clock = clock
+
+    def _start_text(self, appointment) -> str:
+        return _format_local(
+            appointment.time_range.start, self._local_zone(appointment.technician_id)
+        )
 
     # ------------------------------------------------------------------
     # NotificationPort implementation
@@ -107,7 +118,7 @@ class DeliveringNotificationPort:
         subject = _subject("Appointment booked", context)
         body = (
             f"Your appointment has been booked for "
-            f"{_format_local(appointment.time_range.start)}.{_context_lines(context)}"
+            f"{self._start_text(appointment)}.{_context_lines(context)}"
         )
         customer_email = self._recipient_email(appointment.customer_id)
         ics = build_ics(
@@ -127,7 +138,7 @@ class DeliveringNotificationPort:
         subject = _subject("Appointment rescheduled", context)
         body = (
             f"Your appointment has been rescheduled to "
-            f"{_format_local(appointment.time_range.start)}.{_context_lines(context)}"
+            f"{self._start_text(appointment)}.{_context_lines(context)}"
         )
         customer_email = self._recipient_email(appointment.customer_id)
         ics = build_ics(
@@ -151,7 +162,7 @@ class DeliveringNotificationPort:
             ("\n" if context_block else "\n\n") + f"Details: {details}" if details else ""
         )
         body = (
-            f"Your appointment for {_format_local(appointment.time_range.start)} "
+            f"Your appointment for {self._start_text(appointment)} "
             f"has been updated.{context_block}{details_block}"
         )
         customer_email = self._recipient_email(appointment.customer_id)

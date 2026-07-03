@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+import zoneinfo
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -111,7 +112,8 @@ def _make_appointment(
 # ---------------------------------------------------------------------------
 
 
-def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=None, organizer="ops@fsm.example"):
+def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=None,
+          organizer="ops@fsm.example", zone: timezone = timezone.utc):
     from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
 
     fixed_time = datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc)
@@ -120,6 +122,7 @@ def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=N
         email_sender=email_sender,
         recipient_email=lambda uid: emails.get(uid),
         context_resolver=lambda _appt: context if context is not None else AppointmentContext(),
+        local_zone=lambda _technician_id: zone,
         organizer_address=organizer,
         clock=lambda: fixed_time,
     )
@@ -153,6 +156,17 @@ class TestAppointmentBooked:
         [msg] = [m for m in email.sent if m["to"] == "c@example.com"]
         assert "Tuesday, 10 June 2025 at 09:00" in msg["body"]
         assert "2025-06-10T09:00:00" not in msg["body"]
+
+    def test_body_converts_utc_stored_start_into_the_resolved_zone(self):
+        appt = _make_appointment()  # stored start is 09:00 UTC
+        email = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), email, {appt.customer_id: "c@example.com"},
+                     zone=zoneinfo.ZoneInfo("Asia/Jerusalem"))
+
+        port.appointment_booked(appt)
+
+        [msg] = [m for m in email.sent if m["to"] == "c@example.com"]
+        assert "Tuesday, 10 June 2025 at 12:00" in msg["body"]
 
     def test_sends_two_emails_when_both_have_addresses(self):
         cust_id = uuid.uuid4()
