@@ -6,9 +6,10 @@ by Pydantic's UUID type and serialised as strings in responses.
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 # ---------------------------------------------------------------------------
@@ -17,7 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class OpenServiceCallRequest(BaseModel):
-    description: str
+    # The problem description is required on every rendering surface (event title, notification
+    # body), so a blank one is rejected at the door rather than surfacing as a placeholder later.
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class ServiceCallResponse(BaseModel):

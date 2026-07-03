@@ -164,6 +164,21 @@ def test_open_service_call_returns_201(client, auth):
     assert uuid.UUID(data["id"])
 
 
+def test_open_service_call_rejects_blank_description(client, auth):
+    """The problem description feeds every rendering surface, so a blank one is a 422."""
+    auth(role=Role.CUSTOMER)
+    for description in ("", "   \n\t"):
+        response = client.post("/api/service-calls", json={"description": description})
+        assert response.status_code == 422
+
+
+def test_open_service_call_stores_the_stripped_description(client, auth):
+    auth(role=Role.CUSTOMER)
+    response = client.post("/api/service-calls", json={"description": "  No hot water  "})
+    assert response.status_code == 201
+    assert response.json()["description"] == "No hot water"
+
+
 def test_open_service_call_wrong_role_returns_403(client, auth):
     """Only customers may open service calls."""
     auth(role=Role.TECHNICIAN)
