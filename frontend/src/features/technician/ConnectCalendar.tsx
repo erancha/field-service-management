@@ -1,13 +1,22 @@
+import { ErrorBanner } from '../../components/ErrorBanner.tsx'
+import { useCalendarConnectError } from '../../hooks/useCalendarConnectError.ts'
+
 type ConnectionStatus = 'loading' | 'connected' | 'disconnected'
 
 interface ConnectCalendarProps {
   status: ConnectionStatus
 }
 
+const CONNECT_DENIED_MESSAGE =
+  "Google Calendar wasn't connected — the calendar permissions weren't granted. " +
+  'Please try again and allow calendar access when Google asks.'
+
 export function ConnectCalendar({ status }: ConnectCalendarProps) {
+  const { rejected, dismiss } = useCalendarConnectError()
   return (
     <div className="connect-calendar">
       <h3>Google Calendar Integration</h3>
+      {rejected && <ErrorBanner message={CONNECT_DENIED_MESSAGE} onDismiss={dismiss} />}
       {status === 'loading' && (
         <p className="connect-calendar__checking">Checking calendar connection…</p>
       )}

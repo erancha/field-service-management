@@ -2,7 +2,8 @@
 
 Wiring:
 - GET /calendar/connect/login    → redirect to Google Calendar authorization (or 401/503)
-- GET /calendar/connect/callback → exchange code, provision FSM calendar, persist connection
+- GET /calendar/connect/callback → exchange code, provision FSM calendar, persist connection;
+                                   denied or insufficient consent redirects back to the SPA flagged
 - GET /calendar/status           → return connected status for the session user
 
 Authentication is gated purely on an authenticated session (user_id present). The
@@ -16,6 +17,7 @@ Injectable seams on app.state allow tests to bypass real Google without patching
 """
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Callable
 from uuid import UUID
@@ -27,15 +29,47 @@ from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepos
 from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.application.connection_service import CalendarConnectionService
 from fsm.calendar.domain.errors import DuplicateTechnicianError, NotFoundError
+from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
+from fsm.platform.api.oauth_token import fetch_token_relaxed
 
 router = APIRouter(prefix="/calendar")
 
-_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
+_log = logging.getLogger(__name__)
+
+# Operator runbook holding the exact Google Cloud Console steps; referenced from the failure log
+# so the volatile click-path lives in one updatable place, not in code.
+_SETUP_RUNBOOK = "docs/calendar-setup.md"
+
+
+def _google_connect_errors() -> tuple[type[BaseException], ...]:
+    """Google client failures that mean the calendar connection could not be established.
+
+    A refused or insufficient consent — the technician did not grant the app-created / free-busy
+    scopes — reaches the callback as a RefreshError when the client first refreshes its access token,
+    or as an HttpError if the API itself rejects the call. Both resolve to a controlled rejection
+    redirect back to the app.
+    """
+    from google.auth.exceptions import GoogleAuthError
+    from googleapiclient.errors import HttpError
+
+    return (GoogleAuthError, HttpError)
+
+
+def _reject_calendar_connect(request: Request) -> RedirectResponse:
+    """Send the browser back to the SPA flagged so it renders a friendly banner with a retry.
+
+    Clears the one-shot OAuth state from the session — a retry via /calendar/connect/login mints
+    fresh state. The technician-facing wording lives in the SPA; the operator-facing cause is logged
+    by the caller.
+    """
+    request.session.pop("calendar_oauth_state", None)
+    request.session.pop("calendar_code_verifier", None)
+    return RedirectResponse("/?calendar_connect=denied", status_code=307)
 
 
 def _build_flow(settings, redirect_uri: str):
-    """Construct a google_auth_oauthlib Flow configured for calendar scope."""
+    """Construct a google_auth_oauthlib Flow configured for the narrow calendar scopes."""
     from google_auth_oauthlib.flow import Flow
 
     client_config = {
@@ -49,14 +83,14 @@ def _build_flow(settings, redirect_uri: str):
     }
     return Flow.from_client_config(
         client_config,
-        scopes=[_CALENDAR_SCOPE],
+        scopes=list(CALENDAR_OAUTH_SCOPES),
         redirect_uri=redirect_uri,
     )
 
 
 def _real_token_exchange(flow, code: str) -> str:
     """Exchange the authorization code for a refresh token via the real Google endpoint."""
-    flow.fetch_token(code=code)
+    fetch_token_relaxed(flow, code)
     return flow.credentials.refresh_token  # type: ignore[attr-defined]
 
 
@@ -133,7 +167,7 @@ def calendar_connect_login(request: Request):
 
 
 @router.get("/connect/callback")
-def calendar_connect_callback(request: Request, code: str = "", state: str = ""):
+def calendar_connect_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     expected_state = request.session.get("calendar_oauth_state")
     if not expected_state or not secrets.compare_digest(expected_state, state):
         return JSONResponse(
@@ -146,6 +180,16 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "")
             {"detail": "Calendar integration not configured"}, status_code=503
         )
 
+    # The technician declined or cancelled on Google's consent screen: Google redirects back with an
+    # ?error (e.g. access_denied) and no code. Reject cleanly rather than exchanging an empty code.
+    if error:
+        _log.warning(
+            "Calendar connect declined by technician %s: %s",
+            request.session.get("user_id"),
+            error,
+        )
+        return _reject_calendar_connect(request)
+
     token_exchange = _get_token_exchange(request.app)
     client_factory = _get_client_factory(request.app, settings)
 
@@ -154,22 +198,36 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "")
     )
     flow = _build_flow(settings, redirect_uri)
     flow.code_verifier = request.session.get("calendar_code_verifier")
-    refresh_token = token_exchange(flow, code)
-    client = client_factory(refresh_token)
 
     technician_id = UUID(request.session["user_id"])
     factory = _get_session_factory(request.app)
-    with factory() as session:
-        service = CalendarConnectionService(
-            repo=SqlAlchemyCalendarConnectionRepository(session),
-            cipher=FernetTokenCipher(settings.fsm_token_key.get_secret_value()),
-            client=client,
+    try:
+        refresh_token = token_exchange(flow, code)
+        client = client_factory(refresh_token)
+        with factory() as session:
+            service = CalendarConnectionService(
+                repo=SqlAlchemyCalendarConnectionRepository(session),
+                cipher=FernetTokenCipher(settings.fsm_token_key.get_secret_value()),
+                client=client,
+            )
+            try:
+                service.connect(technician_id, refresh_token)
+                session.commit()
+            except DuplicateTechnicianError:
+                session.rollback()
+    except _google_connect_errors() as exc:
+        # A denied or insufficient calendar consent only fails here, on the first Google call
+        # (create_calendar refreshing the access token). The operator-facing cause and remediation
+        # runbook go to the log; the browser is sent back to the app flagged.
+        _log.warning(
+            "Calendar connect failed for technician %s — Google rejected the credentials; the "
+            "required calendar scopes (%s) were likely not granted. See %s. Raw error: %s",
+            technician_id,
+            ", ".join(CALENDAR_OAUTH_SCOPES),
+            _SETUP_RUNBOOK,
+            exc,
         )
-        try:
-            service.connect(technician_id, refresh_token)
-            session.commit()
-        except DuplicateTechnicianError:
-            session.rollback()
+        return _reject_calendar_connect(request)
 
     request.session.pop("calendar_oauth_state", None)
     request.session.pop("calendar_code_verifier", None)

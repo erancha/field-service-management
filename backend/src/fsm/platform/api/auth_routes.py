@@ -13,7 +13,6 @@ Injectable seams on app.state allow tests to bypass real Google without patching
 """
 from __future__ import annotations
 
-import os
 import secrets
 from typing import Callable
 
@@ -27,6 +26,7 @@ from fsm.identity.domain.phone import is_valid_phone
 from fsm.identity.ports.auth import AuthPort
 from fsm.platform.api.auth_deps import SessionUser, require_user
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
+from fsm.platform.api.oauth_token import fetch_token_relaxed
 from fsm.platform.api.schemas import UpdateProfileRequest
 from fsm.platform.events import ADMINS_CHANNEL, publish_to_app
 
@@ -70,11 +70,7 @@ def _build_flow(settings, redirect_uri: str):
 
 def _real_token_exchange(flow, code: str) -> str:
     """Exchange the authorization code for tokens and return the raw ID-token credential."""
-    # Google normalises the granted OIDC scopes (email -> .../userinfo.email, profile ->
-    # .../userinfo.profile, reordered with openid), so they never byte-match the requested scope.
-    # oauthlib rejects any granted-vs-requested scope mismatch as fatal unless this flag relaxes it.
-    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
-    flow.fetch_token(code=code)
+    fetch_token_relaxed(flow, code)
     return flow.credentials.id_token  # type: ignore[attr-defined]
 
 

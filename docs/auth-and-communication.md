@@ -86,10 +86,22 @@ sequenceDiagram
 ### Connect Google Calendar — technician
 
 Connecting a technician's Google Calendar is a second OAuth consent, separate from sign-in: it shares
-the same OAuth client but requests the broad Google Calendar scope and uses its own redirect URI
-(`/calendar/connect/callback`). It is gated only on an existing signed-in session — the technician must
-already be authenticated — and the refresh token Google returns is encrypted at rest with
-`FSM_TOKEN_KEY` before it is stored, so the database never holds a usable token in plaintext.
+the same OAuth client but requests only the two narrow calendar scopes — `calendar.app.created` and
+`calendar.freebusy` — and uses its own redirect URI (`/calendar/connect/callback`). Those scopes are
+what make the integration private by construction: the system can create and manage its own "Field
+Service Management" calendar and read opaque busy/free intervals, but the broad `calendar` scope is
+never requested, so the technician's other calendars and private event details stay invisible. It is
+gated only on an existing signed-in session — the technician must already be authenticated — and the
+refresh token Google returns is encrypted at rest with `FSM_TOKEN_KEY` before it is stored, so the
+database never holds a usable token in plaintext.
+
+If Google returns a grant without those scopes — the technician skipped the calendar permission on the
+consent screen, or the OAuth client is not configured for them — the first Google API call fails; the
+callback logs the cause, stores no connection, and sends the technician back to the app flagged
+(`/?calendar_connect=denied`), where the dashboard shows a dismissible "reconnect and allow calendar
+access" banner. Cancelling on the consent screen (`error=access_denied`) takes the same path. See
+[calendar-setup.md](calendar-setup.md) for the operator setup (enabling the Calendar API, registering
+the scopes, test users) and the revoke-and-reconnect steps required after any scope change.
 
 ```mermaid
 sequenceDiagram
@@ -102,19 +114,28 @@ sequenceDiagram
     T->>BE: GET /calendar/connect/login (click "Connect Google Calendar")
     Note over BE: 401 if no session — 503 unless calendar is<br/>configured (OAuth client + FSM_TOKEN_KEY)
     Note over BE: Mint state + PKCE code_verifier into the session
-    BE-->>T: 307 → Google authorization URL<br/>(scope: calendar, access_type=offline, prompt=consent)
+    BE-->>T: 307 → Google authorization URL<br/>(scopes: calendar.app.created + calendar.freebusy,<br/>access_type=offline, prompt=consent)
     T->>G: Calendar authorization request + consent
     G-->>T: 307 → /calendar/connect/callback?code&state<br/>(same technician edge)
     T->>BE: GET /calendar/connect/callback?code&state
     Note over BE: Reject unless state matches (constant-time compare)
+    opt Technician cancelled on the consent screen (error=access_denied)
+        BE-->>T: 307 → /?calendar_connect=denied<br/>(dashboard shows reconnect banner)
+    end
     BE->>G: Exchange code + code_verifier at token endpoint
     G-->>BE: Refresh token (offline access)
     BE->>G: Create dedicated "Field Service Management" calendar
-    G-->>BE: fsm_calendar_id
-    Note over BE: Encrypt refresh token with FSM_TOKEN_KEY (Fernet),<br/>persist CONNECTED calendar_connection row
-    BE-->>T: 307 → /
-    T->>BE: GET /calendar/status
-    BE-->>T: { connected: true, fsm_calendar_id }
+    alt Calendar scopes granted
+        G-->>BE: fsm_calendar_id
+        Note over BE: Encrypt refresh token with FSM_TOKEN_KEY (Fernet),<br/>persist CONNECTED calendar_connection row
+        BE-->>T: 307 → /
+        T->>BE: GET /calendar/status
+        BE-->>T: { connected: true, fsm_calendar_id }
+    else Calendar scopes not granted (invalid_scope)
+        G-->>BE: Token refresh rejected — invalid_scope
+        Note over BE: Log cause + docs/calendar-setup.md pointer,<br/>no connection stored
+        BE-->>T: 307 → /?calendar_connect=denied<br/>(dashboard shows reconnect banner)
+    end
 ```
 
 ### Technician approval — dashboard live

@@ -55,3 +55,26 @@ def test_build_calendar_client_passes_correct_credentials_to_discovery_build():
     mock_build.assert_called_once_with(
         "calendar", "v3", credentials=mock_creds_instance, cache_discovery=False
     )
+
+
+def test_build_calendar_client_defaults_to_narrow_scopes():
+    """The default credential scopes confine the client to app-created calendars and free/busy.
+
+    Without an explicit scopes override the factory must request only calendar.app.created and
+    calendar.freebusy, never the broad .../auth/calendar scope, so a refresh token minted for this
+    client can never read or modify the technician's other calendars.
+    """
+    with patch("fsm.calendar.adapters.client_factory.build") as mock_build:
+        mock_build.return_value = MagicMock()
+        with patch("fsm.calendar.adapters.client_factory.Credentials") as mock_creds_cls:
+            build_calendar_client(
+                refresh_token="rt-abc123",
+                client_id="cid",
+                client_secret="csecret",
+            )
+
+    _, kwargs = mock_creds_cls.call_args
+    assert kwargs["scopes"] == [
+        "https://www.googleapis.com/auth/calendar.app.created",
+        "https://www.googleapis.com/auth/calendar.freebusy",
+    ]

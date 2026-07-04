@@ -125,6 +125,20 @@ class _FakeCalendarClient:
         return self._calendar_id
 
 
+class _ScopeDeniedCalendarClient:
+    """Calendar client that fails on first use the way Google does when calendar scope is not granted.
+
+    A technician can complete the OAuth redirect while granting only the sign-in scopes; the missing
+    calendar grant only surfaces when the client first refreshes its access token to create the FSM
+    calendar, raised from deep in google-auth as RefreshError('invalid_scope').
+    """
+
+    def create_calendar(self, summary: str) -> str:
+        from google.auth.exceptions import RefreshError
+
+        raise RefreshError(("invalid_scope: Bad Request", {"error": "invalid_scope"}))
+
+
 # ---------------------------------------------------------------------------
 # 1. /calendar/connect/login — unauthenticated → 401
 # ---------------------------------------------------------------------------
@@ -299,6 +313,167 @@ def test_calendar_callback_propagates_pkce_code_verifier_to_token_exchange(pg_se
     assert seen["code_verifier"], (
         "calendar callback flow reached token exchange without a PKCE code_verifier"
     )
+
+
+# ---------------------------------------------------------------------------
+# 5c. Calendar flow requests only the narrow app-created + freebusy scopes
+# ---------------------------------------------------------------------------
+
+
+def test_calendar_flow_requests_only_app_created_and_freebusy_scopes():
+    """OAuth consent must request only calendar.app.created + calendar.freebusy.
+
+    The privacy-by-construction model (design D2/D3) depends on the app never being granted access
+    to the technician's other calendars: app.created confines it to calendars the app itself created,
+    and freebusy returns only opaque busy/free blocks. The broad .../auth/calendar scope would grant
+    read/write to every calendar in the account and must never be requested.
+    """
+    from fsm.platform.api.calendar_routes import _build_flow
+
+    settings = _settings_full("postgresql+psycopg://unused:unused@localhost/unused", _fernet_key())
+    flow = _build_flow(settings, settings.google_calendar_redirect_uri)
+    auth_url, _ = flow.authorization_url()
+    scopes = set(parse_qs(urlparse(auth_url).query)["scope"][0].split())
+
+    assert scopes == {
+        "https://www.googleapis.com/auth/calendar.app.created",
+        "https://www.googleapis.com/auth/calendar.freebusy",
+    }
+    assert "https://www.googleapis.com/auth/calendar" not in scopes
+
+
+# ---------------------------------------------------------------------------
+# 5d. Calendar code exchange relaxes scope validation independently of sign-in
+# ---------------------------------------------------------------------------
+
+
+def test_calendar_token_exchange_tolerates_scope_mismatch(monkeypatch):
+    """The calendar exchange must not 500 when the granted scope set differs from requested.
+
+    With include_granted_scopes=true, Google folds the already-granted sign-in scopes
+    (openid/email/profile) into the calendar grant, so the granted set never byte-matches the
+    requested calendar scopes. oauthlib treats any mismatch as fatal unless OAUTHLIB_RELAX_TOKEN_SCOPE
+    is set. That relaxation must be self-contained in the calendar exchange, not inherited from a
+    sign-in exchange that happened to run first in the same process (a session restored from the
+    signed cookie, or sign-in handled by another per-role process, leaves the flag unset).
+    """
+    import json
+
+    import requests
+    from requests_oauthlib import OAuth2Session
+
+    from fsm.platform.api.calendar_routes import _build_flow, _real_token_exchange
+
+    settings = _settings_full("postgresql+psycopg://unused:unused@localhost/unused", _fernet_key())
+    token_body = json.dumps(
+        {
+            "access_token": "fake-access-token",
+            "refresh_token": "the-refresh-token",
+            "token_type": "Bearer",
+            "expires_in": 3599,
+            "scope": "openid https://www.googleapis.com/auth/calendar.app.created "
+            "https://www.googleapis.com/auth/calendar.freebusy "
+            "https://www.googleapis.com/auth/userinfo.email",
+        }
+    )
+
+    def fake_request(self, method, url, **kwargs):
+        resp = requests.models.Response()
+        resp.status_code = 200
+        resp._content = token_body.encode()
+        resp.headers["Content-Type"] = "application/json"
+        resp.url = url
+        prepared = requests.PreparedRequest()
+        prepared.url = url
+        resp.request = prepared
+        return resp
+
+    monkeypatch.setattr(OAuth2Session, "request", fake_request)
+    monkeypatch.delenv("OAUTHLIB_RELAX_TOKEN_SCOPE", raising=False)
+
+    flow = _build_flow(settings, settings.google_calendar_redirect_uri)
+    assert _real_token_exchange(flow, "fake-code") == "the-refresh-token"
+
+
+# ---------------------------------------------------------------------------
+# 5e. Callback redirects to the app with a rejection flag (never a 500) when the
+#     calendar scope was not granted, or the technician declined/cancelled
+# ---------------------------------------------------------------------------
+
+
+def _denied_flag(location: str) -> str | None:
+    return parse_qs(urlparse(location).query).get("calendar_connect", [None])[0]
+
+
+def test_calendar_callback_redirects_with_rejection_when_calendar_scope_not_granted(pg_session_factory):
+    """A missing calendar grant sends the technician back to the app flagged, not a 500 or raw JSON.
+
+    When Google returns only the sign-in scopes, the first Calendar API call fails as the client
+    refreshes its token. The callback logs the cause and 307-redirects to /?calendar_connect=denied so
+    the SPA renders a friendly banner, and persists no connection.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-scope-denied",
+        email="scopedenied@example.com",
+        name="Scope Denied",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False, raise_server_exceptions=False)
+
+    _sign_in(client, app)
+    login_resp = client.get("/calendar/connect/login")
+    cal_state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
+
+    app.state.calendar_token_exchange_override = lambda flow, code: "refresh-tok-noscope"
+    app.state.calendar_client_factory_override = lambda rt: _ScopeDeniedCalendarClient()
+
+    resp = client.get(f"/calendar/connect/callback?code=cal-code&state={cal_state}")
+
+    assert resp.status_code == 307
+    assert _denied_flag(resp.headers["location"]) == "denied"
+
+    status = client.get("/calendar/status").json()
+    assert status["connected"] is False
+
+
+def test_calendar_callback_redirects_with_rejection_when_technician_declines(pg_session_factory):
+    """A cancelled/declined consent (Google returns ?error=access_denied, no code) is not a crash.
+
+    The callback detects the OAuth error parameter up front — before any token exchange — logs it, and
+    307-redirects to the app with the same rejection flag, persisting no connection.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-declined",
+        email="declined@example.com",
+        name="Declined",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False, raise_server_exceptions=False)
+
+    _sign_in(client, app)
+    login_resp = client.get("/calendar/connect/login")
+    cal_state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
+
+    # Fully faked success path so this test stays hermetic; the OAuth error must short-circuit before
+    # it is ever reached.
+    app.state.calendar_token_exchange_override = lambda flow, code: "refresh-tok-decline"
+    app.state.calendar_client_factory_override = lambda rt: _FakeCalendarClient("fsm-cal-decline")
+
+    resp = client.get(f"/calendar/connect/callback?error=access_denied&state={cal_state}")
+
+    assert resp.status_code == 307
+    assert _denied_flag(resp.headers["location"]) == "denied"
+
+    status = client.get("/calendar/status").json()
+    assert status["connected"] is False
 
 
 # ---------------------------------------------------------------------------

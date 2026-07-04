@@ -10,8 +10,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 from fsm.calendar.adapters.client import GoogleApiCalendarClient
+from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
 
-_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 _DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
@@ -21,7 +21,7 @@ def build_calendar_client(
     client_id: str,
     client_secret: str,
     token_uri: str = _DEFAULT_TOKEN_URI,
-    scopes: tuple[str, ...] = (_CALENDAR_SCOPE,),
+    scopes: tuple[str, ...] = CALENDAR_OAUTH_SCOPES,
 ) -> GoogleApiCalendarClient:
     """Construct a GoogleApiCalendarClient authenticated with the given refresh token."""
     creds = Credentials(
