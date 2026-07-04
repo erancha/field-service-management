@@ -19,6 +19,13 @@
 #   ./scripts/docker-helper.sh --ps
 #       Show the stack's container status.
 #   -h, --help
+#
+# Scope to specific services by naming them last (narrows --logs; --stop is whole-stack):
+#   ./scripts/docker-helper.sh --logs -e backoffice   # include: follow errors from one service
+# To skip a service, list the others. Combine with -e/-w to filter by severity too —
+# e.g. warnings from everything except nginx, whose access logs otherwise flood a plain follow:
+#   ./scripts/docker-helper.sh --logs -w $(docker compose -f docker-compose.yml config --services 2>/dev/null | grep -vx nginx)
+#   ./scripts/docker-helper.sh --logs -w --since 1h $(docker compose -f docker-compose.yml config --services 2>/dev/null | grep -vx nginx)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
