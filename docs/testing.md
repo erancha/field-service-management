@@ -53,12 +53,15 @@ conventions.
 
 ## Frontend (`frontend`)
 
-The React app's quality gates are **typecheck** (`tsc --noEmit`), **lint** (`oxlint`), and a
-production **build** (`vite build`); `scripts/test.sh frontend` runs all three.
+The React app's quality gates are **typecheck** (`tsc --noEmit`), **lint** (`oxlint`),
+**unit/component tests** (`vitest run`), and a production **build** (`vite build`);
+`scripts/test.sh frontend` runs all four.
 
-**OPEN — no JavaScript unit/component test runner is configured yet.** Adding one (e.g. Vitest +
-React Testing Library for the API client, hooks, and components) is the next step for frontend
-coverage.
+Tests live next to the code they cover as `*.test.ts(x)` and run under Vitest in a jsdom
+environment with React Testing Library (per-test DOM cleanup is wired in `src/test/setup.ts`).
+They cover the API client, the pure profile helpers (onboarding completeness, phone validation),
+and component/page behavior: the onboarding gate, profile form, address nudge, appointment card,
+reschedule picker, technician calendar connect, and the technician page.
 
 ## Glossary
 

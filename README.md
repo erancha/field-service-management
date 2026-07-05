@@ -134,7 +134,7 @@ All live in `scripts/`; run with `-h`/`--help` for full usage.
 ## Testing
 
 Run the whole suite — backend (unit, integration, API, contract, and architecture tests) plus the
-frontend gates (typecheck, lint, build):
+frontend gates (typecheck, lint, vitest unit/component tests, build):
 
 ```bash
 ./scripts/test.sh            # everything; pass `backend` or `frontend` to scope it

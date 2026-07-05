@@ -8,7 +8,8 @@
 #
 # Backend: import-linter boundary contracts + pytest (unit, integration, API, contract,
 # architecture). Integration tests start ephemeral PostgreSQL via testcontainers, so Docker must be
-# running. Frontend: typecheck (tsc), lint (oxlint), and a production build (vite).
+# running. Frontend: typecheck (tsc), lint (oxlint), unit/component tests (vitest), and a
+# production build (vite).
 # The test taxonomy is documented in docs/testing.md.
 set -euo pipefail
 
@@ -52,6 +53,8 @@ run_frontend() {
   ( cd "$FRONTEND" && npx tsc --noEmit )
   echo "--> lint (oxlint)"
   ( cd "$FRONTEND" && npm run --silent lint )
+  echo "--> unit/component tests (vitest)"
+  ( cd "$FRONTEND" && npm run --silent test )
   echo "--> build (vite)"
   ( cd "$FRONTEND" && npm run --silent build )
 }
