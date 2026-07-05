@@ -76,4 +76,4 @@ if __name__ == "__main__":
     _engine = create_engine_from_settings(_settings)
     _factory = session_factory(_engine)
     count = refresh_holidays(_factory, _settings)
-    print(f"Upserted {count} holidays")
+    _log.info("Upserted %d holidays", count)

@@ -14,8 +14,6 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-import uuid as _uuid_module
-
 from fsm.scheduling.adapters.orm import AppointmentAuditRow, AppointmentRow, ServiceCallRow
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.errors import NotFoundError, SlotUnavailable
@@ -185,7 +183,7 @@ class SqlAlchemyAppointmentRepository:
         for record in records:
             self._session.add(
                 AppointmentAuditRow(
-                    id=_uuid_module.uuid4(),
+                    id=uuid.uuid4(),
                     appointment_id=appointment.id,
                     action=record.action.value,
                     occurred_at=record.occurred_at,

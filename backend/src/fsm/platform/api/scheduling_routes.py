@@ -13,6 +13,7 @@ Domain error mapping:
 """
 from __future__ import annotations
 
+import logging
 import zoneinfo
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
@@ -61,6 +62,8 @@ from fsm.platform.notifications_factory import build_notifications
 from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
 from fsm.identity.domain.role import Role
 
+_log = logging.getLogger(__name__)
+
 # Every scheduling route requires an authenticated session; identity is taken from the session,
 # never from the request body. Per-route role and ownership are enforced in the handlers below.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
@@ -81,11 +84,6 @@ def _build_uow(request: Request):
     return SqlAlchemyUnitOfWork(factory)
 
 
-import logging as _logging
-
-_log = _logging.getLogger(__name__)
-
-
 def _load_holidays(request: Request, uow, date_from, date_to) -> set:
     """Return cached holiday dates for the requested window.
 
@@ -95,7 +93,7 @@ def _load_holidays(request: Request, uow, date_from, date_to) -> set:
     try:
         from fsm.scheduling.adapters.holiday_repository import SqlAlchemyHolidayRepository
 
-        repo = SqlAlchemyHolidayRepository(uow._session)
+        repo = SqlAlchemyHolidayRepository(uow.session)
         return repo.list_between(date_from, date_to)
     except Exception:
         _log.warning("Failed to load holidays; proceeding without holiday exclusions", exc_info=True)
@@ -111,7 +109,7 @@ def _load_days_off(uow, technician_id, date_from, date_to) -> set:
     try:
         from fsm.scheduling.adapters.time_off_repository import SqlAlchemyTimeOffRepository
 
-        repo = SqlAlchemyTimeOffRepository(uow._session)
+        repo = SqlAlchemyTimeOffRepository(uow.session)
         return repo.list_between(technician_id, date_from, date_to)
     except Exception:
         _log.warning(
@@ -278,7 +276,7 @@ def _compute_slots(
     )
 
     tz_info: zoneinfo.ZoneInfo = tz_hint if tz_hint is not None else zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
-    wh_repo = SqlAlchemyWorkingHoursRepository(uow._session)
+    wh_repo = SqlAlchemyWorkingHoursRepository(uow.session)
 
     stored_tz = wh_repo.get_timezone(technician_id)
     if stored_tz is not None:
@@ -373,8 +371,8 @@ def get_availability_pool(
     names: dict[UUID, str] = {}
 
     with _build_uow(request) as uow:
-        connections = SqlAlchemyCalendarConnectionRepository(uow._session).list_connected()
-        users = SqlAlchemyUserRepository(uow._session)
+        connections = SqlAlchemyCalendarConnectionRepository(uow.session).list_connected()
+        users = SqlAlchemyUserRepository(uow.session)
 
         for conn in connections:
             # A connection is only ever created for a signed-in user whose id is this
@@ -433,7 +431,7 @@ def add_day_off(
 
     _assert_self(technician_id, user)
     with _build_uow(request) as uow:
-        repo = SqlAlchemyTimeOffRepository(uow._session)
+        repo = SqlAlchemyTimeOffRepository(uow.session)
         repo.add(technician_id, body.date)
         uow.commit()
 
@@ -450,7 +448,7 @@ def remove_day_off(
 
     _assert_self(technician_id, user)
     with _build_uow(request) as uow:
-        repo = SqlAlchemyTimeOffRepository(uow._session)
+        repo = SqlAlchemyTimeOffRepository(uow.session)
         repo.remove(technician_id, off_date)
         uow.commit()
 
@@ -468,7 +466,7 @@ def list_days_off(
 
     _assert_self(technician_id, user)
     with _build_uow(request) as uow:
-        repo = SqlAlchemyTimeOffRepository(uow._session)
+        repo = SqlAlchemyTimeOffRepository(uow.session)
         days = sorted(repo.list_between(technician_id, date_from, date_to))
     return DaysOffResponse(days_off=days)
 
@@ -501,7 +499,7 @@ def put_working_hours(
         raise HTTPException(status_code=400, detail=str(exc))
 
     with _build_uow(request) as uow:
-        repo = SqlAlchemyWorkingHoursRepository(uow._session)
+        repo = SqlAlchemyWorkingHoursRepository(uow.session)
         repo.set_for_technician(technician_id, hours)
         uow.commit()
 
@@ -521,7 +519,7 @@ def get_working_hours(
 
     _assert_self(technician_id, user)
     with _build_uow(request) as uow:
-        repo = SqlAlchemyWorkingHoursRepository(uow._session)
+        repo = SqlAlchemyWorkingHoursRepository(uow.session)
         hours = repo.get_for_technician(technician_id)
 
     return WorkingHoursResponse(
@@ -546,7 +544,7 @@ def put_timezone(
         raise HTTPException(status_code=400, detail=f"Unknown timezone: {body.timezone!r}")
 
     with _build_uow(request) as uow:
-        repo = SqlAlchemyWorkingHoursRepository(uow._session)
+        repo = SqlAlchemyWorkingHoursRepository(uow.session)
         repo.set_timezone(technician_id, body.timezone)
         uow.commit()
 
@@ -564,7 +562,7 @@ def get_timezone(
 
     _assert_self(technician_id, user)
     with _build_uow(request) as uow:
-        repo = SqlAlchemyWorkingHoursRepository(uow._session)
+        repo = SqlAlchemyWorkingHoursRepository(uow.session)
         stored = repo.get_timezone(technician_id)
 
     return TimezoneResponse(timezone=stored if stored is not None else DEFAULT_TIMEZONE)
