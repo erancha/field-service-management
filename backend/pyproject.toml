@@ -2,6 +2,8 @@
 name = "fsm"
 version = "0.1.0"
 description = "Field Service Management system"
+license = "MIT"
+authors = [{ name = "Eran C", email = "erancha@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
@@ -28,8 +30,11 @@ dev = [
     "testcontainers[postgres]>=4.5",
 ]
 
+[project.urls]
+Repository = "https://github.com/erancha/field-service-management"
+
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

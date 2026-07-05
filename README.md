@@ -4,7 +4,7 @@ A platform for service agencies (think elevator or appliance maintenance) that r
 lifecycle from a single source of truth. It is built **slice by slice**, each module getting its own
 design → plan → implementation cycle.
 
-**Contents:** [Status](#status) · [Vision](#the-full-vision) · [Overview](#overview) · [Architecture](#architecture) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema)
+**Contents:** [Status](#status) · [Vision](#the-full-vision) · [Overview](#overview) · [Architecture](#architecture) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema) · [License](#license)
 
 ## Status
 
@@ -161,3 +161,7 @@ to several replicas requires. Per-key configuration lives inline in
 PostgreSQL is the source of truth; Google Calendar is a downstream projection. The entity-relationship
 diagram and the integrity guarantees (database-enforced no-double-booking, the transactional
 calendar outbox, the append-only appointment audit) are in [docs/data.md](docs/data.md).
+
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE).
