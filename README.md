@@ -63,7 +63,7 @@ import-linter — a forbidden import fails the build, not just code review.
 
 ## Getting started
 
-Prerequisites: **Python**, **Docker**, and **Node.js + npm**.
+Prerequisites: **Python ≥3.12**, **Docker**, and **Node.js 22+ with npm**.
 
 ### 1. Configuration (`backend/.env`)
 
