@@ -343,6 +343,21 @@ def test_me_returns_401_without_session(pg_session_factory):
     assert response.status_code == 401
 
 
+def test_me_propagates_unexpected_repository_error(pg_session_factory, monkeypatch):
+    """An infrastructure failure while loading the session user must not be masked as a 401."""
+    client = _signed_in_client(pg_session_factory)
+
+    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+
+    def _boom(self, user_id):
+        raise RuntimeError("db exploded")
+
+    monkeypatch.setattr(SqlAlchemyUserRepository, "get", _boom)
+
+    with pytest.raises(RuntimeError):
+        client.get("/auth/me")
+
+
 # ---------------------------------------------------------------------------
 # Profile: GET fields + PATCH /auth/me
 # ---------------------------------------------------------------------------

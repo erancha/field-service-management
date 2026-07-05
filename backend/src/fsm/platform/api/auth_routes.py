@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 from fsm.identity.application.identity_service import IdentityService, SignInHost
-from fsm.identity.domain.errors import BackOfficeAccessDenied
+from fsm.identity.domain.errors import BackOfficeAccessDenied, NotFoundError
 from fsm.identity.domain.phone import is_valid_phone
 from fsm.identity.ports.auth import AuthPort
 from fsm.platform.api.auth_deps import SessionUser, require_user
@@ -213,7 +213,7 @@ def auth_me(request: Request):
     with factory() as session:
         try:
             user = SqlAlchemyUserRepository(session).get(UUID(user_id))
-        except Exception:
+        except (NotFoundError, ValueError):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
     return JSONResponse(_me_payload(user))
 
