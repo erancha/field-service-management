@@ -15,9 +15,11 @@ from fsm.platform.api.auth_routes import router as auth_router
 from fsm.platform.api.backoffice_routes import router as backoffice_router
 from fsm.platform.api.calendar_routes import router as calendar_router
 from fsm.platform.api.events_routes import router as events_router
+from fsm.platform.api.scheduling_routes import handle_scheduling_error
 from fsm.platform.api.scheduling_routes import router as scheduling_router
 from fsm.platform.events import build_event_bus
 from fsm.platform.logging import configure_logging
+from fsm.scheduling.domain.errors import SchedulingError
 
 
 def create_app(
@@ -34,6 +36,7 @@ def create_app(
     role = os.environ.get("FSM_ROLE", "unknown")
     app = FastAPI(title=f"Field Service Management ({role})")
     app.state.session_factory = session_factory
+    app.add_exception_handler(SchedulingError, handle_scheduling_error)
     app.include_router(scheduling_router)
     app.include_router(auth_router)
     app.include_router(calendar_router)

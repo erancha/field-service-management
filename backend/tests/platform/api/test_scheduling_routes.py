@@ -616,3 +616,23 @@ def test_reschedule_missing_appointment_returns_404(client, auth):
         json={"start": _utc_iso(2025, 6, 1, 9), "end": _utc_iso(2025, 6, 1, 10)},
     )
     assert response.status_code == 404
+
+
+def test_reschedule_incomplete_contact_info_returns_422(client, auth, pg_session_factory, monkeypatch):
+    """Domain errors are mapped app-wide, so IncompleteContactInfo is a 422 on every endpoint,
+    not just on booking."""
+    from fsm.scheduling.application.appointment_service import AppointmentService
+    from fsm.scheduling.domain.errors import IncompleteContactInfo
+
+    appt_id, _ = _book_one(client, auth, pg_session_factory, tech_id=uuid.uuid4(), start_hour=9, day=17)
+
+    def _raise(self, **kwargs):
+        raise IncompleteContactInfo(["customer phone"])
+
+    monkeypatch.setattr(AppointmentService, "reschedule_appointment", _raise)
+    response = client.post(
+        f"/api/appointments/{appt_id}/reschedule",
+        json={"start": _utc_iso(2025, 3, 18, 9), "end": _utc_iso(2025, 3, 18, 10)},
+    )
+    assert response.status_code == 422
+    assert "customer phone" in response.json()["detail"]

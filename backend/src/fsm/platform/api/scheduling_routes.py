@@ -1,8 +1,9 @@
 """FastAPI router for scheduling endpoints.
 
 Wiring: each request opens a SqlAlchemyUnitOfWork, runs the use case, calls
-commit(), then closes the UoW. Domain exceptions are mapped to HTTP status codes
-before they reach the client.
+commit(), then closes the UoW. Domain exceptions escape the handlers and are
+mapped to HTTP responses by handle_scheduling_error, which create_app registers
+as the app-level handler for SchedulingError.
 
 Domain error mapping:
 - SlotUnavailable / InvalidTransition → 409 Conflict
@@ -18,6 +19,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 
 from fsm.scheduling.application.appointment_service import AppointmentService
 from fsm.scheduling.application.service_call_service import ServiceCallService
@@ -26,6 +28,7 @@ from fsm.scheduling.domain.errors import (
     InvalidTimeRange,
     InvalidTransition,
     NotFoundError,
+    SchedulingError,
     SlotUnavailable,
 )
 from fsm.scheduling.domain.time_range import TimeRange
@@ -154,16 +157,46 @@ def _get_settings(request: Request):
     return getattr(request.app.state, "settings", None) or get_settings()
 
 
-def _map_domain_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, (SlotUnavailable, InvalidTransition)):
-        return HTTPException(status_code=409, detail=str(exc))
-    if isinstance(exc, NotFoundError):
-        return HTTPException(status_code=404, detail=str(exc))
-    if isinstance(exc, InvalidTimeRange):
-        return HTTPException(status_code=400, detail=str(exc))
-    if isinstance(exc, IncompleteContactInfo):
-        return HTTPException(status_code=422, detail=str(exc))
+# Key: scheduling domain error type. Value: the HTTP status every endpoint maps it to.
+_DOMAIN_ERROR_STATUS: dict[type[SchedulingError], int] = {
+    SlotUnavailable: 409,
+    InvalidTransition: 409,
+    NotFoundError: 404,
+    InvalidTimeRange: 400,
+    IncompleteContactInfo: 422,
+}
+
+
+def handle_scheduling_error(request: Request, exc: SchedulingError) -> JSONResponse:
+    """App-level exception handler mapping scheduling domain errors to HTTP responses.
+
+    Registered by create_app for the SchedulingError base, so every endpoint gets the
+    same mapping without per-endpoint catch lists. A subclass with no entry in
+    _DOMAIN_ERROR_STATUS re-raises rather than being absorbed with a guessed status.
+    """
+    for error_type, status_code in _DOMAIN_ERROR_STATUS.items():
+        if isinstance(exc, error_type):
+            return JSONResponse(status_code=status_code, content={"detail": str(exc)})
     raise exc
+
+
+def _appointment_service(uow, request: Request) -> AppointmentService:
+    """Build the AppointmentService shared by book/reschedule/cancel/add_details.
+
+    The calendar port is a no-op stand-in: the mutation use cases never read it (only the
+    availability query fetches busy time), and outbound calendar writes are enqueued to the
+    outbox, whose dispatcher holds the real client. The contact resolver is consulted only by
+    booking's contact-completeness guard; the other endpoints ignore it, and wiring it
+    unconditionally keeps the factory uniform.
+    """
+    return AppointmentService(
+        appointments=uow.appointments,
+        service_calls=uow.service_calls,
+        calendar=NullCalendarPort(),
+        notifications=build_notifications(uow.session, _get_settings(request)),
+        outbox=uow.outbox,
+        contact_resolver=build_contact_resolver(uow.session),
+    )
 
 
 def _assert_self(technician_id: UUID, user: SessionUser) -> None:
@@ -190,16 +223,13 @@ def open_service_call(
     user: SessionUser = Depends(require_role(Role.CUSTOMER)),
 ) -> ServiceCallResponse:
     """Create a new OPEN service call for the authenticated customer and return it."""
-    try:
-        with _build_uow(request) as uow:
-            svc = ServiceCallService(service_calls=uow.service_calls)
-            sc = svc.open_service_call(
-                customer_id=user.id,
-                description=body.description,
-            )
-            uow.commit()
-    except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
-        raise _map_domain_error(exc)
+    with _build_uow(request) as uow:
+        svc = ServiceCallService(service_calls=uow.service_calls)
+        sc = svc.open_service_call(
+            customer_id=user.id,
+            description=body.description,
+        )
+        uow.commit()
 
     return ServiceCallResponse(
         id=sc.id,
@@ -298,11 +328,8 @@ def get_availability(
     except zoneinfo.ZoneInfoNotFoundError:
         raise HTTPException(status_code=400, detail=f"Unknown timezone: {tz!r}")
 
-    try:
-        with _build_uow(request) as uow:
-            slots = _compute_slots(request, uow, technician_id, date_from, date_to, slot_minutes, tz_info)
-    except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
-        raise _map_domain_error(exc)
+    with _build_uow(request) as uow:
+        slots = _compute_slots(request, uow, technician_id, date_from, date_to, slot_minutes, tz_info)
 
     return AvailabilityResponse(
         slots=[SlotResponse(start=s.start, end=s.end) for s in slots]
@@ -448,16 +475,16 @@ def put_working_hours(
 ) -> WorkingHoursResponse:
     """Store the technician's weekly working-hours schedule, replacing any existing configuration."""
     from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
-    from fsm.scheduling.domain.errors import SchedulingError
 
     _assert_self(technician_id, user)
+    # Any construction failure here is a malformed request body, so every SchedulingError maps
+    # to 400 — including bare SchedulingError (duplicate weekday), which the app-level handler
+    # deliberately does not map.
     try:
         windows = tuple(
             DailyHours(weekday=w.weekday, start=w.start, end=w.end) for w in body.windows
         )
         hours = WeeklyWorkingHours(windows=windows)
-    except InvalidTimeRange as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
     except SchedulingError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -543,57 +570,37 @@ def book_appointment(
     user: SessionUser = Depends(require_role(Role.CUSTOMER)),
 ) -> AppointmentResponse:
     """Book a new appointment for the authenticated customer's OPEN service call."""
-    try:
-        time_range = TimeRange(start=body.start, end=body.end)
-    except InvalidTimeRange as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    time_range = TimeRange(start=body.start, end=body.end)
 
     from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
     from fsm.identity.domain.errors import NotFoundError as UserNotFoundError
 
-    try:
-        with _build_uow(request) as uow:
-            # The booking customer must own the service call they book against.
-            service_call = uow.service_calls.get(body.service_call_id)
-            if service_call.customer_id != user.id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Cannot book against another customer's service call",
-                )
-            # Only an APPROVED technician is a bookable target; an unknown id and a user whose
-            # technician role is pending or rejected are equally nonexistent to the booking
-            # customer, so booking cannot bypass the admin approval queue.
-            try:
-                target_is_bookable = (
-                    SqlAlchemyUserRepository(uow.session).get(body.technician_id).is_approved_technician
-                )
-            except UserNotFoundError:
-                target_is_bookable = False
-            if not target_is_bookable:
-                raise HTTPException(status_code=404, detail="Technician not found")
-            svc = AppointmentService(
-                appointments=uow.appointments,
-                service_calls=uow.service_calls,
-                calendar=NullCalendarPort(),
-                notifications=build_notifications(uow.session, _get_settings(request)),
-                outbox=uow.outbox,
-                contact_resolver=build_contact_resolver(uow.session),
+    with _build_uow(request) as uow:
+        # The booking customer must own the service call they book against.
+        service_call = uow.service_calls.get(body.service_call_id)
+        if service_call.customer_id != user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot book against another customer's service call",
             )
-            appt = svc.book_appointment(
-                service_call_id=body.service_call_id,
-                technician_id=body.technician_id,
-                customer_id=user.id,
-                time_range=time_range,
+        # Only an APPROVED technician is a bookable target; an unknown id and a user whose
+        # technician role is pending or rejected are equally nonexistent to the booking
+        # customer, so booking cannot bypass the admin approval queue.
+        try:
+            target_is_bookable = (
+                SqlAlchemyUserRepository(uow.session).get(body.technician_id).is_approved_technician
             )
-            uow.commit()
-    except (
-        SlotUnavailable,
-        InvalidTransition,
-        NotFoundError,
-        InvalidTimeRange,
-        IncompleteContactInfo,
-    ) as exc:
-        raise _map_domain_error(exc)
+        except UserNotFoundError:
+            target_is_bookable = False
+        if not target_is_bookable:
+            raise HTTPException(status_code=404, detail="Technician not found")
+        appt = _appointment_service(uow, request).book_appointment(
+            service_call_id=body.service_call_id,
+            technician_id=body.technician_id,
+            customer_id=user.id,
+            time_range=time_range,
+        )
+        uow.commit()
 
     return _appt_response(appt)
 
@@ -606,28 +613,15 @@ def reschedule_appointment(
     user: SessionUser = Depends(require_user),
 ) -> AppointmentResponse:
     """Reschedule an existing appointment to a new time window."""
-    try:
-        new_range = TimeRange(start=body.start, end=body.end)
-    except InvalidTimeRange as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    new_range = TimeRange(start=body.start, end=body.end)
 
-    try:
-        with _build_uow(request) as uow:
-            _assert_participant(uow.appointments.get(appointment_id), user)
-            svc = AppointmentService(
-                appointments=uow.appointments,
-                service_calls=uow.service_calls,
-                calendar=NullCalendarPort(),
-                notifications=build_notifications(uow.session, _get_settings(request)),
-                outbox=uow.outbox,
-            )
-            appt = svc.reschedule_appointment(
-                appointment_id=appointment_id,
-                new_time_range=new_range,
-            )
-            uow.commit()
-    except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
-        raise _map_domain_error(exc)
+    with _build_uow(request) as uow:
+        _assert_participant(uow.appointments.get(appointment_id), user)
+        appt = _appointment_service(uow, request).reschedule_appointment(
+            appointment_id=appointment_id,
+            new_time_range=new_range,
+        )
+        uow.commit()
 
     return _appt_response(appt)
 
@@ -639,20 +633,10 @@ def cancel_appointment(
     user: SessionUser = Depends(require_user),
 ) -> AppointmentResponse:
     """Cancel an appointment."""
-    try:
-        with _build_uow(request) as uow:
-            _assert_participant(uow.appointments.get(appointment_id), user)
-            svc = AppointmentService(
-                appointments=uow.appointments,
-                service_calls=uow.service_calls,
-                calendar=NullCalendarPort(),
-                notifications=build_notifications(uow.session, _get_settings(request)),
-                outbox=uow.outbox,
-            )
-            appt = svc.cancel_appointment(appointment_id=appointment_id)
-            uow.commit()
-    except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
-        raise _map_domain_error(exc)
+    with _build_uow(request) as uow:
+        _assert_participant(uow.appointments.get(appointment_id), user)
+        appt = _appointment_service(uow, request).cancel_appointment(appointment_id=appointment_id)
+        uow.commit()
 
     return _appt_response(appt)
 
@@ -665,20 +649,10 @@ def add_details(
     user: SessionUser = Depends(require_user),
 ) -> AppointmentResponse:
     """Attach or replace free-text details on an appointment."""
-    try:
-        with _build_uow(request) as uow:
-            _assert_participant(uow.appointments.get(appointment_id), user)
-            svc = AppointmentService(
-                appointments=uow.appointments,
-                service_calls=uow.service_calls,
-                calendar=NullCalendarPort(),
-                notifications=build_notifications(uow.session, _get_settings(request)),
-                outbox=uow.outbox,
-            )
-            appt = svc.add_details(appointment_id=appointment_id, text=body.text)
-            uow.commit()
-    except (SlotUnavailable, InvalidTransition, NotFoundError, InvalidTimeRange) as exc:
-        raise _map_domain_error(exc)
+    with _build_uow(request) as uow:
+        _assert_participant(uow.appointments.get(appointment_id), user)
+        appt = _appointment_service(uow, request).add_details(appointment_id=appointment_id, text=body.text)
+        uow.commit()
 
     return _appt_response(appt)
 
