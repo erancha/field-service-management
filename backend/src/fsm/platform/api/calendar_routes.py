@@ -19,7 +19,6 @@ Injectable seams on app.state allow tests to bypass real Google without patching
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import Callable
 from uuid import UUID
 
@@ -33,8 +32,18 @@ from fsm.calendar.domain.errors import NotFoundError
 from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
 from fsm.identity.domain.role import Role
 from fsm.platform.api.auth_deps import SessionUser, require_role
+from fsm.platform.api.oauth_flow import (
+    begin_authorization,
+    build_flow,
+    clear_flow_session,
+    get_session_factory,
+    get_settings,
+    make_token_exchange,
+    resolve_token_exchange,
+    restore_code_verifier,
+    state_matches,
+)
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
-from fsm.platform.api.oauth_token import fetch_token_relaxed
 
 router = APIRouter(prefix="/calendar")
 
@@ -59,6 +68,13 @@ def _google_connect_errors() -> tuple[type[BaseException], ...]:
     return (GoogleAuthError, HttpError)
 
 
+# Namespaces this flow's oauth session keys away from the sign-in flow's.
+_SESSION_PREFIX = "calendar_"
+
+# The exchanged credential is the refresh token, persisted (encrypted) for background sync.
+_real_token_exchange = make_token_exchange("refresh_token")
+
+
 def _reject_calendar_connect(request: Request) -> RedirectResponse:
     """Send the browser back to the SPA flagged so it renders a friendly banner with a retry.
 
@@ -66,40 +82,13 @@ def _reject_calendar_connect(request: Request) -> RedirectResponse:
     fresh state. The technician-facing wording lives in the SPA; the operator-facing cause is logged
     by the caller.
     """
-    request.session.pop("calendar_oauth_state", None)
-    request.session.pop("calendar_code_verifier", None)
+    clear_flow_session(request, _SESSION_PREFIX)
     return RedirectResponse("/?calendar_connect=denied", status_code=307)
 
 
 def _build_flow(settings, redirect_uri: str):
-    """Construct a google_auth_oauthlib Flow configured for the narrow calendar scopes."""
-    from google_auth_oauthlib.flow import Flow
-
-    client_config = {
-        "web": {
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret.get_secret_value(),
-            "redirect_uris": [redirect_uri],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    }
-    return Flow.from_client_config(
-        client_config,
-        scopes=list(CALENDAR_OAUTH_SCOPES),
-        redirect_uri=redirect_uri,
-    )
-
-
-def _real_token_exchange(flow, code: str) -> str:
-    """Exchange the authorization code for a refresh token via the real Google endpoint."""
-    fetch_token_relaxed(flow, code)
-    return flow.credentials.refresh_token  # type: ignore[attr-defined]
-
-
-def _get_token_exchange(app) -> Callable:
-    override = getattr(app.state, "calendar_token_exchange_override", None)
-    return override if override is not None else _real_token_exchange
+    """Construct the connect Flow, requesting only the narrow calendar scopes."""
+    return build_flow(settings, redirect_uri, scopes=CALENDAR_OAUTH_SCOPES)
 
 
 def _get_client_factory(app, settings) -> Callable:
@@ -119,18 +108,6 @@ def _get_client_factory(app, settings) -> Callable:
     return _default_factory
 
 
-def _get_session_factory(app):
-    from fsm.platform.app import _get_session_factory as _lazy
-
-    return _lazy(app)
-
-
-def _get_settings(request: Request):
-    return getattr(request.app.state, "settings", None) or __import__(
-        "fsm.platform.config", fromlist=["get_settings"]
-    ).get_settings()
-
-
 def _is_calendar_configured(settings) -> bool:
     return bool(
         settings.google_client_id
@@ -143,7 +120,7 @@ def _is_calendar_configured(settings) -> bool:
 def calendar_connect_login(
     request: Request, user: SessionUser = Depends(require_role(Role.TECHNICIAN))
 ):
-    settings = _get_settings(request)
+    settings = get_settings(request)
     if not _is_calendar_configured(settings):
         return JSONResponse(
             {"detail": "Calendar integration not configured"}, status_code=503
@@ -153,18 +130,7 @@ def calendar_connect_login(
         request, settings.google_calendar_redirect_uri, "calendar_connect_callback"
     )
     flow = _build_flow(settings, redirect_uri)
-    state = secrets.token_urlsafe(32)
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        state=state,
-        include_granted_scopes="true",
-    )
-    request.session["calendar_oauth_state"] = state
-    # authorization_url() mints a PKCE code_verifier and sends its derived challenge to Google. The
-    # callback builds a separate Flow, so the verifier must ride the session to complete the exchange.
-    request.session["calendar_code_verifier"] = flow.code_verifier
-    return RedirectResponse(auth_url, status_code=307)
+    return begin_authorization(request, flow, _SESSION_PREFIX, prompt="consent")
 
 
 @router.get("/connect/callback")
@@ -175,13 +141,12 @@ def calendar_connect_callback(
     error: str = "",
     user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
 ):
-    expected_state = request.session.get("calendar_oauth_state")
-    if not expected_state or not secrets.compare_digest(expected_state, state):
+    if not state_matches(request, state, _SESSION_PREFIX):
         return JSONResponse(
             {"detail": "Invalid or missing state parameter"}, status_code=400
         )
 
-    settings = _get_settings(request)
+    settings = get_settings(request)
     if not _is_calendar_configured(settings):
         return JSONResponse(
             {"detail": "Calendar integration not configured"}, status_code=503
@@ -193,17 +158,19 @@ def calendar_connect_callback(
         _log.warning("Calendar connect declined by technician %s: %s", user.id, error)
         return _reject_calendar_connect(request)
 
-    token_exchange = _get_token_exchange(request.app)
+    token_exchange = resolve_token_exchange(
+        request.app, "calendar_token_exchange_override", _real_token_exchange
+    )
     client_factory = _get_client_factory(request.app, settings)
 
     redirect_uri = resolve_redirect_uri(
         request, settings.google_calendar_redirect_uri, "calendar_connect_callback"
     )
     flow = _build_flow(settings, redirect_uri)
-    flow.code_verifier = request.session.get("calendar_code_verifier")
+    restore_code_verifier(flow, request, _SESSION_PREFIX)
 
     technician_id = user.id
-    factory = _get_session_factory(request.app)
+    factory = get_session_factory(request.app)
     try:
         refresh_token = token_exchange(flow, code)
         client = client_factory(refresh_token)
@@ -229,8 +196,7 @@ def calendar_connect_callback(
         )
         return _reject_calendar_connect(request)
 
-    request.session.pop("calendar_oauth_state", None)
-    request.session.pop("calendar_code_verifier", None)
+    clear_flow_session(request, _SESSION_PREFIX)
     return RedirectResponse("/", status_code=307)
 
 
@@ -240,7 +206,7 @@ def calendar_status(request: Request):
     if not user_id:
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
 
-    factory = _get_session_factory(request.app)
+    factory = get_session_factory(request.app)
     with factory() as session:
         repo = SqlAlchemyCalendarConnectionRepository(session)
         try:

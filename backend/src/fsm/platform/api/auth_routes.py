@@ -13,9 +13,6 @@ Injectable seams on app.state allow tests to bypass real Google without patching
 """
 from __future__ import annotations
 
-import secrets
-from typing import Callable
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -25,8 +22,18 @@ from fsm.identity.domain.errors import BackOfficeAccessDenied, NotFoundError
 from fsm.identity.domain.phone import is_valid_phone
 from fsm.identity.ports.auth import AuthPort
 from fsm.platform.api.auth_deps import SessionUser, require_user
+from fsm.platform.api.oauth_flow import (
+    begin_authorization,
+    build_flow,
+    clear_flow_session,
+    get_session_factory,
+    get_settings,
+    make_token_exchange,
+    resolve_token_exchange,
+    restore_code_verifier,
+    state_matches,
+)
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
-from fsm.platform.api.oauth_token import fetch_token_relaxed
 from fsm.platform.api.schemas import UpdateProfileRequest
 from fsm.platform.events import ADMINS_CHANNEL, publish_to_app
 
@@ -47,36 +54,18 @@ def _sign_in_host(settings) -> SignInHost:
 _publish = publish_to_app
 
 
+# Sign-in owns the unprefixed oauth session keys (oauth_state, code_verifier).
+_SESSION_PREFIX = ""
+
+_OIDC_SCOPES = ("openid", "email", "profile")
+
+# The exchanged credential is the raw ID token; the sign-in service verifies and decodes it.
+_real_token_exchange = make_token_exchange("id_token")
+
+
 def _build_flow(settings, redirect_uri: str):
-    """Construct a google_auth_oauthlib Flow from in-memory client config."""
-    from google_auth_oauthlib.flow import Flow
-
-    client_config = {
-        "web": {
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret.get_secret_value(),
-            "redirect_uris": [redirect_uri],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    }
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=["openid", "email", "profile"],
-        redirect_uri=redirect_uri,
-    )
-    return flow
-
-
-def _real_token_exchange(flow, code: str) -> str:
-    """Exchange the authorization code for tokens and return the raw ID-token credential."""
-    fetch_token_relaxed(flow, code)
-    return flow.credentials.id_token  # type: ignore[attr-defined]
-
-
-def _get_token_exchange(app) -> Callable:
-    override = getattr(app.state, "token_exchange_override", None)
-    return override if override is not None else _real_token_exchange
+    """Construct the sign-in Flow, requesting only the OIDC identity scopes."""
+    return build_flow(settings, redirect_uri, scopes=_OIDC_SCOPES)
 
 
 def _get_auth_adapter(app, settings) -> AuthPort:
@@ -88,21 +77,9 @@ def _get_auth_adapter(app, settings) -> AuthPort:
     return GoogleOidcAuthAdapter(client_id=settings.google_client_id)
 
 
-def _get_session_factory(app):
-    from fsm.platform.app import _get_session_factory as _lazy
-
-    return _lazy(app)
-
-
-def _get_settings(request: Request):
-    return getattr(request.app.state, "settings", None) or __import__(
-        "fsm.platform.config", fromlist=["get_settings"]
-    ).get_settings()
-
-
 @router.get("/google/login")
 def google_login(request: Request):
-    settings = _get_settings(request)
+    settings = get_settings(request)
     if not settings.google_client_id or not settings.google_client_secret:
         return JSONResponse(
             {"detail": "Google sign-in not configured"},
@@ -111,28 +88,19 @@ def google_login(request: Request):
 
     redirect_uri = resolve_redirect_uri(request, settings.google_redirect_uri, "google_callback")
     flow = _build_flow(settings, redirect_uri)
-    state = secrets.token_urlsafe(32)
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        state=state,
-        include_granted_scopes="true",
-    )
-    request.session["oauth_state"] = state
-    # authorization_url() mints a PKCE code_verifier and sends its derived challenge to Google. The
-    # callback builds a separate Flow, so the verifier must ride the session to complete the exchange.
-    request.session["code_verifier"] = flow.code_verifier
-    return RedirectResponse(auth_url, status_code=307)
+    return begin_authorization(request, flow, _SESSION_PREFIX)
 
 
 @router.get("/google/callback")
 async def google_callback(request: Request, code: str = "", state: str = ""):
-    settings = _get_settings(request)
+    settings = get_settings(request)
 
-    expected_state = request.session.get("oauth_state")
-    if not expected_state or not secrets.compare_digest(expected_state, state):
+    if not state_matches(request, state, _SESSION_PREFIX):
         return JSONResponse({"detail": "Invalid or missing state parameter"}, status_code=400)
 
-    token_exchange = _get_token_exchange(request.app)
+    token_exchange = resolve_token_exchange(
+        request.app, "token_exchange_override", _real_token_exchange
+    )
     auth_adapter = _get_auth_adapter(request.app, settings)
 
     if not settings.google_client_id or not settings.google_client_secret:
@@ -140,11 +108,11 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
 
     redirect_uri = resolve_redirect_uri(request, settings.google_redirect_uri, "google_callback")
     flow = _build_flow(settings, redirect_uri)
-    flow.code_verifier = request.session.get("code_verifier")
+    restore_code_verifier(flow, request, _SESSION_PREFIX)
     id_token = token_exchange(flow, code)
 
     host = _sign_in_host(settings)
-    factory = _get_session_factory(request.app)
+    factory = get_session_factory(request.app)
     with factory() as session:
         svc = IdentityService(auth=auth_adapter, users=SqlAlchemyUserRepository(session))
         try:
@@ -173,8 +141,7 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
             {"type": "technician_access.withdrawn", "user_id": str(user.id)},
         )
 
-    request.session.pop("oauth_state", None)
-    request.session.pop("code_verifier", None)
+    clear_flow_session(request, _SESSION_PREFIX)
     request.session["user_id"] = str(user.id)
     request.session["email"] = user.email
     return RedirectResponse("/", status_code=307)
@@ -209,7 +176,7 @@ def auth_me(request: Request):
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
     from uuid import UUID
 
-    factory = _get_session_factory(request.app)
+    factory = get_session_factory(request.app)
     with factory() as session:
         try:
             user = SqlAlchemyUserRepository(session).get(UUID(user_id))
@@ -234,7 +201,7 @@ def update_me(
         if phone and not is_valid_phone(phone):
             return JSONResponse({"detail": "Invalid phone number"}, status_code=422)
 
-    factory = _get_session_factory(request.app)
+    factory = get_session_factory(request.app)
     with factory() as session:
         repo = SqlAlchemyUserRepository(session)
         user = repo.get(session_user.id)
