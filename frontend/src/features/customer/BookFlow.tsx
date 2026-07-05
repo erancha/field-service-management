@@ -35,13 +35,13 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
 
   async function handleBook() {
     if (!selectedSlot) return
-    await appts.book({
+    const appointment = await appts.book({
       service_call_id: serviceCall.id,
       technician_id: selectedSlot.technician_id,
       start: selectedSlot.start,
       end: selectedSlot.end,
     })
-    if (!appts.error) setBooked(true)
+    if (appointment) setBooked(true)
   }
 
   if (booked && appts.appointment) {

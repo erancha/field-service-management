@@ -12,7 +12,7 @@ export interface UseAppointmentsResult {
   appointment: Appointment | null
   loading: boolean
   error: string | null
-  book: (data: CreateAppointmentRequest) => Promise<void>
+  book: (data: CreateAppointmentRequest) => Promise<Appointment | null>
   reschedule: (id: string, data: RescheduleRequest) => Promise<void>
   cancel: (id: string) => Promise<void>
   addDetails: (id: string, text: string) => Promise<void>
@@ -41,9 +41,12 @@ export function useAppointments(): UseAppointmentsResult {
     }
   }
 
-  async function book(data: CreateAppointmentRequest): Promise<void> {
+  // Returns the created appointment (or null on failure) so callers can branch on the
+  // outcome directly — hook state read after the await is stale render-time closure data.
+  async function book(data: CreateAppointmentRequest): Promise<Appointment | null> {
     const result = await run(() => createAppointment(data))
     if (result) setAppointment(result)
+    return result ?? null
   }
 
   async function reschedule(id: string, data: RescheduleRequest): Promise<void> {
