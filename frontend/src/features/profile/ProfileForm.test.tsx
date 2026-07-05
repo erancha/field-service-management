@@ -53,10 +53,10 @@ describe('ProfileForm', () => {
 
   it('submits only the fields the user changed', async () => {
     const { refresh, onSaved } = renderForm()
-    await userEvent.type(screen.getByLabelText(/phone/i), '054-7586288')
+    await userEvent.type(screen.getByLabelText(/phone/i), '054-1234567')
     await userEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    expect(updateProfile).toHaveBeenCalledWith({ phone: '054-7586288' })
+    expect(updateProfile).toHaveBeenCalledWith({ phone: '054-1234567' })
     expect(refresh).toHaveBeenCalled()
     expect(onSaved).toHaveBeenCalled()
   })
@@ -122,10 +122,10 @@ describe('ProfileForm', () => {
 
   it('saves once every required field is filled', async () => {
     const { onSaved } = renderForm({ requiredFields: ['address', 'phone'] })
-    await userEvent.type(screen.getByLabelText(/phone/i), '054-7586288')
+    await userEvent.type(screen.getByLabelText(/phone/i), '054-1234567')
     await userEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    expect(updateProfile).toHaveBeenCalledWith({ phone: '054-7586288' })
+    expect(updateProfile).toHaveBeenCalledWith({ phone: '054-1234567' })
     expect(onSaved).toHaveBeenCalled()
   })
 

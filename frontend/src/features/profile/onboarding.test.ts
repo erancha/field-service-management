@@ -22,11 +22,11 @@ describe('needsOnboarding', () => {
   it('is true for a customer missing address or phone', () => {
     expect(needsOnboarding(user())).toBe(true)
     expect(needsOnboarding(user({ address: '12 Main St' }))).toBe(true)
-    expect(needsOnboarding(user({ phone: '054-7586288' }))).toBe(true)
+    expect(needsOnboarding(user({ phone: '054-1234567' }))).toBe(true)
   })
 
   it('is false once both address and phone are set', () => {
-    expect(needsOnboarding(user({ address: '12 Main St', phone: '054-7586288' }))).toBe(false)
+    expect(needsOnboarding(user({ address: '12 Main St', phone: '054-1234567' }))).toBe(false)
   })
 
   it('is true for a technician missing a phone', () => {
@@ -34,7 +34,7 @@ describe('needsOnboarding', () => {
   })
 
   it('is false for a technician once a phone is set (address not required to book)', () => {
-    expect(needsOnboarding(user({ role: 'TECHNICIAN', phone: '054-7586288' }))).toBe(false)
+    expect(needsOnboarding(user({ role: 'TECHNICIAN', phone: '054-1234567' }))).toBe(false)
   })
 
   it('is false for an admin', () => {

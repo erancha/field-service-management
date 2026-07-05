@@ -376,19 +376,19 @@ class TestProfileEndpoints:
         client = _signed_in_client(pg_session_factory)
         resp = client.patch(
             "/auth/me",
-            json={"display_name": "Dana", "address": "12 Main St", "phone": "054-7586288"},
+            json={"display_name": "Dana", "address": "12 Main St", "phone": "054-1234567"},
         )
         assert resp.status_code == 200
         body = resp.json()
         assert body["display_name"] == "Dana"
         assert body["address"] == "12 Main St"
-        assert body["phone"] == "054-7586288"
+        assert body["phone"] == "054-1234567"
         assert body["name"]  # Google-synced name is always present
 
         me = client.get("/auth/me").json()
         assert me["display_name"] == "Dana"
         assert me["address"] == "12 Main St"
-        assert me["phone"] == "054-7586288"
+        assert me["phone"] == "054-1234567"
 
     def test_absent_field_is_left_unchanged(self, pg_session_factory):
         client = _signed_in_client(pg_session_factory)
@@ -400,7 +400,7 @@ class TestProfileEndpoints:
 
     def test_empty_or_whitespace_field_clears_to_null(self, pg_session_factory):
         client = _signed_in_client(pg_session_factory)
-        client.patch("/auth/me", json={"display_name": "Dana", "phone": "054-7586288"})
+        client.patch("/auth/me", json={"display_name": "Dana", "phone": "054-1234567"})
         resp = client.patch("/auth/me", json={"display_name": "", "phone": "   "})
         body = resp.json()
         assert body["display_name"] is None

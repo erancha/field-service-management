@@ -43,7 +43,7 @@ describe('OnboardingGate', () => {
   })
 
   it('renders children when the profile is complete', () => {
-    renderGate(user({ address: '12 Main St', phone: '054-7586288' }))
+    renderGate(user({ address: '12 Main St', phone: '054-1234567' }))
     expect(screen.getByText('customer dashboard')).toBeInTheDocument()
   })
 
@@ -66,7 +66,7 @@ describe('OnboardingGate', () => {
     // dismiss from the form's onSaved event, not by re-deriving needsOnboarding(user).
     renderGate(user())
     await userEvent.type(screen.getByLabelText(/service address/i), '12 Main St')
-    await userEvent.type(screen.getByLabelText(/phone/i), '054-7586288')
+    await userEvent.type(screen.getByLabelText(/phone/i), '054-1234567')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('customer dashboard')).toBeInTheDocument()
     expect(screen.queryByText(/almost there/i)).toBeNull()

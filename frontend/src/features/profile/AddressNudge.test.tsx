@@ -6,7 +6,7 @@ import { AuthContext } from '../auth/authContext.ts'
 import type { CurrentUser } from '../../api/types.ts'
 import { AddressNudge } from './AddressNudge.tsx'
 
-function renderNudge(address: string | null, phone: string | null = '054-7586288') {
+function renderNudge(address: string | null, phone: string | null = '054-1234567') {
   const user: CurrentUser = {
     user_id: 'u-1',
     email: 'c@example.com',
@@ -44,7 +44,7 @@ describe('AddressNudge', () => {
   })
 
   it('renders nothing when both address and phone are set', () => {
-    renderNudge('12 Main St', '054-7586288')
+    renderNudge('12 Main St', '054-1234567')
     expect(screen.queryByText(/before booking/i)).toBeNull()
   })
 
