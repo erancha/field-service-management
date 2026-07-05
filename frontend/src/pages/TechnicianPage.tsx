@@ -23,10 +23,18 @@ export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
         </div>
       </header>
 
-      <p className="page__id">Technician ID: <code>{technicianId}</code></p>
+      <p className="page__id">
+        Technician ID: <code>{technicianId}</code>
+        {state.status === 'connected' && (
+          <span className="page__calendar-connected">✓ Google Calendar connected</span>
+        )}
+      </p>
 
-      <ConnectCalendar status={state.status} />
-      {state.status === 'connected' && <MyAppointments />}
+      {state.status === 'connected' ? (
+        <MyAppointments />
+      ) : (
+        <ConnectCalendar status={state.status} />
+      )}
     </div>
   )
 }

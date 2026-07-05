@@ -1,7 +1,7 @@
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 import { useCalendarConnectError } from '../../hooks/useCalendarConnectError.ts'
 
-type ConnectionStatus = 'loading' | 'connected' | 'disconnected'
+type ConnectionStatus = 'loading' | 'disconnected'
 
 interface ConnectCalendarProps {
   status: ConnectionStatus
@@ -19,12 +19,6 @@ export function ConnectCalendar({ status }: ConnectCalendarProps) {
       {rejected && <ErrorBanner message={CONNECT_DENIED_MESSAGE} onDismiss={dismiss} />}
       {status === 'loading' && (
         <p className="connect-calendar__checking">Checking calendar connection…</p>
-      )}
-      {status === 'connected' && (
-        <p className="connect-calendar__status">
-          ✓ Your Google Calendar is connected. Appointments are scheduled against your real
-          availability.
-        </p>
       )}
       {status === 'disconnected' && (
         <>

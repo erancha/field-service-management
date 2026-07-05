@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { ConnectCalendar } from './ConnectCalendar.tsx'
 
 function renderConnect(
-  status: 'loading' | 'connected' | 'disconnected',
+  status: 'loading' | 'disconnected',
   initialUrl = '/',
 ) {
   render(
