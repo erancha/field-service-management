@@ -34,6 +34,12 @@ class FakeCalendarConnectionRepository:
             raise NotFoundError(f"No connection for {connection.technician_id}")
         self._connections[connection.technician_id] = connection
 
+    def reconnect(self, technician_id: uuid.UUID, encrypted_refresh_token: str) -> None:
+        if technician_id not in self._connections:
+            raise NotFoundError(f"No connection for {technician_id}")
+        self._tokens[technician_id] = encrypted_refresh_token
+        self._connections[technician_id].status = CalendarConnectionStatus.CONNECTED
+
 
 class FakeTokenCipher:
     """Reversible fake: prefix with 'enc:' to distinguish from plaintext."""
@@ -48,7 +54,11 @@ class FakeTokenCipher:
 class FakeGoogleCalendarClient:
     CANNED_CALENDAR_ID = "fake-calendar-id-001"
 
+    def __init__(self):
+        self.create_calendar_calls = 0
+
     def create_calendar(self, summary: str) -> str:
+        self.create_calendar_calls += 1
         return self.CANNED_CALENDAR_ID
 
     def update_event(self, calendar_id, event_id, body): ...
@@ -96,6 +106,23 @@ class TestCalendarConnectionService:
         stored_blob = repo.get_encrypted_token(tech_id)
         assert stored_blob == cipher.encrypt(plaintext)
         assert stored_blob != plaintext
+
+    def test_reconnect_reactivates_without_provisioning_a_second_calendar(self):
+        svc, repo, cipher, client = self._make_service()
+        tech_id = uuid.uuid4()
+        svc.connect(tech_id, "first-token")
+        svc.disconnect(tech_id)
+
+        connection = svc.connect(tech_id, "fresh-token")
+
+        assert connection.status == CalendarConnectionStatus.CONNECTED
+        assert repo.get(tech_id).status == CalendarConnectionStatus.CONNECTED
+        # The fresh credential replaces the stale one instead of being discarded.
+        assert cipher.decrypt(repo.get_encrypted_token(tech_id)) == "fresh-token"
+        # Reconnect reuses the calendar provisioned on the first connect; a repeat consent
+        # must never leave an orphan "Field Service Management" calendar on the account.
+        assert connection.fsm_calendar_id == FakeGoogleCalendarClient.CANNED_CALENDAR_ID
+        assert client.create_calendar_calls == 1
 
     def test_disconnect_flips_status_to_disconnected(self):
         svc, repo, cipher, client = self._make_service()

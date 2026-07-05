@@ -107,3 +107,22 @@ class TestSqlAlchemyCalendarConnectionRepository:
         repo.save(conn)
         fetched = repo.get(conn.technician_id)
         assert fetched.status == CalendarConnectionStatus.DISCONNECTED
+
+    def test_reconnect_replaces_token_and_reactivates_reusing_calendar(self, session):
+        repo = SqlAlchemyCalendarConnectionRepository(session)
+        conn = _make_connection()
+        repo.add(conn, "stale-token")
+        conn.disconnect()
+        repo.save(conn)
+
+        repo.reconnect(conn.technician_id, "fresh-token")
+
+        fetched = repo.get(conn.technician_id)
+        assert fetched.status == CalendarConnectionStatus.CONNECTED
+        assert fetched.fsm_calendar_id == conn.fsm_calendar_id
+        assert repo.get_encrypted_token(conn.technician_id) == "fresh-token"
+
+    def test_reconnect_unknown_technician_raises_not_found(self, session):
+        repo = SqlAlchemyCalendarConnectionRepository(session)
+        with pytest.raises(NotFoundError):
+            repo.reconnect(uuid.uuid4(), "token")

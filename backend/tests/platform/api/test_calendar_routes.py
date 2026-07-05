@@ -248,6 +248,71 @@ def test_full_calendar_connect_flow(pg_session_factory):
     assert FernetTokenCipher(key).decrypt(encrypted) == "refresh-tok-xyz"
 
 
+class _NoProvisionCalendarClient:
+    """Reconnect-time client: create_calendar must never be called, so it fails loudly if it is.
+
+    A reconnect reuses the calendar provisioned on the first connect. Any attempt to provision a
+    second one would leak an orphan "Field Service Management" calendar on the technician's account.
+    """
+
+    def create_calendar(self, summary: str) -> str:
+        raise AssertionError("reconnect must reuse the existing calendar, not provision a new one")
+
+
+def test_calendar_reconnect_stores_fresh_token_and_reactivates(pg_session_factory):
+    """A technician whose connection is DISCONNECTED reconnects successfully.
+
+    The fresh refresh token replaces the stale one, status returns to CONNECTED, and the original
+    calendar is reused (no second calendar provisioned). Reproduces the reconnect no-op where the
+    duplicate insert was swallowed: the browser saw success while the stale token and DISCONNECTED
+    row survived and every attempt leaked another calendar.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-reconnect",
+        email="reconnect@example.com",
+        name="Reconnect Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    technician_id = uuid.UUID(client.get("/auth/me").json()["user_id"])
+
+    # First connect: provision calendar and store the initial token.
+    cal_state = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "stale-token"
+    app.state.calendar_client_factory_override = lambda rt: _FakeCalendarClient("fsm-cal-reconnect")
+    first = client.get(f"/calendar/connect/callback?code=c1&state={cal_state}")
+    assert first.status_code == 307
+
+    # Simulate a credential revocation leaving the row DISCONNECTED.
+    with pg_session_factory() as session:
+        repo = SqlAlchemyCalendarConnectionRepository(session)
+        connection = repo.get(technician_id)
+        connection.disconnect()
+        repo.save(connection)
+        session.commit()
+
+    # Reconnect: a fresh consent yields a new token; no new calendar may be provisioned.
+    cal_state2 = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "fresh-token"
+    app.state.calendar_client_factory_override = lambda rt: _NoProvisionCalendarClient()
+    second = client.get(f"/calendar/connect/callback?code=c2&state={cal_state2}")
+    assert second.status_code == 307
+
+    status = client.get("/calendar/status").json()
+    assert status["connected"] is True
+    assert status["fsm_calendar_id"] == "fsm-cal-reconnect"
+
+    with pg_session_factory() as session:
+        encrypted = SqlAlchemyCalendarConnectionRepository(session).get_encrypted_token(technician_id)
+    assert FernetTokenCipher(key).decrypt(encrypted) == "fresh-token"
+
+
 # ---------------------------------------------------------------------------
 # 5. Callback with bad state → 400
 # ---------------------------------------------------------------------------

@@ -2,8 +2,9 @@
 
 Wiring:
 - GET /calendar/connect/login    → redirect to Google Calendar authorization (or 401/503)
-- GET /calendar/connect/callback → exchange code, provision FSM calendar, persist connection;
-                                   denied or insufficient consent redirects back to the SPA flagged
+- GET /calendar/connect/callback → exchange code, connect or reconnect the technician's calendar,
+                                   persist connection; denied or insufficient consent redirects
+                                   back to the SPA flagged
 - GET /calendar/status           → return connected status for the session user
 
 Authentication is gated purely on an authenticated session (user_id present). The
@@ -28,7 +29,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.application.connection_service import CalendarConnectionService
-from fsm.calendar.domain.errors import DuplicateTechnicianError, NotFoundError
+from fsm.calendar.domain.errors import NotFoundError
 from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
 from fsm.platform.api.oauth_token import fetch_token_relaxed
@@ -210,11 +211,8 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "",
                 cipher=FernetTokenCipher(settings.fsm_token_key.get_secret_value()),
                 client=client,
             )
-            try:
-                service.connect(technician_id, refresh_token)
-                session.commit()
-            except DuplicateTechnicianError:
-                session.rollback()
+            service.connect(technician_id, refresh_token)
+            session.commit()
     except _google_connect_errors() as exc:
         # A denied or insufficient calendar consent only fails here, on the first Google call
         # (create_calendar refreshing the access token). The operator-facing cause and remediation

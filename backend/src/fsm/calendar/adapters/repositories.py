@@ -102,6 +102,18 @@ class SqlAlchemyCalendarConnectionRepository:
         row.status = connection.status.value
         self._session.flush()
 
+    def reconnect(self, technician_id: uuid.UUID, encrypted_refresh_token: str) -> None:
+        """Replace the stored token and set status to CONNECTED, reusing the existing calendar.
+
+        Raises NotFoundError if the connection row is absent.
+        """
+        row = self._session.get(CalendarConnectionRow, technician_id)
+        if row is None:
+            raise NotFoundError(f"CalendarConnection for technician {technician_id!r} not found")
+        row.encrypted_refresh_token = encrypted_refresh_token
+        row.status = CalendarConnectionStatus.CONNECTED.value
+        self._session.flush()
+
     def get_sync_token(self, technician_id: uuid.UUID) -> str | None:
         """Return the stored Google Calendar sync token for the given technician.
 

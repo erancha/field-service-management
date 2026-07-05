@@ -44,6 +44,14 @@ class CalendarConnectionRepository(Protocol):
         """
         ...
 
+    def reconnect(self, technician_id: uuid.UUID, encrypted_refresh_token: str) -> None:
+        """Replace the stored token and return an existing connection to CONNECTED.
+
+        Reuses the already-provisioned calendar; callers rely on this so reconnecting never
+        provisions a second calendar. Raises NotFoundError if the technician has no connection.
+        """
+        ...
+
     def get_sync_token(self, technician_id: uuid.UUID) -> str | None:
         """Return the stored Google Calendar sync token for the given technician.
 
