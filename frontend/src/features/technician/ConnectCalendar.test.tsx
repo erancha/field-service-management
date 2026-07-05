@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { ConnectCalendar } from './ConnectCalendar.tsx'
 
 function renderConnect(
-  status: 'loading' | 'disconnected',
+  status: 'loading' | 'disconnected' | 'error',
   initialUrl = '/',
 ) {
   render(
@@ -35,5 +35,11 @@ describe('ConnectCalendar', () => {
     renderConnect('disconnected', '/?calendar_connect=denied')
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows an error message instead of the connect link when the status check failed', () => {
+    renderConnect('error')
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn.t check your calendar connection/i)
+    expect(screen.queryByRole('link', { name: /connect google calendar/i })).toBeNull()
   })
 })

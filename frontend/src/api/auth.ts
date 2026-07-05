@@ -1,11 +1,12 @@
 import type { CurrentUser, ProfileUpdate } from './types.ts'
-import { apiFetch, apiPatch } from './client.ts'
+import { apiFetch, apiPatch, ApiException } from './client.ts'
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
   try {
     return await apiFetch<CurrentUser>('/auth/me')
-  } catch {
-    return null
+  } catch (err) {
+    if (err instanceof ApiException && err.status === 401) return null
+    throw err
   }
 }
 

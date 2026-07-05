@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchCalendarStatus } from '../api/calendar.ts'
+import { ApiException } from '../api/client.ts'
 
 export type CalendarConnectionState =
   | { status: 'loading' }
   | { status: 'connected'; fsmCalendarId: string | null }
   | { status: 'disconnected' }
+  | { status: 'error' }
 
 export interface CalendarStatusResult {
   state: CalendarConnectionState
@@ -28,8 +30,12 @@ export function useCalendarStatus(): CalendarStatusResult {
             : { status: 'disconnected' },
         )
       })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'disconnected' })
+      .catch((err) => {
+        if (cancelled) return
+        // 401 is the only legal disconnected signal from this endpoint's error path.
+        setState(err instanceof ApiException && err.status === 401
+          ? { status: 'disconnected' }
+          : { status: 'error' })
       })
     return () => {
       cancelled = true

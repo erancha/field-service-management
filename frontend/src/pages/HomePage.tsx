@@ -14,6 +14,14 @@ export function HomePage() {
     return <div className="loading">Checking authentication…</div>
   }
 
+  if (auth.status === 'error') {
+    return (
+      <div className="home-page__error" role="alert">
+        Couldn't check your sign-in status. Please refresh the page to try again.
+      </div>
+    )
+  }
+
   if (auth.status === 'authenticated') {
     const { user } = auth
 

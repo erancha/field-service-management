@@ -6,6 +6,7 @@ export type AuthState =
   | { status: 'loading' }
   | { status: 'authenticated'; user: CurrentUser }
   | { status: 'unauthenticated' }
+  | { status: 'error' }
 
 export interface CurrentUserResult {
   auth: AuthState
@@ -26,7 +27,7 @@ export function useCurrentUser(): CurrentUserResult {
         setState(user ? { status: 'authenticated', user } : { status: 'unauthenticated' })
       })
       .catch(() => {
-        if (!cancelled) setState({ status: 'unauthenticated' })
+        if (!cancelled) setState({ status: 'error' })
       })
     return () => {
       cancelled = true

@@ -1,7 +1,7 @@
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 import { useCalendarConnectError } from '../../hooks/useCalendarConnectError.ts'
 
-type ConnectionStatus = 'loading' | 'disconnected'
+type ConnectionStatus = 'loading' | 'disconnected' | 'error'
 
 interface ConnectCalendarProps {
   status: ConnectionStatus
@@ -19,6 +19,11 @@ export function ConnectCalendar({ status }: ConnectCalendarProps) {
       {rejected && <ErrorBanner message={CONNECT_DENIED_MESSAGE} onDismiss={dismiss} />}
       {status === 'loading' && (
         <p className="connect-calendar__checking">Checking calendar connection…</p>
+      )}
+      {status === 'error' && (
+        <p className="connect-calendar__error" role="alert">
+          Couldn't check your calendar connection. Please try again shortly.
+        </p>
       )}
       {status === 'disconnected' && (
         <>
