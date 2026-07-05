@@ -95,14 +95,14 @@ def build_notifications(session: Session, settings) -> NotificationPort:
             problem = None
         customer = load_user(session, appointment.customer_id)
         technician = load_user(session, appointment.technician_id)
-        # customer_name, problem, and the technician's name/phone are required on the customer
-        # surface: a missing value renders as a placeholder plus a warning rather than dropping
-        # silently. The customer's own address/phone are optional here and render only when set.
+        # Every field is required on this surface: booking rejects a customer without a phone and
+        # address, so a missing value here means a failed lookup or a post-booking profile clear —
+        # both render as a placeholder plus a warning rather than dropping silently.
         return AppointmentContext(
             customer_name=required_field(customer.preferred_name if customer else None, "customer name"),
             problem_description=required_field(problem, "problem"),
-            service_address=customer.address if customer else None,
-            customer_phone=customer.phone if customer else None,
+            service_address=required_field(customer.address if customer else None, "service address"),
+            customer_phone=required_field(customer.phone if customer else None, "customer phone"),
             technician_name=required_field(technician.preferred_name if technician else None, "technician name"),
             technician_phone=required_field(technician.phone if technician else None, "technician phone"),
         )

@@ -39,26 +39,32 @@ def _subject(base: str, context: AppointmentContextView) -> str:
     return f"{base} — {problem}" if problem else base
 
 
+def _required_line(label: str, value: str | None) -> str:
+    """Render "label: value" for a field the resolver contract guarantees non-blank.
+
+    The notifications resolver substitutes a visible placeholder when the underlying data is
+    missing, so a None or blank value here is a wiring bug — raising beats a quietly shorter body.
+    """
+    if value is None or not value.strip():
+        raise ValueError(f"Appointment context is missing required field: {label}")
+    return f"{label}: {value}"
+
+
 def _context_lines(context: AppointmentContextView) -> str:
     """Render the customer/problem block appended to email and feed bodies.
 
-    Returns '' when the context carries nothing so an unenriched body has no dangling
-    separator.
+    Every rendered field is required on this surface (booking enforces the customer's phone and
+    address), so the block is always present and complete.
     """
-    lines = []
-    name = (context.customer_name or "").strip()
-    technician = (context.technician_name or "").strip()
-    technician_phone = (context.technician_phone or "").strip()
-    problem = (context.problem_description or "").strip()
-    if name:
-        lines.append(f"Customer: {name}")
-    if technician:
-        lines.append(f"Technician: {technician}")
-    if technician_phone:
-        lines.append(f"Technician phone: {technician_phone}")
-    if problem:
-        lines.append(f"Problem: {problem}")
-    return "\n\n" + "\n".join(lines) if lines else ""
+    lines = [
+        _required_line("Customer", context.customer_name),
+        _required_line("Phone", context.customer_phone),
+        _required_line("Address", context.service_address),
+        _required_line("Technician", context.technician_name),
+        _required_line("Technician phone", context.technician_phone),
+        _required_line("Problem", context.problem_description),
+    ]
+    return "\n\n" + "\n".join(lines)
 
 
 class DeliveringNotificationPort:
@@ -158,9 +164,9 @@ class DeliveringNotificationPort:
         context = self._context_resolver(appointment)
         subject = _subject("Appointment updated", context)
         context_block = _context_lines(context)
-        details = (appointment.details or "").strip()
+        details = appointment.details
         details_block = (
-            ("\n" if context_block else "\n\n") + f"Details: {details}" if details else ""
+            f"\nDetails: {details.strip()}" if details is not None and details.strip() else ""
         )
         body = (
             f"Your appointment for {self._start_text(appointment)} "

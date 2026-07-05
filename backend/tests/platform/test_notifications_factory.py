@@ -60,9 +60,8 @@ def test_context_resolver_placeholders_required_fields_and_logs_on_lookup_failur
     assert context.problem_description == "[problem missing]"
     assert context.technician_name == "[technician name missing]"
     assert context.technician_phone == "[technician phone missing]"
-    # The customer's own address/phone are not required on the customer surface; they stay absent.
-    assert context.service_address is None
-    assert context.customer_phone is None
+    assert context.customer_phone == "[customer phone missing]"
+    assert context.service_address == "[service address missing]"
     messages = [r.getMessage() for r in caplog.records]
     assert any(str(appointment.service_call_id) in m for m in messages)
     assert any(str(appointment.customer_id) in m for m in messages)

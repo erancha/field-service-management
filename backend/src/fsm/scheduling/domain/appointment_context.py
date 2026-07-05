@@ -4,7 +4,9 @@ Assembled per projection from the service call and the parties' profiles; never 
 Fields are optional at the type level because each surface's resolver populates only what that
 surface renders; a field the surface requires arrives as a visible "[<label> missing]"
 placeholder (with a logged warning) rather than None, so renderers may treat required fields
-as always present while still accepting bare contexts from unenriched paths.
+as always present. Calendar renderers additionally tolerate bare contexts from projections
+configured without a resolver; the notification renderer treats a blank required field as a
+wiring bug and raises.
 """
 from __future__ import annotations
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 import zoneinfo
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 import pytest
@@ -111,8 +111,19 @@ def _make_appointment(
 # Helpers
 # ---------------------------------------------------------------------------
 
+# The delivery renderer requires every context field, matching the production resolver's
+# required_field guarantees; tests derive variants via replace().
+_FULL_CTX = AppointmentContext(
+    customer_name="Ada Lovelace",
+    problem_description="No hot water",
+    service_address="12 Main St",
+    customer_phone="+972-50-123",
+    technician_name="Grace Hopper",
+    technician_phone="+972-50-999",
+)
 
-def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=None,
+
+def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=_FULL_CTX,
           organizer="ops@fsm.example", zone: timezone = timezone.utc):
     from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
 
@@ -121,7 +132,7 @@ def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=N
         feed_repo=feed_repo,
         email_sender=email_sender,
         recipient_email=lambda uid: emails.get(uid),
-        context_resolver=lambda _appt: context if context is not None else AppointmentContext(),
+        context_resolver=lambda _appt: context,
         local_zone=lambda _technician_id: zone,
         organizer_address=organizer,
         clock=lambda: fixed_time,
@@ -300,13 +311,10 @@ class TestAppointmentCancelled:
 
 
 class TestNotificationContext:
-    _CTX = AppointmentContext(customer_name="Ada Lovelace", problem_description="No hot water")
-
     def test_booked_subject_leads_with_problem(self):
         appt = _make_appointment()
         sender = FakeEmailSender()
-        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
-                     context=self._CTX)
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"})
 
         port.appointment_booked(appt)
 
@@ -316,14 +324,7 @@ class TestNotificationContext:
     def test_booked_body_names_technician_between_customer_and_problem(self):
         appt = _make_appointment()
         sender = FakeEmailSender()
-        ctx = AppointmentContext(
-            customer_name="Ada Lovelace",
-            problem_description="No hot water",
-            technician_name="Grace Hopper",
-            technician_phone="+972-50-999",
-        )
-        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
-                     context=ctx)
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"})
 
         port.appointment_booked(appt)
 
@@ -336,8 +337,7 @@ class TestNotificationContext:
     def test_booked_body_names_customer_and_problem_without_bare_id(self):
         appt = _make_appointment()
         sender = FakeEmailSender()
-        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
-                     context=self._CTX)
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"})
 
         port.appointment_booked(appt)
 
@@ -349,41 +349,63 @@ class TestNotificationContext:
     def test_booked_ics_carries_context(self):
         appt = _make_appointment()
         sender = FakeEmailSender()
-        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"},
-                     context=self._CTX)
+        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"})
 
         port.appointment_booked(appt)
 
         [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
         assert "SUMMARY:Ada Lovelace — No hot water" in msg["ics"]
 
-    def test_empty_context_keeps_generic_subject_and_clean_body(self):
+    @pytest.mark.parametrize("field, label", [
+        ("customer_name", "Customer"),
+        ("customer_phone", "Phone"),
+        ("service_address", "Address"),
+        ("technician_name", "Technician"),
+        ("technician_phone", "Technician phone"),
+        ("problem_description", "Problem"),
+    ])
+    def test_blank_required_context_field_raises_instead_of_dropping_the_line(
+        self, field, label
+    ):
         appt = _make_appointment()
-        sender = FakeEmailSender()
-        port = _port(appt, FakeFeedRepository(), sender, {appt.customer_id: "c@example.com"})
+        ctx = replace(_FULL_CTX, **{field: None})
+        port = _port(appt, FakeFeedRepository(), FakeEmailSender(),
+                     {appt.customer_id: "c@example.com"}, context=ctx)
 
-        port.appointment_booked(appt)
-
-        [msg] = [m for m in sender.sent if m["to"] == "c@example.com"]
-        assert msg["subject"] == "Appointment booked"
-        assert "Customer:" not in msg["body"]
-        assert "Problem:" not in msg["body"]
+        with pytest.raises(ValueError, match=f"field: {label}"):
+            port.appointment_booked(appt)
 
     def test_feed_rows_carry_enriched_subject(self):
         appt = _make_appointment()
         feed = FakeFeedRepository()
-        port = _port(appt, feed, FakeEmailSender(), {}, context=self._CTX)
+        port = _port(appt, feed, FakeEmailSender(), {})
 
         port.appointment_booked(appt)
 
         assert all(n.subject == "Appointment booked — No hot water" for n in feed.added)
+
+    def test_bodies_include_customer_phone_and_address(self):
+        appt = _make_appointment()
+        sender = FakeEmailSender()
+        feed = FakeFeedRepository()
+        port = _port(appt, feed, sender, {appt.customer_id: "c@example.com"})
+
+        port.appointment_booked(appt)
+        port.appointment_rescheduled(appt)
+        port.appointment_cancelled(appt)
+
+        assert len(sender.sent) == 3
+        assert all("Phone: +972-50-123" in m["body"] for m in sender.sent)
+        assert all("Address: 12 Main St" in m["body"] for m in sender.sent)
+        assert all("Phone: +972-50-123" in n.body for n in feed.added)
+        assert all("Address: 12 Main St" in n.body for n in feed.added)
 
     def test_rescheduled_and_cancelled_bodies_carry_context(self):
         appt = _make_appointment()
         sender = FakeEmailSender()
         emails = {appt.customer_id: "c@example.com"}
 
-        port = _port(appt, FakeFeedRepository(), sender, emails, context=self._CTX)
+        port = _port(appt, FakeFeedRepository(), sender, emails)
         port.appointment_rescheduled(appt)
         port.appointment_cancelled(appt)
 
@@ -443,7 +465,8 @@ class TestAppointmentUpdated:
 
         [msg] = [m for m in sender.sent if m["to"] == "cara@example.com"]
         ics_unfolded = msg["ics"].replace("\r\n ", "")
-        assert "DESCRIPTION:Gate code 4321" in ics_unfolded
+        assert "DESCRIPTION:" in ics_unfolded
+        assert "Gate code 4321" in ics_unfolded
 
 
 class TestIcsInvitation:
