@@ -1,6 +1,9 @@
 """Unit tests for SmtpEmailSender message construction (no SMTP connection involved)."""
 from __future__ import annotations
 
+import ssl
+from unittest.mock import MagicMock, patch
+
 from fsm.notifications.adapters.smtp_email_sender import SmtpEmailSender
 
 
@@ -60,3 +63,17 @@ class TestMessageWithoutIcs:
         assert list(msg.iter_attachments()) == []
         assert msg["To"] == "c@example.com"
         assert msg["From"] == "ops@fsm.example"
+
+
+class TestStartTlsCertificateVerification:
+    def test_starttls_verifies_the_server_certificate(self):
+        smtp_instance = MagicMock()
+        smtp_instance.__enter__.return_value = smtp_instance
+        with patch("smtplib.SMTP", return_value=smtp_instance) as smtp_cls:
+            _sender().send("c@example.com", "Booked", "body")
+
+        smtp_cls.assert_called_once_with("smtp.example.com", 587)
+        (_args, kwargs) = smtp_instance.starttls.call_args
+        context = kwargs["context"]
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True

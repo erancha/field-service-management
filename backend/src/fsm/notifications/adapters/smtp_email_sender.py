@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 _log = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class SmtpEmailSender:
         msg = self._build_message(to, subject, body, ics)
         with smtplib.SMTP(self._host, self._port) as smtp:
             if self._use_tls:
-                smtp.starttls()
+                smtp.starttls(context=ssl.create_default_context())
             if self._username and self._password:
                 smtp.login(self._username, self._password)
             smtp.send_message(msg)
