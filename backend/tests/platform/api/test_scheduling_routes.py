@@ -289,6 +289,123 @@ def test_availability_invalid_timezone_returns_400(client, auth):
     assert response.status_code == 400
 
 
+def test_availability_corrupt_stored_timezone_falls_back_and_logs(
+    client, auth, pg_session_factory, caplog
+):
+    """A stored timezone that no longer resolves via ZoneInfo degrades to the caller-supplied
+    tz, and the degradation is logged so a corrupt row doesn't silently reshape availability.
+    """
+    from fsm.scheduling.adapters.orm import TechnicianTimezoneRow
+
+    auth()
+    tech_id = uuid.uuid4()
+    with pg_session_factory() as session:
+        with session.begin():
+            session.add(TechnicianTimezoneRow(technician_id=tech_id, timezone="Not/AZone"))
+
+    with caplog.at_level("WARNING", logger="fsm.platform.api.scheduling_routes"):
+        response = client.get(
+            "/api/availability",
+            params={
+                "technician_id": str(tech_id),
+                "date_from": "2025-01-05",  # Sunday (default working day)
+                "date_to": "2025-01-05",
+                "slot_minutes": 60,
+                "tz": "Asia/Jerusalem",
+            },
+        )
+    assert response.status_code == 200
+    # Falls back to the caller-supplied tz, so the default 09:00-17:00 schedule still
+    # yields 8 one-hour slots rather than an empty or 500 response.
+    assert len(response.json()["slots"]) == 8
+    assert "Not/AZone" in caplog.text and str(tech_id) in caplog.text
+
+
+def test_availability_unexpected_timezone_error_propagates(client, auth, monkeypatch):
+    """Only ZoneInfoNotFoundError is degraded; any other error reading the stored timezone
+    must surface rather than being absorbed into a default.
+    """
+    from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
+
+    def _boom(self, technician_id):
+        raise RuntimeError("timezone store unavailable")
+
+    monkeypatch.setattr(SqlAlchemyWorkingHoursRepository, "get_timezone", _boom)
+    auth()
+    with pytest.raises(RuntimeError, match="timezone store unavailable"):
+        client.get(
+            "/api/availability",
+            params={
+                "technician_id": str(uuid.uuid4()),
+                "date_from": "2025-01-05",
+                "date_to": "2025-01-05",
+                "tz": "Asia/Jerusalem",
+            },
+        )
+
+
+def test_availability_corrupt_working_hours_falls_back_and_logs(
+    client, auth, pg_session_factory, caplog
+):
+    """A stored working-hours row that fails domain validation (start >= end) degrades to
+    the default schedule, and the degradation is logged so it isn't mistaken for the
+    technician's own configured hours.
+    """
+    from datetime import time
+
+    from fsm.scheduling.adapters.orm import WorkingHoursRow
+
+    auth()
+    tech_id = uuid.uuid4()
+    with pg_session_factory() as session:
+        with session.begin():
+            # weekday=6 is Sunday; start >= end violates DailyHours' invariant.
+            session.add(
+                WorkingHoursRow(
+                    technician_id=tech_id, weekday=6, start_time=time(17, 0), end_time=time(9, 0)
+                )
+            )
+
+    with caplog.at_level("WARNING", logger="fsm.platform.api.scheduling_routes"):
+        response = client.get(
+            "/api/availability",
+            params={
+                "technician_id": str(tech_id),
+                "date_from": "2025-01-05",  # Sunday
+                "date_to": "2025-01-05",
+                "slot_minutes": 60,
+                "tz": "Asia/Jerusalem",
+            },
+        )
+    assert response.status_code == 200
+    # Falls back to WeeklyWorkingHours.default(): Sun 09:00-17:00 = 8 one-hour slots.
+    assert len(response.json()["slots"]) == 8
+    assert str(tech_id) in caplog.text
+
+
+def test_availability_unexpected_working_hours_error_propagates(client, auth, monkeypatch):
+    """Only a SchedulingError from parsing stored working hours is degraded; any other
+    error reading them must surface rather than being absorbed into the default schedule.
+    """
+    from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
+
+    def _boom(self, technician_id):
+        raise RuntimeError("working hours store unavailable")
+
+    monkeypatch.setattr(SqlAlchemyWorkingHoursRepository, "get_for_technician", _boom)
+    auth()
+    with pytest.raises(RuntimeError, match="working hours store unavailable"):
+        client.get(
+            "/api/availability",
+            params={
+                "technician_id": str(uuid.uuid4()),
+                "date_from": "2025-01-05",
+                "date_to": "2025-01-05",
+                "tz": "Asia/Jerusalem",
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # 3. Book an appointment
 # ---------------------------------------------------------------------------

@@ -267,8 +267,11 @@ def _compute_slots(
 
     Applies working hours, the technician's stored timezone (falling back to tz_hint
     or the region default), holiday exclusions, day-off exclusions, and free/busy
-    subtraction from the technician's connected calendar. All failure paths degrade
-    gracefully rather than raising, mirroring the individual helper functions.
+    subtraction from the technician's connected calendar. Holiday, day-off, and
+    calendar reads fail open on any error, mirroring the individual helper functions.
+    An unresolvable stored timezone falls back to tz_hint; stored hours that fail
+    domain validation fall back to the standard Israeli work-week schedule. Any
+    other error propagates rather than being silently absorbed.
     """
     from fsm.scheduling.adapters.working_hours_repository import (
         SqlAlchemyWorkingHoursRepository,
@@ -281,12 +284,21 @@ def _compute_slots(
     if stored_tz is not None:
         try:
             tz_info = zoneinfo.ZoneInfo(stored_tz)
-        except Exception:
-            pass  # degrade to caller-supplied timezone on any config error
+        except zoneinfo.ZoneInfoNotFoundError:
+            _log.warning(
+                "Unknown stored timezone %r for technician %s; falling back to caller-supplied timezone",
+                stored_tz,
+                technician_id,
+            )
 
     try:
         working_hours = wh_repo.get_for_technician(technician_id)
-    except Exception:
+    except SchedulingError:
+        _log.warning(
+            "Corrupt stored working hours for technician %s; falling back to default schedule",
+            technician_id,
+            exc_info=True,
+        )
         working_hours = WeeklyWorkingHours.default()
 
     holidays = _load_holidays(request, uow, date_from, date_to)
