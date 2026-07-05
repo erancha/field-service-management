@@ -120,90 +120,89 @@ class DeliveringNotificationPort:
     # ------------------------------------------------------------------
 
     def appointment_booked(self, appointment) -> None:
-        now = self._clock()
-        context = self._context_resolver(appointment)
-        subject = _subject("Appointment booked", context)
-        body = (
-            f"Your appointment has been booked for "
-            f"{self._start_text(appointment)}.{_context_lines(context)}"
+        self._deliver(
+            appointment,
+            kind=NotificationKind.BOOKED,
+            subject_base="Appointment booked",
+            ics_method="REQUEST",
+            body=lambda context: (
+                f"Your appointment has been booked for "
+                f"{self._start_text(appointment)}.{_context_lines(context)}"
+            ),
         )
-        customer_email = self._recipient_email(appointment.customer_id)
-        ics = build_ics(
-            appointment, context,
-            method="REQUEST", organizer=self._organizer_address, attendee=customer_email,
-        )
-
-        self._add_feed(appointment.customer_id, NotificationKind.BOOKED, subject, body, now)
-        self._add_feed(appointment.technician_id, NotificationKind.BOOKED, subject, body, now)
-
-        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
-        self._send_email(appointment.technician_id, subject, body, ics=None)
 
     def appointment_rescheduled(self, appointment) -> None:
-        now = self._clock()
-        context = self._context_resolver(appointment)
-        subject = _subject("Appointment rescheduled", context)
-        body = (
-            f"Your appointment has been rescheduled to "
-            f"{self._start_text(appointment)}.{_context_lines(context)}"
+        self._deliver(
+            appointment,
+            kind=NotificationKind.RESCHEDULED,
+            subject_base="Appointment rescheduled",
+            ics_method="REQUEST",
+            body=lambda context: (
+                f"Your appointment has been rescheduled to "
+                f"{self._start_text(appointment)}.{_context_lines(context)}"
+            ),
         )
-        customer_email = self._recipient_email(appointment.customer_id)
-        ics = build_ics(
-            appointment, context,
-            method="REQUEST", organizer=self._organizer_address, attendee=customer_email,
-        )
-
-        self._add_feed(appointment.customer_id, NotificationKind.RESCHEDULED, subject, body, now)
-        self._add_feed(appointment.technician_id, NotificationKind.RESCHEDULED, subject, body, now)
-
-        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
-        self._send_email(appointment.technician_id, subject, body, ics=None)
 
     def appointment_updated(self, appointment) -> None:
-        now = self._clock()
-        context = self._context_resolver(appointment)
-        subject = _subject("Appointment updated", context)
-        context_block = _context_lines(context)
         details = appointment.details
         details_block = (
             f"\nDetails: {details.strip()}" if details is not None and details.strip() else ""
         )
-        body = (
-            f"Your appointment for {self._start_text(appointment)} "
-            f"has been updated.{context_block}{details_block}"
+        self._deliver(
+            appointment,
+            kind=NotificationKind.UPDATED,
+            subject_base="Appointment updated",
+            ics_method="REQUEST",
+            body=lambda context: (
+                f"Your appointment for {self._start_text(appointment)} "
+                f"has been updated.{_context_lines(context)}{details_block}"
+            ),
         )
-        customer_email = self._recipient_email(appointment.customer_id)
-        ics = build_ics(
-            appointment, context,
-            method="REQUEST", organizer=self._organizer_address, attendee=customer_email,
-        )
-
-        self._add_feed(appointment.customer_id, NotificationKind.UPDATED, subject, body, now)
-        self._add_feed(appointment.technician_id, NotificationKind.UPDATED, subject, body, now)
-
-        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
-        self._send_email(appointment.technician_id, subject, body, ics=None)
 
     def appointment_cancelled(self, appointment) -> None:
-        now = self._clock()
-        context = self._context_resolver(appointment)
-        subject = _subject("Appointment cancelled", context)
-        body = f"Your appointment has been cancelled.{_context_lines(context)}"
-        customer_email = self._recipient_email(appointment.customer_id)
-        ics = build_ics(
-            appointment, context,
-            method="CANCEL", organizer=self._organizer_address, attendee=customer_email,
+        self._deliver(
+            appointment,
+            kind=NotificationKind.CANCELLED,
+            subject_base="Appointment cancelled",
+            ics_method="CANCEL",
+            body=lambda context: f"Your appointment has been cancelled.{_context_lines(context)}",
         )
-
-        self._add_feed(appointment.customer_id, NotificationKind.CANCELLED, subject, body, now)
-        self._add_feed(appointment.technician_id, NotificationKind.CANCELLED, subject, body, now)
-
-        self._send_email(appointment.customer_id, subject, body, ics=ics, email=customer_email)
-        self._send_email(appointment.technician_id, subject, body, ics=None)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _deliver(
+        self,
+        appointment,
+        *,
+        kind: NotificationKind,
+        subject_base: str,
+        ics_method: str,
+        body: Callable[[AppointmentContextView], str],
+    ) -> None:
+        """Run the shared delivery sequence for one appointment lifecycle event.
+
+        Both parties receive the same subject and body: a feed entry each, an email with the iTIP
+        invitation for the customer, and a plain email for the technician.
+        """
+        now = self._clock()
+        context = self._context_resolver(appointment)
+        subject = _subject(subject_base, context)
+        rendered_body = body(context)
+        customer_email = self._recipient_email(appointment.customer_id)
+        ics = build_ics(
+            appointment, context,
+            method=ics_method, organizer=self._organizer_address, attendee=customer_email,
+        )
+
+        self._add_feed(appointment.customer_id, kind, subject, rendered_body, now)
+        self._add_feed(appointment.technician_id, kind, subject, rendered_body, now)
+
+        self._send_email(
+            appointment.customer_id, subject, rendered_body, ics=ics, email=customer_email
+        )
+        self._send_email(appointment.technician_id, subject, rendered_body, ics=None)
 
     def _add_feed(
         self,
