@@ -45,7 +45,7 @@ services:
       POSTGRES_PASSWORD: fsm
       POSTGRES_DB: fsm
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - fsm_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -63,7 +63,7 @@ services:
     # Published so host-mode processes (one uvicorn per role) can share the same broker at
     # localhost:6379; the Docker path reaches it in-network as redis:6379.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
