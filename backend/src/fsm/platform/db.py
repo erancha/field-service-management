@@ -1,13 +1,13 @@
-"""Database engine and session factory for SQLAlchemy."""
+"""Database engine and session factory for SQLAlchemy.
+
+The declarative Base lives in fsm.shared.db so context adapters can register tables
+without importing platform.
+"""
 
 from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from fsm.platform.config import Settings
-
-
-class Base(DeclarativeBase):
-    """Declarative base; bounded contexts register their ORM tables against it."""
 
 
 def create_engine_from_settings(settings: Settings) -> Engine:

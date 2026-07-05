@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, String, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from fsm.platform.db import Base
+from fsm.shared.db import Base
 
 
 class NotificationRow(Base):

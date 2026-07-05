@@ -55,152 +55,81 @@ root_packages = ["fsm"]
 # (google, googleapiclient, fastapi); without it those contracts error instead of being checked.
 include_external_packages = true
 
+# Import boundaries, checked transitively. Allowed access, top to bottom:
+#   fsm.platform -> every fsm package (composition root; the only package that sees everything)
+#   each context (calendar, identity, notifications, scheduling)
+#                -> itself and fsm.shared only; never another context, never fsm.platform
+#   fsm.shared   -> nothing in fsm
+# Within a context, layers import downward only (adapters -> application -> ports -> domain);
+# domain, application, and ports use only the context itself and the standard library, so
+# adapters is the sole layer that may import fsm.shared or infrastructure libraries.
+
 [[tool.importlinter.contracts]]
-name = "Scheduling inner layers stay pure"
-type = "forbidden"
-source_modules = [
-    "fsm.scheduling.domain",
-    "fsm.scheduling.application",
-    "fsm.scheduling.ports",
-]
-forbidden_modules = [
-    "sqlalchemy",
+name = "Platform composes independent contexts over the shared kernel"
+type = "layers"
+layers = [
     "fsm.platform",
-    "fsm.calendar",
-    "fsm.identity",
-    "fsm.notifications",
-    "google",
-    "googleapiclient",
-    "fastapi",
+    "fsm.calendar | fsm.identity | fsm.notifications | fsm.scheduling",
+    "fsm.shared",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Scheduling stays isolated from sibling contexts"
-type = "forbidden"
-source_modules = ["fsm.scheduling"]
-forbidden_modules = [
-    "fsm.calendar",
-    "fsm.identity",
-    "fsm.notifications",
+name = "Contexts follow hexagonal layering (adapters over application over ports over domain)"
+type = "layers"
+containers = ["fsm.calendar", "fsm.identity", "fsm.notifications", "fsm.scheduling"]
+layers = [
+    "adapters",
+    "application",
+    "ports",
+    "domain",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Scheduling never imports integration libraries directly"
-type = "forbidden"
-source_modules = ["fsm.scheduling"]
-forbidden_modules = [
-    "google",
-    "googleapiclient",
-    "fastapi",
-]
-
-[[tool.importlinter.contracts]]
-name = "Identity inner layers stay pure"
-type = "forbidden"
-source_modules = [
-    "fsm.identity.domain",
-    "fsm.identity.application",
-    "fsm.identity.ports",
-]
-forbidden_modules = [
-    "sqlalchemy",
-    "fsm.platform",
-    "fsm.scheduling",
-    "fsm.calendar",
-    "fsm.notifications",
-    "google",
-    "googleapiclient",
-    "fastapi",
-]
-
-[[tool.importlinter.contracts]]
-name = "Identity stays isolated from sibling contexts"
-type = "forbidden"
-source_modules = ["fsm.identity"]
-forbidden_modules = [
-    "fsm.scheduling",
-    "fsm.calendar",
-    "fsm.notifications",
-]
-
-[[tool.importlinter.contracts]]
-name = "Identity never imports the web framework directly"
-type = "forbidden"
-source_modules = ["fsm.identity"]
-forbidden_modules = [
-    "fastapi",
-]
-
-[[tool.importlinter.contracts]]
-name = "Calendar stays isolated from non-scheduling sibling contexts"
-type = "forbidden"
-source_modules = ["fsm.calendar"]
-forbidden_modules = [
-    "fsm.identity",
-    "fsm.notifications",
-]
-
-[[tool.importlinter.contracts]]
-name = "Calendar never imports the web framework directly"
-type = "forbidden"
-source_modules = ["fsm.calendar"]
-forbidden_modules = [
-    "fastapi",
-]
-
-[[tool.importlinter.contracts]]
-name = "Calendar inner layers stay pure"
+name = "Inner layers stay pure: own context, abstractions, and the standard library only"
 type = "forbidden"
 source_modules = [
     "fsm.calendar.domain",
     "fsm.calendar.application",
     "fsm.calendar.ports",
-]
-forbidden_modules = [
-    "sqlalchemy",
-    "fsm.platform",
-    "fsm.scheduling",
-    "fsm.identity",
-    "fsm.notifications",
-    "google",
-    "googleapiclient",
-    "cryptography",
-    "fastapi",
-]
-
-[[tool.importlinter.contracts]]
-name = "Notifications inner layers stay pure"
-type = "forbidden"
-source_modules = [
+    "fsm.identity.domain",
+    "fsm.identity.application",
+    "fsm.identity.ports",
     "fsm.notifications.domain",
     "fsm.notifications.application",
     "fsm.notifications.ports",
+    "fsm.scheduling.domain",
+    "fsm.scheduling.application",
+    "fsm.scheduling.ports",
 ]
 forbidden_modules = [
+    "fsm.shared",
     "sqlalchemy",
-    "fsm.platform",
-    "fsm.scheduling",
-    "fsm.identity",
-    "fsm.calendar",
+    "fastapi",
     "google",
     "googleapiclient",
-    "fastapi",
+    "cryptography",
     "smtplib",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Notifications stays isolated from non-scheduling sibling contexts"
+name = "Neither contexts nor the shared kernel import the web framework"
 type = "forbidden"
-source_modules = ["fsm.notifications"]
-forbidden_modules = [
-    "fsm.identity",
+source_modules = [
     "fsm.calendar",
+    "fsm.identity",
+    "fsm.notifications",
+    "fsm.scheduling",
+    "fsm.shared",
+]
+forbidden_modules = [
+    "fastapi",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Notifications never imports the web framework directly"
+name = "Scheduling never imports integration libraries"
 type = "forbidden"
-source_modules = ["fsm.notifications"]
+source_modules = ["fsm.scheduling"]
 forbidden_modules = [
-    "fastapi",
+    "google",
+    "googleapiclient",
 ]

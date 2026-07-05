@@ -9,7 +9,7 @@ from sqlalchemy import String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from fsm.platform.db import Base
+from fsm.shared.db import Base
 
 
 class CalendarConnectionRow(Base):

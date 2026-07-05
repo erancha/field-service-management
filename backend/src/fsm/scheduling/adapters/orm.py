@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from fsm.platform.db import Base
+from fsm.shared.db import Base
 
 
 class ServiceCallRow(Base):

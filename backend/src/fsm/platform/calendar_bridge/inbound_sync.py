@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fsm.calendar.adapters.client import GoogleCalendarClient
+from fsm.calendar.ports.client import GoogleCalendarClient
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.inbound import InboundEventChange
 

@@ -10,7 +10,7 @@ from uuid import UUID
 
 import pytest
 
-from fsm.calendar.adapters.inbound_sync import GoogleCalendarSyncAdapter
+from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter
 
 
 _APPT_ID_1 = UUID("11111111-1111-1111-1111-111111111111")

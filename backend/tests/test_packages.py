@@ -9,6 +9,8 @@ CONTEXTS = [
     "fsm.calendar",
     "fsm.notifications",
     "fsm.platform",
+    "fsm.platform.calendar_bridge",
+    "fsm.shared",
 ]
 
 

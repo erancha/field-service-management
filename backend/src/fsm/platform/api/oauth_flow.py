@@ -19,7 +19,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 
 from fsm.platform.api.oauth_token import fetch_token_relaxed
-from fsm.platform.google_oauth import GOOGLE_AUTH_URI, GOOGLE_TOKEN_URI
+from fsm.shared.google_oauth import GOOGLE_AUTH_URI, GOOGLE_TOKEN_URI
 
 
 def _state_key(session_prefix: str) -> str:

@@ -11,7 +11,7 @@ from typing import Callable
 from uuid import UUID
 
 from fsm.calendar.adapters.client_factory import build_calendar_client
-from fsm.calendar.adapters.google_calendar import GoogleCalendarAdapter
+from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.domain.errors import NotFoundError

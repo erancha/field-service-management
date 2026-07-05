@@ -12,7 +12,7 @@ import logging
 import threading
 
 from fsm.calendar.adapters.client_factory import build_calendar_client
-from fsm.calendar.adapters.inbound_sync import GoogleCalendarSyncAdapter
+from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.platform.calendar_errors import is_auth_error

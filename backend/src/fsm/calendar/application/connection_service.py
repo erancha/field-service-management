@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from fsm.calendar.adapters.client import GoogleCalendarClient
+from fsm.calendar.ports.client import GoogleCalendarClient
 from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
 from fsm.calendar.domain.errors import NotFoundError
 from fsm.calendar.ports.repositories import CalendarConnectionRepository

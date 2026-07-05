@@ -1,7 +1,7 @@
 """Google OAuth 2.0 endpoint URIs, defined once for every consumer.
 
-Lives at platform level (not under platform.api) so calendar adapters can share the token
-endpoint without depending on the web layer.
+Part of the shared kernel so context adapters can use the token endpoint without
+depending on platform or the web layer.
 """
 from __future__ import annotations
 

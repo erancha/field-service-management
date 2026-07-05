@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import SecretStr
 
-from fsm.calendar.adapters.google_calendar import GoogleCalendarAdapter
+from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
 from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
 from fsm.calendar.domain.errors import NotFoundError
 from fsm.platform.calendar_resolver import build_calendar_resolver

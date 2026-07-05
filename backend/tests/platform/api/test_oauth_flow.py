@@ -32,7 +32,7 @@ def _request() -> SimpleNamespace:
 
 def test_calendar_client_factory_defaults_to_the_shared_token_uri():
     from fsm.calendar.adapters.client_factory import build_calendar_client
-    from fsm.platform.google_oauth import GOOGLE_TOKEN_URI
+    from fsm.shared.google_oauth import GOOGLE_TOKEN_URI
 
     default = inspect.signature(build_calendar_client).parameters["token_uri"].default
     assert default == GOOGLE_TOKEN_URI
@@ -40,7 +40,7 @@ def test_calendar_client_factory_defaults_to_the_shared_token_uri():
 
 def test_build_flow_uses_shared_endpoints_and_given_scopes():
     from fsm.platform.api.oauth_flow import build_flow
-    from fsm.platform.google_oauth import GOOGLE_AUTH_URI, GOOGLE_TOKEN_URI
+    from fsm.shared.google_oauth import GOOGLE_AUTH_URI, GOOGLE_TOKEN_URI
 
     settings = _settings()
     flow = build_flow(settings, settings.google_redirect_uri, scopes=("openid", "email"))

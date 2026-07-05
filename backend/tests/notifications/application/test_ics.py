@@ -38,7 +38,7 @@ def _make_appointment(
 
 class TestBuildIcs:
     def test_contains_vcalendar_markers(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt = _make_appointment(
             start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
@@ -49,7 +49,7 @@ class TestBuildIcs:
         assert "END:VCALENDAR" in result
 
     def test_contains_vevent(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt = _make_appointment(
             start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
@@ -60,7 +60,7 @@ class TestBuildIcs:
         assert "END:VEVENT" in result
 
     def test_deterministic_uid(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt_id = uuid.uuid4()
         appt = _make_appointment(
@@ -72,7 +72,7 @@ class TestBuildIcs:
         assert f"UID:fsm-{appt_id}@fsm.local" in result
 
     def test_dtstart_dtend_in_utc_zulu(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt = _make_appointment(
             start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
@@ -83,7 +83,7 @@ class TestBuildIcs:
         assert "DTEND:20250610T100000Z" in result
 
     def test_is_deterministic_for_same_input(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt_id = uuid.uuid4()
         appt = _make_appointment(
@@ -102,30 +102,30 @@ class TestBuildIcsContext:
         )
 
     def test_summary_combines_name_and_problem(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(customer_name="Ada Lovelace", problem_description="No hot water")
         assert "SUMMARY:Ada Lovelace — No hot water" in build_ics(self._appt(), ctx)
 
     def test_summary_falls_back_to_generic_when_context_empty(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         assert "SUMMARY:Field service appointment" in build_ics(self._appt(), AppointmentContext())
 
     def test_description_carries_problem(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(problem_description="No hot water")
         assert "DESCRIPTION:No hot water" in build_ics(self._appt(), ctx)
 
     def test_no_description_line_when_problem_blank(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         assert "DESCRIPTION" not in build_ics(self._appt(), AppointmentContext(problem_description="  \n"))
         assert "DESCRIPTION" not in build_ics(self._appt(), AppointmentContext())
 
     def test_text_fields_are_escaped_per_rfc5545(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(problem_description="Leak; kitchen, floor\nback\\room")
         result = build_ics(self._appt(), ctx)
@@ -140,7 +140,7 @@ class TestBuildIcsLineFolding:
         )
 
     def test_no_physical_line_exceeds_75_octets(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(
             customer_name="A" * 100,
@@ -151,7 +151,7 @@ class TestBuildIcsLineFolding:
             assert len(line.encode("utf-8")) <= 75
 
     def test_folded_summary_round_trips_to_original_content_line(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(customer_name="C" * 200, problem_description="short")
         result = build_ics(self._appt(), ctx)
@@ -165,7 +165,7 @@ class TestBuildIcsLineFolding:
         assert "".join(folded) == f"SUMMARY:{ctx.summary_line()}"
 
     def test_multibyte_description_folds_on_valid_utf8_boundaries(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(problem_description="é—" * 100)
         result = build_ics(self._appt(), ctx)
@@ -181,31 +181,31 @@ class TestBuildIcsLocationAndPhone:
         )
 
     def test_location_line_present_and_escaped(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(service_address="12 Main St, Springfield")
         assert "LOCATION:12 Main St\\, Springfield" in build_ics(self._appt(), ctx)
 
     def test_no_location_line_when_address_blank(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         assert "LOCATION" not in build_ics(self._appt(), AppointmentContext(service_address=" "))
         assert "LOCATION" not in build_ics(self._appt(), AppointmentContext())
 
     def test_phone_joins_description(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(problem_description="No hot water", customer_phone="+972-50-123")
         assert "DESCRIPTION:No hot water\\nPhone: +972-50-123" in build_ics(self._appt(), ctx)
 
     def test_phone_alone_produces_description(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(customer_phone="+972-50-123")
         assert "DESCRIPTION:Phone: +972-50-123" in build_ics(self._appt(), ctx)
 
     def test_details_join_description_between_problem_and_phone(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt = _make_appointment(
             start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
@@ -219,7 +219,7 @@ class TestBuildIcsLocationAndPhone:
         )
 
     def test_details_alone_produce_description(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt = _make_appointment(
             start=datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc),
@@ -229,7 +229,7 @@ class TestBuildIcsLocationAndPhone:
         assert "DESCRIPTION:Gate code 4321" in build_ics(appt, AppointmentContext())
 
     def test_technician_lines_lead_description_before_problem(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(
             problem_description="No hot water",
@@ -245,14 +245,14 @@ class TestBuildIcsLocationAndPhone:
         )
 
     def test_long_address_is_folded(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         ctx = AppointmentContext(service_address="Very long street name " * 10)
         for line in build_ics(self._appt(), ctx).split("\r\n"):
             assert len(line.encode("utf-8")) <= 75
 
     def test_folded_location_round_trips_to_escaped_content_line(self):
-        from fsm.notifications.adapters.ics import _escape_text, build_ics
+        from fsm.notifications.application.ics import _escape_text, build_ics
 
         address = "Building 7, Suite 12; c/o Warehouse \\ Depot, " + "Long Industrial Road, " * 3 + "end"
         ctx = AppointmentContext(service_address=address)
@@ -284,7 +284,7 @@ class TestBuildIcsItip:
         )
 
     def test_sequence_from_updated_minus_created(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         appt = self._appt(
             created=datetime(2025, 6, 1, 0, 0, 0, tzinfo=timezone.utc),
@@ -293,7 +293,7 @@ class TestBuildIcsItip:
         assert "SEQUENCE:30" in build_ics(appt, AppointmentContext())
 
     def test_request_method_when_organizer_and_attendee_present(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         result = build_ics(
             self._appt(), AppointmentContext(),
@@ -315,7 +315,7 @@ class TestBuildIcsItip:
         )
 
     def test_no_physical_line_exceeds_75_octets(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         result = build_ics(
             self._appt(), AppointmentContext(),
@@ -325,7 +325,7 @@ class TestBuildIcsItip:
             assert len(line.encode("utf-8")) <= 75
 
     def test_cancel_method_sets_cancelled_status(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         result = build_ics(
             self._appt(), AppointmentContext(),
@@ -335,7 +335,7 @@ class TestBuildIcsItip:
         assert "STATUS:CANCELLED" in result
 
     def test_method_line_precedes_vevent(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         result = build_ics(
             self._appt(), AppointmentContext(),
@@ -346,7 +346,7 @@ class TestBuildIcsItip:
     def test_sequence_is_higher_for_a_reschedule_than_the_original_booking(self):
         """A reschedule (updated_at > created_at) must outrank the original booking's SEQUENCE:0,
         so a calendar client applies it as an update to the same entry rather than a duplicate."""
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         def sequence_of(ics: str) -> int:
             line = next(line for line in ics.split("\r\n") if line.startswith("SEQUENCE:"))
@@ -367,7 +367,7 @@ class TestBuildIcsItip:
         """A reschedule (updated_at > created_at) must produce a strictly higher DTSTAMP than the
         original booking, so a calendar client applies it as an update even when the rescheduled
         time itself moves earlier than the original start."""
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         def dtstamp_of(ics: str) -> str:
             line = next(line for line in ics.split("\r\n") if line.startswith("DTSTAMP:"))
@@ -383,7 +383,7 @@ class TestBuildIcsItip:
         assert rescheduled_dtstamp > original_dtstamp
 
     def test_no_itip_fields_when_organizer_or_attendee_blank(self):
-        from fsm.notifications.adapters.ics import build_ics
+        from fsm.notifications.application.ics import build_ics
 
         only_org = build_ics(self._appt(), AppointmentContext(), organizer="ops@fsm.example")
         both_blank = build_ics(self._appt(), AppointmentContext())

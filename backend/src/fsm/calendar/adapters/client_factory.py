@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 
 from fsm.calendar.adapters.client import GoogleApiCalendarClient
 from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
-from fsm.platform.google_oauth import GOOGLE_TOKEN_URI
+from fsm.shared.google_oauth import GOOGLE_TOKEN_URI
 
 
 def build_calendar_client(

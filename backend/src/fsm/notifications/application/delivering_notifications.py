@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone, tzinfo
 from typing import Callable
 
-from fsm.notifications.adapters.ics import build_ics
+from fsm.notifications.application.ics import build_ics
 from fsm.notifications.domain.notification import Notification, NotificationKind
 from fsm.notifications.ports.appointment_context import AppointmentContextView
 from fsm.notifications.ports.email_sender import EmailSender

@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from fsm.calendar.adapters.client import GoogleCalendarClient
-from fsm.calendar.adapters.google_calendar import GoogleCalendarAdapter
+from fsm.calendar.ports.client import GoogleCalendarClient
+from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
