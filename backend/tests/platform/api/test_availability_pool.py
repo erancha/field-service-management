@@ -24,6 +24,7 @@ from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectio
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
 from fsm.identity.domain.role import Role
+from fsm.identity.domain.role_status import RoleStatus
 
 
 # ---------------------------------------------------------------------------
@@ -71,14 +72,17 @@ def _store_connected_technician(
     token_key: str,
     name: str = "Pool Technician",
     display_name: str | None = None,
+    role: Role = Role.TECHNICIAN,
+    role_status: RoleStatus = RoleStatus.APPROVED,
 ) -> str:
-    """Insert the technician's app_user and a CONNECTED CalendarConnection; return calendar_id.
+    """Insert the user's app_user and a CONNECTED CalendarConnection; return calendar_id.
 
     A connected technician is always a signed-in user whose id is the connection's
-    technician_id, so both rows are created together to mirror that invariant.
+    technician_id, so both rows are created together to mirror that invariant. role and
+    role_status default to the approved technician the pool offers; other combinations
+    seed connected users that must stay out of the pool.
     """
     from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
-    from fsm.identity.domain.role_status import RoleStatus
     from fsm.identity.domain.user import User
 
     encrypted = FernetTokenCipher(token_key).encrypt("refresh-token-test")
@@ -91,8 +95,8 @@ def _store_connected_technician(
                     google_sub=f"sub-{tech_id}",
                     email=f"{tech_id}@example.com",
                     name=name,
-                    role=Role.TECHNICIAN,
-                    role_status=RoleStatus.APPROVED,
+                    role=role,
+                    role_status=role_status,
                     display_name=display_name,
                 )
             )
@@ -265,6 +269,48 @@ def test_pool_excludes_unconnected_technician(pg_session_factory, authenticate):
     tech_ids_seen = {s["technician_id"] for s in resp.json()["slots"]}
     assert str(connected_tech) in tech_ids_seen
     assert str(unconnected_tech) not in tech_ids_seen
+
+
+# ---------------------------------------------------------------------------
+# 3b. A CONNECTED calendar alone must not make a user bookable (issue #14)
+# ---------------------------------------------------------------------------
+
+
+def test_pool_excludes_connected_users_who_are_not_approved_technicians(pg_session_factory, authenticate):
+    """Only APPROVED technicians are offered; a pending technician and a plain customer stay out
+    of the pool even with a CONNECTED calendar, so the admin approval queue cannot be bypassed
+    by connecting a calendar."""
+    token_key = Fernet.generate_key().decode()
+    approved_tech = uuid.uuid4()
+    pending_tech = uuid.uuid4()
+    connected_customer = uuid.uuid4()
+    _store_connected_technician(pg_session_factory, approved_tech, token_key)
+    _store_connected_technician(
+        pg_session_factory, pending_tech, token_key, role_status=RoleStatus.PENDING
+    )
+    _store_connected_technician(
+        pg_session_factory, connected_customer, token_key, role=Role.CUSTOMER
+    )
+
+    settings = _unconfigured_settings(os.environ["DATABASE_URL"])
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    authenticate(app)
+    client = TestClient(app)
+
+    resp = client.get(
+        "/api/availability/pool",
+        params={
+            "date_from": _DATE_SUNDAY.isoformat(),
+            "date_to": _DATE_SUNDAY.isoformat(),
+            "slot_minutes": 60,
+        },
+    )
+
+    assert resp.status_code == 200
+    tech_ids_seen = {s["technician_id"] for s in resp.json()["slots"]}
+    assert str(approved_tech) in tech_ids_seen
+    assert str(pending_tech) not in tech_ids_seen
+    assert str(connected_customer) not in tech_ids_seen
 
 
 # ---------------------------------------------------------------------------

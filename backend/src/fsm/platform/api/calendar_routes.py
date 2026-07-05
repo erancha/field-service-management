@@ -1,16 +1,16 @@
 """FastAPI router for technician Google Calendar OAuth connect flow.
 
 Wiring:
-- GET /calendar/connect/login    → redirect to Google Calendar authorization (or 401/503)
+- GET /calendar/connect/login    → redirect to Google Calendar authorization (or 401/403/503)
 - GET /calendar/connect/callback → exchange code, connect or reconnect the technician's calendar,
                                    persist connection; denied or insufficient consent redirects
                                    back to the SPA flagged
 - GET /calendar/status           → return connected status for the session user
 
-Authentication is gated purely on an authenticated session (user_id present). The
-deployment environment (FSM_ROLE) determines whether the "Connect Google Calendar"
-button is surfaced; this router does not enforce roles. A customer-role deployment
-simply never links to these endpoints.
+The connect endpoints require an APPROVED TECHNICIAN session: a connected calendar makes its
+owner appear in customer-facing pooled availability, so calendar onboarding is gated on the
+back-office approval decision, not on authentication alone. /calendar/status only reports the
+caller's own connection and needs just an authenticated session.
 
 Injectable seams on app.state allow tests to bypass real Google without patching globals:
   app.state.calendar_token_exchange_override  — callable(flow, code) → refresh_token str
@@ -23,7 +23,7 @@ import secrets
 from typing import Callable
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
@@ -31,6 +31,8 @@ from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.application.connection_service import CalendarConnectionService
 from fsm.calendar.domain.errors import NotFoundError
 from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
+from fsm.identity.domain.role import Role
+from fsm.platform.api.auth_deps import SessionUser, require_role
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
 from fsm.platform.api.oauth_token import fetch_token_relaxed
 
@@ -138,11 +140,9 @@ def _is_calendar_configured(settings) -> bool:
 
 
 @router.get("/connect/login")
-def calendar_connect_login(request: Request):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
-
+def calendar_connect_login(
+    request: Request, user: SessionUser = Depends(require_role(Role.TECHNICIAN))
+):
     settings = _get_settings(request)
     if not _is_calendar_configured(settings):
         return JSONResponse(
@@ -168,7 +168,13 @@ def calendar_connect_login(request: Request):
 
 
 @router.get("/connect/callback")
-def calendar_connect_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+def calendar_connect_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
+):
     expected_state = request.session.get("calendar_oauth_state")
     if not expected_state or not secrets.compare_digest(expected_state, state):
         return JSONResponse(
@@ -184,11 +190,7 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "",
     # The technician declined or cancelled on Google's consent screen: Google redirects back with an
     # ?error (e.g. access_denied) and no code. Reject cleanly rather than exchanging an empty code.
     if error:
-        _log.warning(
-            "Calendar connect declined by technician %s: %s",
-            request.session.get("user_id"),
-            error,
-        )
+        _log.warning("Calendar connect declined by technician %s: %s", user.id, error)
         return _reject_calendar_connect(request)
 
     token_exchange = _get_token_exchange(request.app)
@@ -200,7 +202,7 @@ def calendar_connect_callback(request: Request, code: str = "", state: str = "",
     flow = _build_flow(settings, redirect_uri)
     flow.code_verifier = request.session.get("calendar_code_verifier")
 
-    technician_id = UUID(request.session["user_id"])
+    technician_id = user.id
     factory = _get_session_factory(request.app)
     try:
         refresh_token = token_exchange(flow, code)

@@ -6,12 +6,15 @@ connect→persist→status path run against real PG without hitting real Google.
 
 Auth is established via the existing /auth/google flow (token_exchange_override
 + auth_adapter_override), giving the TestClient a session cookie that the
-calendar endpoints then consume.
+calendar endpoints then consume. The connect endpoints require an APPROVED
+TECHNICIAN, so tests that exercise them promote the signed-in user via
+_claim_technician_role first.
 """
 from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
 
@@ -26,6 +29,8 @@ from testcontainers.postgres import PostgresContainer
 
 from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+from fsm.identity.domain.role import Role
 from fsm.identity.ports.auth import VerifiedIdentity
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
@@ -115,6 +120,24 @@ def _sign_in(client: TestClient, app) -> None:
     assert cb_resp.status_code == 307
 
 
+def _claim_technician_role(client: TestClient, pg_session_factory, approved: bool = True) -> uuid.UUID:
+    """Move the signed-in user onto the TECHNICIAN role, approved or still pending.
+
+    Sign-in in these tests arrives on a customer-host flow (fsm_role is unset), so the technician
+    claim and the back-office approval decision are applied directly to the identity row.
+    """
+    user_id = uuid.UUID(client.get("/auth/me").json()["user_id"])
+    with pg_session_factory() as session:
+        repo = SqlAlchemyUserRepository(session)
+        user = repo.get(user_id)
+        user.request_role(Role.TECHNICIAN)
+        if approved:
+            user.approve(decided_by=uuid.uuid4(), at=datetime.now(timezone.utc))
+        repo.save(user)
+        session.commit()
+    return user_id
+
+
 class _FakeCalendarClient:
     """Minimal GoogleCalendarClient stub: only create_calendar is needed."""
 
@@ -153,7 +176,64 @@ def test_calendar_login_unauthenticated_returns_401(pg_session_factory):
     response = client.get("/calendar/connect/login")
 
     assert response.status_code == 401
-    assert "not authenticated" in response.json()["detail"].lower()
+    assert "authentication required" in response.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# 1b. Connect endpoints require an APPROVED TECHNICIAN (issue #14)
+# ---------------------------------------------------------------------------
+
+
+def test_calendar_connect_login_forbidden_for_customer(pg_session_factory):
+    """A signed-in customer must not reach calendar onboarding.
+
+    A connected calendar makes its owner bookable in customer-facing pooled availability, so the
+    connect flow is gated on the approved-technician decision, not on authentication alone.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-customer-403",
+        email="customer403@example.com",
+        name="Plain Customer",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+
+    response = client.get("/calendar/connect/login")
+
+    assert response.status_code == 403
+
+
+def test_calendar_connect_callback_forbidden_for_pending_technician(pg_session_factory):
+    """A technician still awaiting approval cannot complete the connect callback.
+
+    The role gate fires before any state validation or token exchange, and no connection is
+    persisted for the pending technician.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-pending-403",
+        email="pending403@example.com",
+        name="Pending Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory, approved=False)
+
+    response = client.get("/calendar/connect/callback?code=x&state=anything")
+
+    assert response.status_code == 403
+    assert client.get("/calendar/status").json()["connected"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +249,7 @@ def test_calendar_login_unconfigured_returns_503(pg_session_factory):
     client = TestClient(app, follow_redirects=False)
 
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
 
     response = client.get("/calendar/connect/login")
 
@@ -190,6 +271,7 @@ def test_calendar_login_redirects_with_calendar_scope_and_state(pg_session_facto
     client = TestClient(app, follow_redirects=False)
 
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
 
     response = client.get("/calendar/connect/login")
 
@@ -213,8 +295,9 @@ def test_full_calendar_connect_flow(pg_session_factory):
     app.state.auth_adapter_override = _make_fake_auth_adapter(_fake_identity())
     client = TestClient(app, follow_redirects=False)
 
-    # Authenticate
+    # Authenticate as an approved technician
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
 
     # Obtain calendar OAuth state via login endpoint
     login_resp = client.get("/calendar/connect/login")
@@ -280,7 +363,7 @@ def test_calendar_reconnect_stores_fresh_token_and_reactivates(pg_session_factor
     client = TestClient(app, follow_redirects=False)
 
     _sign_in(client, app)
-    technician_id = uuid.UUID(client.get("/auth/me").json()["user_id"])
+    technician_id = _claim_technician_role(client, pg_session_factory)
 
     # First connect: provision calendar and store the initial token.
     cal_state = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
@@ -327,6 +410,7 @@ def test_calendar_callback_bad_state_returns_400(pg_session_factory):
     client = TestClient(app, follow_redirects=False)
 
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
     # Initiate login to set calendar_oauth_state in session
     client.get("/calendar/connect/login")
 
@@ -357,6 +441,7 @@ def test_calendar_callback_propagates_pkce_code_verifier_to_token_exchange(pg_se
     client = TestClient(app, follow_redirects=False)
 
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
 
     seen = {}
 
@@ -490,6 +575,7 @@ def test_calendar_callback_redirects_with_rejection_when_calendar_scope_not_gran
     client = TestClient(app, follow_redirects=False, raise_server_exceptions=False)
 
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
     login_resp = client.get("/calendar/connect/login")
     cal_state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
 
@@ -524,6 +610,7 @@ def test_calendar_callback_redirects_with_rejection_when_technician_declines(pg_
     client = TestClient(app, follow_redirects=False, raise_server_exceptions=False)
 
     _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
     login_resp = client.get("/calendar/connect/login")
     cal_state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
 

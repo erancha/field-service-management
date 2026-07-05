@@ -54,6 +54,12 @@ class User:
         Google-synced name."""
         return self.display_name or self.name
 
+    @property
+    def is_approved_technician(self) -> bool:
+        """True when the user holds an APPROVED TECHNICIAN role — the only users who may be
+        offered in customer-facing availability or targeted by a booking."""
+        return self.role is Role.TECHNICIAN and self.role_status is RoleStatus.APPROVED
+
     def grant_role(self, role: Role) -> None:
         """Assign a role with immediate effect, clearing any prior decision.
 

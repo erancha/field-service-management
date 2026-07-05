@@ -309,18 +309,6 @@ def get_availability(
     )
 
 
-def _resolve_technician_names(session, technician_ids: set[UUID]) -> dict[UUID, str]:
-    """Map technician ids to their display names.
-
-    A pooled technician always has a CONNECTED calendar, which is only ever created for a
-    signed-in user whose id is this technician_id, so the identity row is guaranteed present.
-    """
-    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
-
-    repo = SqlAlchemyUserRepository(session)
-    return {tech_id: repo.get(tech_id).preferred_name for tech_id in technician_ids}
-
-
 @router.get("/availability/pool", response_model=PooledAvailabilityResponse)
 def get_availability_pool(
     request: Request,
@@ -329,23 +317,34 @@ def get_availability_pool(
     slot_minutes: Annotated[int, Query(ge=1)] = 60,
     limit: Annotated[int | None, Query(ge=1)] = None,
 ) -> PooledAvailabilityResponse:
-    """Return pooled availability slots across all connected technicians (first-available).
+    """Return pooled availability slots across connected approved technicians (first-available).
 
-    Single pool with no skills routing. The candidate pool is the set of technicians who
-    have completed calendar onboarding (status=CONNECTED); technicians without a calendar
-    connection are not offered. Each slot is tagged with its technician_id and display name
-    so the customer's choice implicitly selects the earliest-available technician. Results
+    Single pool with no skills routing. The candidate pool is the set of APPROVED technicians
+    who have completed calendar onboarding (status=CONNECTED); a connected calendar alone is not
+    enough — a user whose technician role is pending or rejected is never offered, so the admin
+    approval queue cannot be bypassed. Each slot is tagged with its technician_id and display
+    name so the customer's choice implicitly selects the earliest-available technician. Results
     are sorted by start then technician_id; limit caps them to the earliest N when given.
     """
     from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 
     ranked: list[tuple[UUID, datetime, datetime]] = []
+    # Key: technician id. Value: the name every pooled slot, notification, and calendar event renders.
+    names: dict[UUID, str] = {}
 
     with _build_uow(request) as uow:
-        # Only technicians who have connected a real calendar are offered in the pool.
         connections = SqlAlchemyCalendarConnectionRepository(uow._session).list_connected()
+        users = SqlAlchemyUserRepository(uow._session)
 
         for conn in connections:
+            # A connection is only ever created for a signed-in user whose id is this
+            # technician_id, so the identity row is guaranteed present.
+            user = users.get(conn.technician_id)
+            if not user.is_approved_technician:
+                continue
+            names[conn.technician_id] = user.preferred_name
+
             try:
                 slots = _compute_slots(
                     request, uow, conn.technician_id, date_from, date_to, slot_minutes
@@ -364,8 +363,6 @@ def get_availability_pool(
         ranked.sort(key=lambda r: (r[1], str(r[0])))
         if limit is not None:
             ranked = ranked[:limit]
-
-        names = _resolve_technician_names(uow._session, {tech_id for tech_id, _, _ in ranked})
 
     return PooledAvailabilityResponse(
         slots=[
@@ -551,6 +548,9 @@ def book_appointment(
     except InvalidTimeRange as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+    from fsm.identity.domain.errors import NotFoundError as UserNotFoundError
+
     try:
         with _build_uow(request) as uow:
             # The booking customer must own the service call they book against.
@@ -560,6 +560,17 @@ def book_appointment(
                     status_code=403,
                     detail="Cannot book against another customer's service call",
                 )
+            # Only an APPROVED technician is a bookable target; an unknown id and a user whose
+            # technician role is pending or rejected are equally nonexistent to the booking
+            # customer, so booking cannot bypass the admin approval queue.
+            try:
+                target_is_bookable = (
+                    SqlAlchemyUserRepository(uow.session).get(body.technician_id).is_approved_technician
+                )
+            except UserNotFoundError:
+                target_is_bookable = False
+            if not target_is_bookable:
+                raise HTTPException(status_code=404, detail="Technician not found")
             svc = AppointmentService(
                 appointments=uow.appointments,
                 service_calls=uow.service_calls,

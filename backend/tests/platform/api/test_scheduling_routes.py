@@ -94,33 +94,43 @@ def _utc_iso(year: int, month: int, day: int, hour: int) -> str:
     return datetime(year, month, day, hour, tzinfo=timezone.utc).isoformat()
 
 
-def _seed_contact(pg_session_factory, *user_ids, address="12 Main St", phone="+972-50-100"):
-    """Give each user id a UserRow with an address and phone.
+def _seed_user(pg_session_factory, uid, role, *, role_status="APPROVED", address=None, phone=None):
+    """Insert (or update) a UserRow with the given role, approval status, and contact fields.
 
-    Booking enforces that the customer has an address+phone and the technician has a phone; these
-    integration tests authenticate via a dependency override that creates no identity row, so any
-    test that books to success seeds the referenced users' contact here first.
+    These integration tests authenticate via a dependency override that creates no identity row,
+    so any test whose endpoint reads the identity table seeds the referenced users here first.
     """
     from fsm.identity.adapters.orm import UserRow
 
     with pg_session_factory() as session:
         with session.begin():
-            for uid in user_ids:
-                row = session.get(UserRow, uid)
-                if row is None:
-                    session.add(UserRow(
-                        id=uid,
-                        google_sub=f"sub-{uid}",
-                        email=f"{uid}@example.com",
-                        name="Test User",
-                        role=Role.CUSTOMER.value,
-                        role_status="APPROVED",
-                        address=address,
-                        phone=phone,
-                    ))
-                else:
-                    row.address = address
-                    row.phone = phone
+            row = session.get(UserRow, uid)
+            if row is None:
+                session.add(UserRow(
+                    id=uid,
+                    google_sub=f"sub-{uid}",
+                    email=f"{uid}@example.com",
+                    name="Test User",
+                    role=role.value,
+                    role_status=role_status,
+                    address=address,
+                    phone=phone,
+                ))
+            else:
+                row.role = role.value
+                row.role_status = role_status
+                row.address = address
+                row.phone = phone
+
+
+def _seed_contact(pg_session_factory, cust_id, tech_id, address="12 Main St", phone="+972-50-100"):
+    """Seed the booking pair: a customer with address+phone and an APPROVED technician with a phone.
+
+    Booking requires complete contact data and an approved-technician target, so tests that book
+    to success seed both rows here first.
+    """
+    _seed_user(pg_session_factory, cust_id, Role.CUSTOMER, address=address, phone=phone)
+    _seed_user(pg_session_factory, tech_id, Role.TECHNICIAN, address=address, phone=phone)
 
 
 # ---------------------------------------------------------------------------
@@ -330,16 +340,20 @@ def test_book_appointment_returns_200_and_is_persisted(client, auth, pg_session_
         assert matching[0].operation == OutboxOperation.CREATE
 
 
-def test_book_without_required_contact_returns_422(client, auth):
+def test_book_without_required_contact_returns_422(client, auth, pg_session_factory):
     """Booking is refused when the customer/technician contact data is incomplete."""
     auth(role=Role.CUSTOMER)
+    # An approved technician without a phone: the booking passes the technician gate and fails
+    # on the contact-completeness contract for both parties (the customer has no row at all).
+    tech_id = uuid.uuid4()
+    _seed_user(pg_session_factory, tech_id, Role.TECHNICIAN)
     sc_id = client.post("/api/service-calls", json={"description": "No contact yet"}).json()["id"]
 
     resp = client.post(
         "/api/appointments",
         json={
             "service_call_id": sc_id,
-            "technician_id": str(uuid.uuid4()),
+            "technician_id": str(tech_id),
             "start": _utc_iso(2025, 3, 4, 9),
             "end": _utc_iso(2025, 3, 4, 10),
         },
@@ -347,6 +361,35 @@ def test_book_without_required_contact_returns_422(client, auth):
     assert resp.status_code == 422
     detail = resp.json()["detail"]
     assert "customer phone" in detail and "technician phone" in detail
+
+
+def test_book_non_approved_technician_returns_404(client, auth, pg_session_factory):
+    """The booking target must be an APPROVED technician (issue #14).
+
+    A technician still pending approval and an id with no user at all are both rejected as
+    nonexistent bookable technicians, so the admin approval queue cannot be bypassed by
+    booking a connected-but-unapproved user directly.
+    """
+    cust_id = auth(role=Role.CUSTOMER)
+    _seed_user(pg_session_factory, cust_id, Role.CUSTOMER, address="12 Main St", phone="+972-50-100")
+    pending_tech = uuid.uuid4()
+    _seed_user(
+        pg_session_factory, pending_tech, Role.TECHNICIAN, role_status="PENDING", phone="+972-50-100"
+    )
+    sc_id = client.post("/api/service-calls", json={"description": "Bypass attempt"}).json()["id"]
+
+    for target in (pending_tech, uuid.uuid4()):
+        resp = client.post(
+            "/api/appointments",
+            json={
+                "service_call_id": sc_id,
+                "technician_id": str(target),
+                "start": _utc_iso(2025, 4, 6, 9),
+                "end": _utc_iso(2025, 4, 6, 10),
+            },
+        )
+        assert resp.status_code == 404
+        assert "technician" in resp.json()["detail"].lower()
 
 
 def test_book_against_another_customers_service_call_returns_403(client, auth):
