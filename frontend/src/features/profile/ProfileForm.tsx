@@ -5,6 +5,7 @@ import { useAuth } from '../auth/authContext.ts'
 import { isValidPhone, isIsraeliPhone } from './phone.ts'
 import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
+import { errorMessage } from '../../utils/errors.ts'
 
 interface ProfileFormProps {
   user: CurrentUser
@@ -70,7 +71,7 @@ export function ProfileForm({ user, onSaved, onSkip, requiredFields = [] }: Prof
       refresh()
       onSaved()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save profile')
+      setError(errorMessage(err, 'Failed to save profile'))
     } finally {
       setLoading(false)
     }

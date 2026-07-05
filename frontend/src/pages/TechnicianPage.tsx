@@ -1,7 +1,6 @@
-import { Link } from 'react-router-dom'
 import { ConnectCalendar } from '../features/technician/ConnectCalendar.tsx'
 import { MyAppointments } from '../features/technician/MyAppointments.tsx'
-import { LogoutButton } from '../features/auth/LogoutButton.tsx'
+import { PageHeader } from '../features/layout/PageHeader.tsx'
 import { useCalendarStatus } from '../hooks/useCalendarStatus.ts'
 
 interface TechnicianPageProps {
@@ -14,14 +13,7 @@ export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
 
   return (
     <div className="page">
-      <header className="page__header">
-        <h2>Technician Dashboard</h2>
-        <div className="page__header-right">
-          {email && <span className="page__email">{email}</span>}
-          <Link to="/profile" className="btn btn-secondary">Profile</Link>
-          <LogoutButton />
-        </div>
-      </header>
+      <PageHeader title="Technician Dashboard" email={email} />
 
       <p className="page__id">
         Technician ID: <code>{technicianId}</code>

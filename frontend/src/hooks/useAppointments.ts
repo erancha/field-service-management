@@ -7,6 +7,7 @@ import {
   addAppointmentDetails,
 } from '../api/scheduling.ts'
 import type { CreateAppointmentRequest, RescheduleRequest } from '../api/types.ts'
+import { errorMessage } from '../utils/errors.ts'
 
 export interface UseAppointmentsResult {
   appointment: Appointment | null
@@ -34,7 +35,7 @@ export function useAppointments(): UseAppointmentsResult {
     try {
       return await action()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      setError(errorMessage(err, 'An error occurred'))
       return undefined
     } finally {
       setLoading(false)

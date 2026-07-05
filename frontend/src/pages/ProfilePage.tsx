@@ -1,7 +1,7 @@
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../features/auth/authContext.ts'
 import { ProfileForm } from '../features/profile/ProfileForm.tsx'
-import { LogoutButton } from '../features/auth/LogoutButton.tsx'
+import { PageHeader } from '../features/layout/PageHeader.tsx'
 
 export function ProfilePage() {
   const { auth } = useAuth()
@@ -17,13 +17,7 @@ export function ProfilePage() {
   const { user } = auth
   return (
     <div className="page">
-      <header className="page__header">
-        <h2>Your profile</h2>
-        <div className="page__header-right">
-          <span className="page__email">{user.email}</span>
-          <LogoutButton />
-        </div>
-      </header>
+      <PageHeader title="Your profile" email={user.email} profileLink={false} />
       <ProfileForm user={user} onSaved={() => navigate('/')} />
       <div className="page__nav">
         <Link to="/" className="btn btn-secondary">

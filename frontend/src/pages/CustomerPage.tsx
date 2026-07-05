@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import type { ServiceCall } from '../api/types.ts'
 import { OpenServiceCall } from '../features/customer/OpenServiceCall.tsx'
 import { BookFlow } from '../features/customer/BookFlow.tsx'
-import { LogoutButton } from '../features/auth/LogoutButton.tsx'
+import { PageHeader } from '../features/layout/PageHeader.tsx'
 
 interface CustomerPageProps {
   customerId: string
@@ -23,14 +22,7 @@ export function CustomerPage({ customerId, email }: CustomerPageProps) {
 
   return (
     <div className="page">
-      <header className="page__header">
-        <h2>Customer Dashboard</h2>
-        <div className="page__header-right">
-          {email && <span className="page__email">{email}</span>}
-          <Link to="/profile" className="btn btn-secondary">Profile</Link>
-          <LogoutButton />
-        </div>
-      </header>
+      <PageHeader title="Customer Dashboard" email={email} />
 
       <p className="page__id">Customer ID: <code>{customerId}</code></p>
 

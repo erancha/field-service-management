@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ServiceCall, PooledSlot } from '../../api/types.ts'
-import { usePooledAvailability } from '../../hooks/usePooledAvailability.ts'
+import { usePooledAvailability } from '../../hooks/useAvailability.ts'
 import { useAppointments } from '../../hooks/useAppointments.ts'
 import { PooledSlotPicker } from '../../components/PooledSlotPicker.tsx'
 import { Button } from '../../components/Button.tsx'

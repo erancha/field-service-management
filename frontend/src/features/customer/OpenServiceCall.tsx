@@ -3,6 +3,7 @@ import { createServiceCall } from '../../api/scheduling.ts'
 import type { ServiceCall } from '../../api/types.ts'
 import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
+import { errorMessage } from '../../utils/errors.ts'
 
 interface OpenServiceCallProps {
   onCreated: (serviceCall: ServiceCall) => void
@@ -21,7 +22,7 @@ export function OpenServiceCall({ onCreated }: OpenServiceCallProps) {
       const sc = await createServiceCall({ description })
       onCreated(sc)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create service call')
+      setError(errorMessage(err, 'Failed to create service call'))
     } finally {
       setLoading(false)
     }

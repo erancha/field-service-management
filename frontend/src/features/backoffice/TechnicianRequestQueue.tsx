@@ -7,6 +7,7 @@ import {
 } from '../../api/backoffice.ts'
 import { useEventStream } from '../../hooks/useEventStream.ts'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
+import { errorMessage } from '../../utils/errors.ts'
 
 /**
  * Live back-office queue of technicians awaiting approval.
@@ -23,7 +24,7 @@ export function TechnicianRequestQueue() {
   useEffect(() => {
     fetchTechnicianRequests()
       .then(setRequests)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load requests'))
+      .catch((e) => setError(errorMessage(e, 'Failed to load requests')))
   }, [])
 
   const removeById = useCallback((userId: string) => {
@@ -49,7 +50,7 @@ export function TechnicianRequestQueue() {
       await (approve ? approveTechnicianRequest(userId) : rejectTechnicianRequest(userId))
       removeById(userId)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed')
+      setError(errorMessage(e, 'Action failed'))
     } finally {
       setBusyId(null)
     }
