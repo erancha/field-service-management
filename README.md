@@ -4,7 +4,7 @@ A platform for service agencies (think elevator or appliance maintenance) that r
 lifecycle from a single source of truth. It is built **slice by slice**, each module getting its own
 design → plan → implementation cycle.
 
-**Contents:** [Status](#status) · [Vision](#the-full-vision) · [Overview](#overview) · [Architecture](#architecture) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Security](#security--authentication) · [Communication](#communication-rest--sse) · [Database schema](#database-schema)
+**Contents:** [Status](#status) · [Vision](#the-full-vision) · [Overview](#overview) · [Architecture](#architecture) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema)
 
 ## Status
 
