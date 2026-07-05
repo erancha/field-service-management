@@ -13,6 +13,7 @@ Public types re-exported here:
 - SchedulingError, InvalidTimeRange, InvalidTransition, NotFoundError,
   SlotUnavailable, IncompleteContactInfo: error hierarchy
 - generate_slots: deterministic slot generation for technician availability
+- build_ical_uid, parse_ical_uid: identity scheme tying appointments to calendar events
 """
 
 from fsm.scheduling.domain.errors import (
@@ -29,6 +30,7 @@ from fsm.scheduling.domain.working_hours import DailyHours, WeeklyWorkingHours
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.availability import generate_slots
+from fsm.scheduling.domain.calendar_identity import build_ical_uid, parse_ical_uid
 
 __all__ = [
     "SchedulingError",
@@ -46,4 +48,6 @@ __all__ = [
     "Appointment",
     "AppointmentStatus",
     "generate_slots",
+    "build_ical_uid",
+    "parse_ical_uid",
 ]

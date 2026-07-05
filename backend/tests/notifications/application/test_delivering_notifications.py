@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.notifications.domain.notification import Notification, NotificationKind
 
@@ -122,7 +123,8 @@ _FULL_CTX = AppointmentContext(
 
 
 def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=_FULL_CTX,
-          organizer="ops@fsm.example", zone: timezone = timezone.utc):
+          organizer="ops@fsm.example", zone: timezone = timezone.utc,
+          ical_uid=build_ical_uid):
     from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
 
     fixed_time = datetime(2025, 6, 10, 9, 0, tzinfo=timezone.utc)
@@ -131,6 +133,7 @@ def _port(appt, feed_repo, email_sender, emails: dict[uuid.UUID, str], context=_
         email_sender=email_sender,
         recipient_email=lambda uid: emails.get(uid),
         context_resolver=lambda _appt: context,
+        ical_uid=ical_uid,
         local_zone=lambda _technician_id: zone,
         organizer_address=organizer,
         clock=lambda: fixed_time,
@@ -468,6 +471,19 @@ class TestAppointmentUpdated:
 
 
 class TestIcsInvitation:
+    def test_customer_ics_uid_comes_from_the_injected_builder(self):
+        cust_id = uuid.uuid4()
+        appt = _make_appointment(customer_id=cust_id)
+        sender = FakeEmailSender()
+        port = _port(appt, FakeFeedRepository(), sender, {cust_id: "cara@example.com"},
+                     ical_uid=lambda appt_id: f"test-{appt_id}@example.test")
+
+        port.appointment_booked(appt)
+
+        cust = next(m for m in sender.sent if m["to"] == "cara@example.com")
+        assert f"UID:test-{appt.id}@example.test" in cust["ics"]
+
+
     def test_booked_customer_ics_is_a_request_addressed_to_the_customer(self):
         cust_id = uuid.uuid4()
         appt = _make_appointment(customer_id=cust_id)

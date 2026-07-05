@@ -4,8 +4,8 @@ CalendarProjectionDispatcher processes one outbox entry per transaction.
 Each iteration: open a UoW, claim one PENDING entry (SKIP LOCKED), perform the
 calendar operation, write back any side-effects (e.g. external_event_id), and
 commit. A crash between the calendar call and commit leaves at most one entry
-PENDING and a retry can't duplicate the event because create_event sets a
-deterministic iCalUID (fsm-{appointment_id}@fsm.local) and calls import_event,
+PENDING and a retry can't duplicate the event because create_event sets the
+deterministic iCalUID (built by domain.calendar_identity) and calls import_event,
 which upserts by iCalUID rather than blindly inserting.
 
 Retry policy (see ports/outbox.py): transient failures keep the entry PENDING

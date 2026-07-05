@@ -53,13 +53,16 @@ def build_ics(
     appointment,
     context: AppointmentContextView,
     *,
+    uid: str,
     method: str = "REQUEST",
     organizer: str | None = None,
     attendee: str | None = None,
 ) -> str:
     """Return a VCALENDAR string with one VEVENT describing the appointment.
 
-    UID is deterministic (fsm-{appointment_id}@fsm.local); DTSTART/DTEND/DTSTAMP use UTC Zulu.
+    uid is the event's UID line verbatim; the caller supplies it because the identity scheme
+    tying an appointment to its calendar event is owned by the scheduling domain, which the
+    notifications context may not import. DTSTART/DTEND/DTSTAMP use UTC Zulu.
     DTSTAMP is the appointment's updated_at, so it advances on every change rather than staying
     pinned to DTSTART. SEQUENCE is int(updated_at − created_at), so a later change carries a
     higher value and clients treat the re-sent invitation as an update rather than a duplicate.
@@ -82,7 +85,6 @@ def build_ics(
     def _fmt(dt) -> str:
         return dt.strftime("%Y%m%dT%H%M%SZ")
 
-    uid = f"fsm-{appointment.id}@fsm.local"
     dtstart = _fmt(start)
     dtend = _fmt(end)
     # SEQUENCE and DTSTAMP both key off updated_at, which must be non-decreasing across an

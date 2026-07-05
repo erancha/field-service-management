@@ -78,6 +78,10 @@ class DeliveringNotificationPort:
     resolver never raises: a failed lookup yields a visible placeholder for fields required on
     this surface and None for optional ones, so the port calls it unguarded.
 
+    ical_uid maps an appointment id to the UID stamped on outgoing ICS invitations. It is
+    injected because the scheme is owned by the scheduling domain (the same UID identifies the
+    appointment's Google Calendar projection), which notifications may not import.
+
     organizer_address is the email address used as the ICS ORGANIZER, matching the SMTP From.
     When set, appointment notifications include iTIP invitations (REQUEST for booking/reschedule,
     CANCEL for cancellation); otherwise plain events are sent.
@@ -98,6 +102,7 @@ class DeliveringNotificationPort:
         recipient_email: Callable[[uuid.UUID], str | None],
         context_resolver: Callable[[object], AppointmentContextView],
         *,
+        ical_uid: Callable[[uuid.UUID], str],
         local_zone: Callable[[uuid.UUID], tzinfo],
         organizer_address: str | None = None,
         clock: Callable[[], datetime] = _utc_now,
@@ -106,6 +111,7 @@ class DeliveringNotificationPort:
         self._email_sender = email_sender
         self._recipient_email = recipient_email
         self._context_resolver = context_resolver
+        self._ical_uid = ical_uid
         self._local_zone = local_zone
         self._organizer_address = organizer_address
         self._clock = clock
@@ -192,7 +198,7 @@ class DeliveringNotificationPort:
         rendered_body = body(context)
         customer_email = self._recipient_email(appointment.customer_id)
         ics = build_ics(
-            appointment, context,
+            appointment, context, uid=self._ical_uid(appointment.id),
             method=ics_method, organizer=self._organizer_address, attendee=customer_email,
         )
 

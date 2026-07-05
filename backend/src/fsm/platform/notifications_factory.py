@@ -24,6 +24,7 @@ from fsm.platform.context_rendering import required_field
 from fsm.platform.identity_lookup import load_user
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
 from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
+from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.notifications import NotificationPort
 
@@ -114,6 +115,7 @@ def build_notifications(session: Session, settings) -> NotificationPort:
         email_sender=email_sender,
         recipient_email=recipient_email,
         context_resolver=appointment_context,
+        ical_uid=build_ical_uid,
         local_zone=local_zone,
         organizer_address=sender_address,
     )

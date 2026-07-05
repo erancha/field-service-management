@@ -6,21 +6,15 @@ downstream reconciliation only sees changes that are owned by this system.
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fsm.calendar.ports.client import GoogleCalendarClient
+from fsm.scheduling.domain import parse_ical_uid
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.inbound import InboundEventChange
 
 _log = logging.getLogger(__name__)
-
-# iCalUID pattern for FSM-owned calendar events: fsm-{uuid}@fsm.local
-_ICALUID_RE = re.compile(
-    r"^fsm-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@fsm\.local$",
-    re.IGNORECASE,
-)
 
 
 def _parse_utc(value: str) -> datetime:
@@ -37,10 +31,7 @@ def _extract_appointment_id(raw_event: dict) -> UUID | None:
     ical_uid = raw_event.get("iCalUID")
     if not ical_uid:
         return None
-    match = _ICALUID_RE.match(ical_uid)
-    if match is None:
-        return None
-    return UUID(match.group(1))
+    return parse_ical_uid(ical_uid)
 
 
 def _map_event(raw_event: dict) -> InboundEventChange | None:

@@ -8,6 +8,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fsm.calendar.ports.client import GoogleCalendarClient
+from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment import Appointment
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
@@ -35,7 +36,7 @@ class GoogleCalendarAdapter:
 
     def create_event(self, appointment: Appointment, context: AppointmentContext) -> str:
         body = self._build_body(appointment, context)
-        body["iCalUID"] = f"fsm-{appointment.id}@fsm.local"
+        body["iCalUID"] = build_ical_uid(appointment.id)
         result = self._client.import_event(self._calendar_id, body)
         return result["id"]
 
