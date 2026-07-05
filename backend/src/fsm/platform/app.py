@@ -51,6 +51,7 @@ def create_app(
         app.add_middleware(
             SessionMiddleware,
             secret_key=settings.session_secret.get_secret_value(),
+            https_only=settings.app_env not in ("local", "test"),
         )
 
     if settings.fsm_dispatch_enabled:

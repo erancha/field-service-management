@@ -28,6 +28,30 @@ def test_landing_page_reflects_the_configured_role(monkeypatch):
     assert "technician" in response.text
 
 
+def _settings_with_session(app_env: str) -> Settings:
+    return Settings(
+        database_url="postgresql+psycopg://fsm:fsm@localhost:5432/fsm",
+        app_env=app_env,
+        session_secret="test-session-secret-32-bytes-long!!",
+    )
+
+
+@pytest.mark.parametrize("app_env", ["staging", "prod"])
+def test_session_cookie_is_secure_outside_local_and_test(app_env):
+    app = create_app(settings=_settings_with_session(app_env))
+
+    (middleware,) = app.user_middleware
+    assert middleware.kwargs["https_only"] is True
+
+
+@pytest.mark.parametrize("app_env", ["local", "test"])
+def test_session_cookie_is_not_secure_for_local_and_test(app_env):
+    app = create_app(settings=_settings_with_session(app_env))
+
+    (middleware,) = app.user_middleware
+    assert middleware.kwargs["https_only"] is False
+
+
 @pytest.fixture(scope="module")
 def real_session_factory():
     with PostgresContainer("postgres:16", driver="psycopg") as postgres:
