@@ -49,10 +49,16 @@ run_backend() {
 run_frontend() {
   echo "==> Frontend"
   if ! command -v npm >/dev/null 2>&1; then
+    # Skipping is a dev convenience only; under CI a missing npm must fail, not pass silently.
+    if [ -n "${CI:-}" ]; then
+      echo "npm not found and CI is set — frontend checks cannot run." >&2
+      return 1
+    fi
     echo "npm not found — skipping frontend checks."
     return 0
   fi
-  [ -d "$FRONTEND/node_modules" ] || ( cd "$FRONTEND" && npm install --no-audit --no-fund )
+  # npm ci installs the lockfile verbatim; npm install may re-resolve and mutate it.
+  [ -d "$FRONTEND/node_modules" ] || ( cd "$FRONTEND" && npm ci --no-audit --no-fund )
   echo "--> typecheck (tsc --noEmit)"
   ( cd "$FRONTEND" && npx tsc --noEmit )
   echo "--> lint (oxlint)"
