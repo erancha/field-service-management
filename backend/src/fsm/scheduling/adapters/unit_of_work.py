@@ -17,12 +17,20 @@ from fsm.scheduling.adapters.repositories import (
     SqlAlchemyAppointmentRepository,
     SqlAlchemyServiceCallRepository,
 )
+from fsm.scheduling.ports.outbox import OutboxRepository
+from fsm.scheduling.ports.repositories import AppointmentRepository, ServiceCallRepository
 
 _log = logging.getLogger(__name__)
 
 
 class SqlAlchemyUnitOfWork:
     """Context-manager that binds all three scheduling repositories to one transaction."""
+
+    # Declared as the port types so this class satisfies the UnitOfWork protocol, whose
+    # plain attributes are invariant. Bound to fresh repositories on every __enter__.
+    service_calls: ServiceCallRepository
+    appointments: AppointmentRepository
+    outbox: OutboxRepository
 
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory

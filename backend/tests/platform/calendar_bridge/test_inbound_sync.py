@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-import pytest
 
 from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 from sqlalchemy import Index, String
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
@@ -22,7 +23,7 @@ class UserRow(Base):
 
     __tablename__ = "app_user"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     google_sub: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     email: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -31,7 +32,7 @@ class UserRow(Base):
     role_decided_at: Mapped[dt.datetime | None] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True
     )
-    role_decided_by: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    role_decided_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     address: Mapped[str | None] = mapped_column(String, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)

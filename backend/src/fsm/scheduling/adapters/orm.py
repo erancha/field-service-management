@@ -5,7 +5,8 @@ dataclasses; the repositories map between these rows and domain objects.
 """
 from __future__ import annotations
 
-from datetime import date, time
+import uuid
+from datetime import date, datetime, time
 
 from sqlalchemy import Date, Index, Integer, PrimaryKeyConstraint, SmallInteger, String, Text, Time
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
@@ -20,11 +21,11 @@ class ServiceCallRow(Base):
 
     __tablename__ = "service_call"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    customer_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class AppointmentRow(Base):
@@ -37,17 +38,17 @@ class AppointmentRow(Base):
 
     __tablename__ = "appointment"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    service_call_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    technician_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    customer_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    start_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    end_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    service_call_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    technician_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    start_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    end_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     details: Mapped[str | None] = mapped_column(String, nullable=True)
     external_event_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    updated_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class OutboxRow(Base):
@@ -61,16 +62,16 @@ class OutboxRow(Base):
 
     __tablename__ = "calendar_outbox"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     operation: Mapped[str] = mapped_column(String, nullable=False)
-    appointment_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    appointment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     external_event_id: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[TIMESTAMP] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
-    processed_at: Mapped[TIMESTAMP | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -87,10 +88,10 @@ class AppointmentAuditRow(Base):
         Index("ix_appointment_audit_appointment_id", "appointment_id"),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    appointment_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    appointment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     action: Mapped[str] = mapped_column(String, nullable=False)
-    occurred_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class HolidayRow(Base):
@@ -116,7 +117,7 @@ class TimeOffRow(Base):
     __tablename__ = "time_off"
     __table_args__ = (PrimaryKeyConstraint("technician_id", "off_date"),)
 
-    technician_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    technician_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     off_date: Mapped[date] = mapped_column(Date, nullable=False)
 
 
@@ -130,7 +131,7 @@ class WorkingHoursRow(Base):
     __tablename__ = "working_hours"
     __table_args__ = (PrimaryKeyConstraint("technician_id", "weekday"),)
 
-    technician_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    technician_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -144,5 +145,5 @@ class TechnicianTimezoneRow(Base):
 
     __tablename__ = "technician_timezone"
 
-    technician_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    technician_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     timezone: Mapped[str] = mapped_column(Text, nullable=False)

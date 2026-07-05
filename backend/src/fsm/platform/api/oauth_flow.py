@@ -74,7 +74,7 @@ def begin_authorization(
 def state_matches(request: Request, state: str, session_prefix: str) -> bool:
     """Constant-time check of the callback state against the one minted at login."""
     expected = request.session.get(_state_key(session_prefix))
-    return bool(expected) and secrets.compare_digest(expected, state)
+    return isinstance(expected, str) and bool(expected) and secrets.compare_digest(expected, state)
 
 
 def restore_code_verifier(flow, request: Request, session_prefix: str) -> None:

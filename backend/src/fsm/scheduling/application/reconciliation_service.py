@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from fsm.scheduling.domain.appointment import AppointmentStatus
-from fsm.scheduling.domain.errors import NotFoundError, SlotUnavailable
+from fsm.scheduling.domain.errors import NotFoundError
 from fsm.scheduling.ports.inbound import InboundEventChange
 from fsm.scheduling.ports.notifications import NotificationPort
 from fsm.scheduling.ports.outbox import OutboxOperation, OutboxRepository

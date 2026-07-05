@@ -16,8 +16,8 @@ jobs:
           # Matches the floor in backend/pyproject.toml and the python:3.12-slim image the app
           # deploys on — CI proves exactly what ships.
           python-version: "3.12"
-      # import-linter boundary contracts + the full pytest suite (unit, integration via a
-      # testcontainers Postgres on the runner's Docker, API, contract).
+      # ruff lint + mypy typecheck + import-linter boundary contracts + the full pytest suite
+      # (unit, integration via a testcontainers Postgres on the runner's Docker, API, contract).
       - name: Backend tests
         run: bash scripts/test.sh backend
 

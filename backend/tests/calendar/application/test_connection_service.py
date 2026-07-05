@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
 
 from fsm.calendar.application.connection_service import CalendarConnectionService
 from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus

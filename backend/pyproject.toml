@@ -28,6 +28,8 @@ dev = [
     "httpx>=0.27",
     "import-linter>=2.0",
     "testcontainers[postgres]>=4.5",
+    "ruff>=0.15",
+    "mypy>=2.0",
 ]
 
 [project.urls]
@@ -48,6 +50,20 @@ filterwarnings = [
     # httpx2). Not actionable in our code; remove when FastAPI/Starlette complete that migration.
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",
 ]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.mypy]
+# Type-checks src only: tests exercise typed code but lean on fixtures and monkeypatching that
+# static analysis cannot follow without heavy annotation churn.
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Google's API client libraries ship no py.typed marker and have no maintained stubs.
+module = ["googleapiclient.*", "google_auth_oauthlib.*"]
+ignore_missing_imports = true
 
 [tool.importlinter]
 root_packages = ["fsm"]

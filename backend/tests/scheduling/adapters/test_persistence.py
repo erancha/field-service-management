@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import pytest
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
@@ -492,7 +492,6 @@ class TestSqlAlchemyOutboxRepository:
 
     def test_mark_failed_keeps_pending_below_cap(self, session):
         """mark_failed keeps the entry PENDING while attempts < MAX_ATTEMPTS (retryable)."""
-        from fsm.scheduling.ports.outbox import MAX_ATTEMPTS
         repo = SqlAlchemyOutboxRepository(session)
         appt_id = uuid.uuid4()
         repo.enqueue(OutboxOperation.CREATE, appt_id)

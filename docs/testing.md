@@ -16,6 +16,11 @@ dependencies. The same gates run in CI (`.github/workflows/ci.yml`).
 
 ## Backend (`backend/tests`, pytest)
 
+Before pytest, `scripts/test.sh backend` runs three static gates: **lint** (`ruff check src tests`),
+**typecheck** (`mypy`, scoped to `src` — tests lean on fixtures and monkeypatching that static
+analysis cannot follow), and the **import-linter** boundary contracts described under
+[Architecture tests](#architecture-tests).
+
 Tests mirror the source layout — one package per bounded context (`identity`, `scheduling`,
 `calendar`, `notifications`, `platform`) — and fall into five kinds.
 

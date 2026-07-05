@@ -6,7 +6,7 @@ as the contract test suite that any future concrete adapter must also satisfy.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 

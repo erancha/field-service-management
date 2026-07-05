@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-import pytest
 
 from fsm.scheduling.domain import TimeRange, WeeklyWorkingHours
 from fsm.scheduling.domain.availability import generate_slots
@@ -316,7 +315,6 @@ def test_many_busy_intervals_sweep_matches_naive_filter():
             from datetime import datetime as _datetime
             s = _datetime(current.year, current.month, current.day, daily.start.hour, daily.start.minute)
             duration = timedelta(hours=1)
-            import datetime as _dt_mod
             e_limit = _datetime(current.year, current.month, current.day, daily.end.hour, daily.end.minute)
             while s + duration <= e_limit:
                 all_slots.append(TimeRange(start=s.replace(tzinfo=UTC), end=(s + duration).replace(tzinfo=UTC)))

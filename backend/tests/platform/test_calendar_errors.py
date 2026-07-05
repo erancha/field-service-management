@@ -1,7 +1,6 @@
 """Unit tests for is_auth_error in calendar_errors."""
 from __future__ import annotations
 
-import pytest
 
 from fsm.platform.calendar_errors import is_auth_error
 

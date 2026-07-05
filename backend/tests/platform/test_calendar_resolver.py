@@ -144,7 +144,6 @@ class TestConfiguredSettings:
         from cryptography.fernet import Fernet
 
         repo = FakeCalendarConnectionRepository()
-        key = _VALID_FERNET_KEY
         # Fernet requires a proper key; use a real one to make encryption work.
         real_key = Fernet.generate_key().decode()
 
@@ -183,7 +182,6 @@ class TestConfiguredSettings:
             google_client_secret=SecretStr("test-secret"),
             fsm_token_key=SecretStr(real_key),
         )
-        repo = FakeCalendarConnectionRepository()
 
         def session_factory():
             class _Sess:
@@ -273,7 +271,6 @@ class TestConfiguredSettings:
 def pg_engine():
     from alembic import command as alembic_command
     from alembic.config import Config as AlembicConfig
-    from sqlalchemy import create_engine
     from testcontainers.postgres import PostgresContainer
 
     with PostgresContainer("postgres:16", driver="psycopg") as pg:
@@ -313,7 +310,7 @@ class TestCalendarResolverIntegration:
 
         from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
         from fsm.calendar.adapters.token_cipher import FernetTokenCipher
-        from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+        from fsm.calendar.domain.connection import CalendarConnection
 
         real_key = Fernet.generate_key().decode()
         settings = Settings(

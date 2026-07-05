@@ -36,7 +36,9 @@ def create_app(
     role = os.environ.get("FSM_ROLE", "unknown")
     app = FastAPI(title=f"Field Service Management ({role})")
     app.state.session_factory = session_factory
-    app.add_exception_handler(SchedulingError, handle_scheduling_error)
+    # Starlette types handlers as taking the Exception base, but it only invokes this one with
+    # the SchedulingError instances it is registered for.
+    app.add_exception_handler(SchedulingError, handle_scheduling_error)  # type: ignore[arg-type]
     app.include_router(scheduling_router)
     app.include_router(auth_router)
     app.include_router(calendar_router)

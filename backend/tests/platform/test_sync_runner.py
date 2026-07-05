@@ -84,7 +84,6 @@ class TestPollOnce:
     def test_reschedule_applied_and_sync_token_persisted(
         self, pg_session_factory, pg_settings
     ):
-        from cryptography.fernet import Fernet
 
         appt_id = uuid.uuid4()
         tech_id = uuid.uuid4()

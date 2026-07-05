@@ -4,7 +4,7 @@ Targets a single configured calendar identified by calendar_id.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from fsm.calendar.ports.client import GoogleCalendarClient
@@ -76,12 +76,12 @@ class GoogleCalendarAdapter:
         # The technician's event echoes the name and phone shown to the customer (grouped as one
         # block) so the technician can confirm the customer was given correct contact details.
         technician_lines = [
-            line
-            for line in (
-                f"Technician: {context.technician_name.strip()}" if (context.technician_name or "").strip() else "",
-                f"Technician phone: {context.technician_phone.strip()}" if (context.technician_phone or "").strip() else "",
+            f"{label}: {value.strip()}"
+            for label, value in (
+                ("Technician", context.technician_name),
+                ("Technician phone", context.technician_phone),
             )
-            if line
+            if value and value.strip()
         ]
         if technician_lines:
             description_parts.append("\n".join(technician_lines))

@@ -110,7 +110,9 @@ def build_technician_context_resolver(session_factory) -> Callable[[UUID], Appoi
 
 def build_dispatcher(session_factory, settings) -> CalendarProjectionDispatcher:
     """Compose a CalendarProjectionDispatcher wired to the real DB and calendar resolver."""
-    uow_factory = lambda: SqlAlchemyUnitOfWork(session_factory)
+    def uow_factory() -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(session_factory)
+
     calendar_resolver = build_calendar_resolver(session_factory, settings)
     on_calendar_error = make_auth_disconnect_handler(session_factory, settings)
     customer_context_resolver = build_customer_context_resolver(session_factory)

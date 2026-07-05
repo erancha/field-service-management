@@ -6,10 +6,10 @@
 #   ./scripts/test.sh backend    # backend only  (alias: be)
 #   ./scripts/test.sh frontend   # frontend only (alias: fe)
 #
-# Backend: import-linter boundary contracts + pytest (unit, integration, API, contract,
-# architecture). Integration tests start ephemeral PostgreSQL via testcontainers, so Docker must be
-# running. Frontend: typecheck (tsc), lint (oxlint), unit/component tests (vitest), and a
-# production build (vite).
+# Backend: lint (ruff), typecheck (mypy), import-linter boundary contracts, and pytest (unit,
+# integration, API, contract, architecture). Integration tests start ephemeral PostgreSQL via
+# testcontainers, so Docker must be running. Frontend: typecheck (tsc), lint (oxlint),
+# unit/component tests (vitest), and a production build (vite).
 # The test taxonomy is documented in docs/testing.md.
 set -euo pipefail
 
@@ -34,8 +34,12 @@ done
 run_backend() {
   echo "==> Backend"
   [ -d "$VENV" ] || python3 -m venv "$VENV"
-  "$VENV/bin/python" -c "import fsm" 2>/dev/null \
+  { "$VENV/bin/python" -c "import fsm" 2>/dev/null && [ -x "$VENV/bin/ruff" ] && [ -x "$VENV/bin/mypy" ]; } \
     || ( cd "$BACKEND" && "$VENV/bin/pip" install --quiet --disable-pip-version-check -e ".[dev]" )
+  echo "--> lint (ruff)"
+  ( cd "$BACKEND" && "$VENV/bin/ruff" check src tests )
+  echo "--> typecheck (mypy)"
+  ( cd "$BACKEND" && "$VENV/bin/mypy" )
   echo "--> import-linter (architecture boundary contracts)"
   ( cd "$BACKEND" && "$VENV/bin/lint-imports" )
   echo "--> pytest (unit + integration + API + contract)"

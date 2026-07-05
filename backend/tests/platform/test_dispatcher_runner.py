@@ -16,7 +16,6 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from fsm.platform.config import Settings
-from fsm.platform.db import create_engine_from_settings, session_factory
 from fsm.platform.dispatcher_runner import build_dispatcher, make_auth_disconnect_handler, run_forever
 from fsm.calendar.adapters.orm import CalendarConnectionRow
 from fsm.scheduling.adapters.orm import AppointmentRow, OutboxRow, ServiceCallRow

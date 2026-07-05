@@ -10,8 +10,6 @@ import pytest
 
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.notifications.domain.notification import Notification, NotificationKind
-from fsm.notifications.ports.feed_repository import NotificationFeedRepository
-from fsm.notifications.ports.email_sender import EmailSender
 
 
 # ---------------------------------------------------------------------------

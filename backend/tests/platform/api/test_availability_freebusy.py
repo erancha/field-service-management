@@ -28,7 +28,6 @@ from fsm.calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
-from fsm.scheduling.domain.time_range import TimeRange
 
 
 # ---------------------------------------------------------------------------

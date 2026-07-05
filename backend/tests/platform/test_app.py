@@ -1,7 +1,5 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
 from fsm.platform.app import create_app

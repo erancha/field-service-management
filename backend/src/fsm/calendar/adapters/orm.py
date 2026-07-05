@@ -5,6 +5,8 @@ calendar connection. The unique index enforces this at the database level.
 """
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,7 +24,7 @@ class CalendarConnectionRow(Base):
 
     __tablename__ = "calendar_connection"
 
-    technician_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    technician_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     fsm_calendar_id: Mapped[str] = mapped_column(String, nullable=False)
     encrypted_refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)

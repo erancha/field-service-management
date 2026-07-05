@@ -8,7 +8,6 @@ run against real PG without hitting real Google.
 from __future__ import annotations
 
 import os
-import uuid
 from unittest.mock import MagicMock
 
 import pytest

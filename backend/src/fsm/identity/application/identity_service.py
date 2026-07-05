@@ -89,6 +89,7 @@ class IdentityService:
         when a back-office sign-in is not on admin_emails (no user is created in that case). The
         returned outcome reports whether the back-office queue gained or lost a pending request.
         """
+        assert self._auth is not None, "sign_in requires an AuthPort; approval-only flows omit it"
         identity = self._auth.verify(credential)
         user = self._users.get_by_google_sub(identity.google_sub)
         if user is None:
@@ -105,6 +106,7 @@ class IdentityService:
                 self._users.add(user)
             except DuplicateGoogleSub:
                 user = self._users.get_by_google_sub(identity.google_sub)
+                assert user is not None, "DuplicateGoogleSub means the winning row exists"
                 return self._reconcile_existing(user, identity, host, admin_emails)
             return SignInOutcome(
                 user=user,

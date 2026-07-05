@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from fsm.notifications.adapters.feed_repository import SqlAlchemyNotificationFeedRepository
 from fsm.notifications.adapters.smtp_email_sender import LoggingEmailSender, SmtpEmailSender
 from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
+from fsm.notifications.ports.email_sender import EmailSender
 from fsm.platform.config import DEFAULT_TIMEZONE
 from fsm.platform.context_rendering import required_field
 from fsm.platform.identity_lookup import load_user
@@ -43,6 +44,7 @@ def build_notifications(session: Session, settings) -> NotificationPort:
     feed_repo = SqlAlchemyNotificationFeedRepository(session)
 
     sender_address = settings.smtp_sender_address
+    email_sender: EmailSender
     if settings.smtp_host and sender_address:
         password = (
             settings.smtp_password.get_secret_value()
