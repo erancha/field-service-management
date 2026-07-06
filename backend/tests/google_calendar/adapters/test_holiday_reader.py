@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fsm.calendar.adapters.holiday_reader import GoogleApiHolidayReader
+from fsm.google_calendar.adapters.holiday_reader import GoogleApiHolidayReader
 
 
 def _fake_service(pages: list[list[dict]]) -> object:

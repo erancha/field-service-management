@@ -15,8 +15,8 @@ import pytest
 from pydantic import SecretStr
 
 from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
-from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
-from fsm.calendar.domain.errors import NotFoundError
+from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+from fsm.google_calendar.domain.errors import NotFoundError
 from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.config import Settings
 from fsm.platform.dev_adapters import NullCalendarPort
@@ -156,7 +156,7 @@ class TestConfiguredSettings:
                     pass
 
                 def get(self_, model_cls, technician_id):
-                    from fsm.calendar.adapters.orm import CalendarConnectionRow
+                    from fsm.google_calendar.adapters.orm import CalendarConnectionRow
                     if technician_id in repo._connections:
                         conn = repo._connections[technician_id]
                         row = CalendarConnectionRow(
@@ -216,10 +216,10 @@ class TestConfiguredSettings:
 
         tech_id = uuid.uuid4()
         fsm_cal_id = "cal-abc-999"
-        cipher = __import__("fsm.calendar.adapters.token_cipher", fromlist=["FernetTokenCipher"]).FernetTokenCipher
+        cipher = __import__("fsm.google_calendar.adapters.token_cipher", fromlist=["FernetTokenCipher"]).FernetTokenCipher
         encrypted_token = cipher(real_key).encrypt("refresh-token-value")
 
-        from fsm.calendar.adapters.orm import CalendarConnectionRow
+        from fsm.google_calendar.adapters.orm import CalendarConnectionRow
 
         def session_factory():
             class _Sess:
@@ -308,9 +308,9 @@ class TestCalendarResolverIntegration:
     def test_connected_technician_resolves_to_google_adapter(self, pg_session):
         from cryptography.fernet import Fernet
 
-        from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
-        from fsm.calendar.adapters.token_cipher import FernetTokenCipher
-        from fsm.calendar.domain.connection import CalendarConnection
+        from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+        from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+        from fsm.google_calendar.domain.connection import CalendarConnection
 
         real_key = Fernet.generate_key().decode()
         settings = Settings(

@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fsm.calendar.ports.client import GoogleCalendarClient
+from fsm.google_calendar.ports.client import GoogleCalendarClient
 from fsm.scheduling.domain import parse_ical_uid
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.inbound import InboundEventChange

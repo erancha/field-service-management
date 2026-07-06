@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Protocol, runtime_checkable
 
-from fsm.calendar.domain.connection import CalendarConnection
+from fsm.google_calendar.domain.connection import CalendarConnection
 
 
 @runtime_checkable

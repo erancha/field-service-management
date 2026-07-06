@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from fsm.calendar.ports.client import GoogleCalendarClient
+from fsm.google_calendar.ports.client import GoogleCalendarClient
 from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.appointment_context import AppointmentContext

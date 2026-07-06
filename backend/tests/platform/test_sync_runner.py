@@ -18,7 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from fsm.platform.config import Settings
 from fsm.platform.sync_runner import poll_once
 from fsm.scheduling.adapters.orm import AppointmentRow
-from fsm.calendar.adapters.orm import CalendarConnectionRow
+from fsm.google_calendar.adapters.orm import CalendarConnectionRow
 
 
 _TZ = timezone.utc
@@ -91,7 +91,7 @@ class TestPollOnce:
         fake_refresh_token = "fake-refresh-token"
 
         fernet_key = pg_settings.fsm_token_key.get_secret_value()
-        from fsm.calendar.adapters.token_cipher import FernetTokenCipher
+        from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
         encrypted_token = FernetTokenCipher(fernet_key).encrypt(fake_refresh_token)
 
         # Seed a CONNECTED calendar connection and an appointment in committed transactions.
@@ -156,7 +156,7 @@ class TestPollOnce:
     ):
         """A connected technician whose list_changes raises an auth error results in
         the connection being marked DISCONNECTED, and poll_once does not raise."""
-        from fsm.calendar.adapters.token_cipher import FernetTokenCipher
+        from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 
         tech_id = uuid.uuid4()
         cal_id = f"cal-auth-err-{uuid.uuid4()}"

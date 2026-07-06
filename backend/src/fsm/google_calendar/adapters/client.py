@@ -1,6 +1,6 @@
 """Concrete Google Calendar client wrapping the googleapiclient discovery chain.
 
-Implements the GoogleCalendarClient port (fsm.calendar.ports.client); this is the only
+Implements the GoogleCalendarClient port (fsm.google_calendar.ports.client); this is the only
 module that touches the fluent API chain of a discovery service resource.
 """
 from __future__ import annotations

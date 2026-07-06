@@ -6,7 +6,7 @@ key-value context.
 
 Level policy: WARNING by default so routine runs stay quiet. FSM_LOG_LEVEL sets the root level
 per environment; FSM_LOG_LEVELS grants per-module levels as comma-separated pairs
-(e.g. "fsm.calendar=DEBUG,fsm.platform.sync_runner=INFO").
+(e.g. "fsm.google_calendar=DEBUG,fsm.platform.sync_runner=INFO").
 """
 from __future__ import annotations
 

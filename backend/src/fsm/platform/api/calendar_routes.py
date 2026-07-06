@@ -25,11 +25,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
-from fsm.calendar.adapters.token_cipher import FernetTokenCipher
-from fsm.calendar.application.connection_service import CalendarConnectionService
-from fsm.calendar.domain.errors import NotFoundError
-from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
+from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.google_calendar.application.connection_service import CalendarConnectionService
+from fsm.google_calendar.domain.errors import NotFoundError
+from fsm.google_calendar.scopes import CALENDAR_OAUTH_SCOPES
 from fsm.identity.domain.role import Role
 from fsm.platform.api.auth_deps import SessionUser, require_role
 from fsm.platform.api.oauth_flow import (
@@ -96,7 +96,7 @@ def _get_client_factory(app, settings) -> Callable:
     if override is not None:
         return override
 
-    from fsm.calendar.adapters.client_factory import build_calendar_client
+    from fsm.google_calendar.adapters.client_factory import build_calendar_client
 
     def _default_factory(refresh_token: str):
         return build_calendar_client(
@@ -214,7 +214,7 @@ def calendar_status(request: Request):
         except NotFoundError:
             return JSONResponse({"connected": False, "fsm_calendar_id": None})
 
-    from fsm.calendar.domain.connection import CalendarConnectionStatus
+    from fsm.google_calendar.domain.connection import CalendarConnectionStatus
 
     return JSONResponse(
         {

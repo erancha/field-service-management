@@ -2,8 +2,8 @@
 
 Exports the connection entity and its status enum, plus the domain error hierarchy.
 """
-from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
-from fsm.calendar.domain.errors import CalendarError, DuplicateTechnicianError, NotFoundError
+from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+from fsm.google_calendar.domain.errors import CalendarError, DuplicateTechnicianError, NotFoundError
 
 __all__ = [
     "CalendarConnection",

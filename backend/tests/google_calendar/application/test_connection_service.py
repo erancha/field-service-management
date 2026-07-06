@@ -4,9 +4,9 @@ from __future__ import annotations
 import uuid
 
 
-from fsm.calendar.application.connection_service import CalendarConnectionService
-from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
-from fsm.calendar.domain.errors import NotFoundError
+from fsm.google_calendar.application.connection_service import CalendarConnectionService
+from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+from fsm.google_calendar.domain.errors import NotFoundError
 
 
 class FakeCalendarConnectionRepository:

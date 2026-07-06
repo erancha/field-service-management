@@ -13,9 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from fsm.calendar.adapters.orm import CalendarConnectionRow
-from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
-from fsm.calendar.domain.errors import DuplicateTechnicianError, NotFoundError
+from fsm.google_calendar.adapters.orm import CalendarConnectionRow
+from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+from fsm.google_calendar.domain.errors import DuplicateTechnicianError, NotFoundError
 
 _log = logging.getLogger(__name__)
 

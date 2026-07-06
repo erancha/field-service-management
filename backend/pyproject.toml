@@ -85,14 +85,14 @@ name = "Platform composes independent contexts over the shared kernel"
 type = "layers"
 layers = [
     "fsm.platform",
-    "fsm.calendar | fsm.identity | fsm.notifications | fsm.scheduling",
+    "fsm.google_calendar | fsm.identity | fsm.notifications | fsm.scheduling",
     "fsm.shared",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Contexts follow hexagonal layering (adapters over application over ports over domain)"
 type = "layers"
-containers = ["fsm.calendar", "fsm.identity", "fsm.notifications", "fsm.scheduling"]
+containers = ["fsm.google_calendar", "fsm.identity", "fsm.notifications", "fsm.scheduling"]
 layers = [
     "adapters",
     "application",
@@ -104,9 +104,9 @@ layers = [
 name = "Inner layers stay pure: own context, abstractions, and the standard library only"
 type = "forbidden"
 source_modules = [
-    "fsm.calendar.domain",
-    "fsm.calendar.application",
-    "fsm.calendar.ports",
+    "fsm.google_calendar.domain",
+    "fsm.google_calendar.application",
+    "fsm.google_calendar.ports",
     "fsm.identity.domain",
     "fsm.identity.application",
     "fsm.identity.ports",
@@ -131,7 +131,7 @@ forbidden_modules = [
 name = "Neither contexts nor the shared kernel import the web framework"
 type = "forbidden"
 source_modules = [
-    "fsm.calendar",
+    "fsm.google_calendar",
     "fsm.identity",
     "fsm.notifications",
     "fsm.scheduling",

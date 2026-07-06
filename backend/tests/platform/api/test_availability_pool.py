@@ -18,9 +18,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
-from fsm.calendar.adapters.token_cipher import FernetTokenCipher
-from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
 from fsm.identity.domain.role import Role

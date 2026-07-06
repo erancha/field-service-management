@@ -31,7 +31,7 @@ def _request() -> SimpleNamespace:
 
 
 def test_calendar_client_factory_defaults_to_the_shared_token_uri():
-    from fsm.calendar.adapters.client_factory import build_calendar_client
+    from fsm.google_calendar.adapters.client_factory import build_calendar_client
     from fsm.shared.google_oauth import GOOGLE_TOKEN_URI
 
     default = inspect.signature(build_calendar_client).parameters["token_uri"].default

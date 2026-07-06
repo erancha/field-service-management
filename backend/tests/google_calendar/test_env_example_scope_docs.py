@@ -2,12 +2,12 @@
 
 The example file is the repo's designated config reference, so it must not drift back to describing
 the abandoned broad ``.../auth/calendar`` scope. These checks pin its calendar-scope prose to the
-contract enforced by ``fsm.calendar.scopes``.
+contract enforced by ``fsm.google_calendar.scopes``.
 """
 import re
 from pathlib import Path
 
-from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
+from fsm.google_calendar.scopes import CALENDAR_OAUTH_SCOPES
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
 
@@ -33,7 +33,7 @@ def test_documents_both_narrow_scopes():
 def test_points_at_live_scope_module_not_stale_files():
     """The scope pointer names the current definition site and drops the relocated stale ones."""
     text = _env_example_text()
-    assert "calendar/scopes.py" in text
+    assert "google_calendar/scopes.py" in text
     assert "client_factory.py" not in text
     assert "calendar_routes.py" not in text
 

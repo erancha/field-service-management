@@ -13,7 +13,7 @@ import threading
 from typing import Callable
 from uuid import UUID
 
-from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.platform.calendar_errors import is_auth_error
 from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.context_rendering import required_field

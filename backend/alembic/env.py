@@ -14,7 +14,7 @@ from sqlalchemy import engine_from_config, pool
 
 import fsm.identity.adapters.orm  # noqa: F401
 import fsm.scheduling.adapters.orm  # noqa: F401
-import fsm.calendar.adapters.orm  # noqa: F401
+import fsm.google_calendar.adapters.orm  # noqa: F401
 import fsm.notifications.adapters.orm  # noqa: F401
 
 from fsm.shared.db import Base

@@ -9,8 +9,8 @@ from __future__ import annotations
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-from fsm.calendar.adapters.client import GoogleApiCalendarClient
-from fsm.calendar.scopes import CALENDAR_OAUTH_SCOPES
+from fsm.google_calendar.adapters.client import GoogleApiCalendarClient
+from fsm.google_calendar.scopes import CALENDAR_OAUTH_SCOPES
 from fsm.shared.google_oauth import GOOGLE_TOKEN_URI
 
 

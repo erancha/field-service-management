@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from fsm.calendar.ports.client import GoogleCalendarClient
+from fsm.google_calendar.ports.client import GoogleCalendarClient
 from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment import Appointment
 from fsm.scheduling.domain.appointment_context import AppointmentContext

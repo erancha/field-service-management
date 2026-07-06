@@ -6,7 +6,7 @@ CONTEXTS = [
     "fsm",
     "fsm.identity",
     "fsm.scheduling",
-    "fsm.calendar",
+    "fsm.google_calendar",
     "fsm.notifications",
     "fsm.platform",
     "fsm.platform.calendar_bridge",

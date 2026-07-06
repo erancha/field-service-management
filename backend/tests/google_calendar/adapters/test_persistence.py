@@ -17,9 +17,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
-from fsm.calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
-from fsm.calendar.domain.errors import DuplicateTechnicianError, NotFoundError
+from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
+from fsm.google_calendar.domain.errors import DuplicateTechnicianError, NotFoundError
 
 
 def _make_connection(*, technician_id: uuid.UUID | None = None) -> CalendarConnection:

@@ -28,7 +28,7 @@ def refresh_holidays(
     Google fetch fails (existing cache stays intact).
     """
     if reader_factory is None:
-        from fsm.calendar.adapters.holiday_reader import build_holiday_reader
+        from fsm.google_calendar.adapters.holiday_reader import build_holiday_reader
         reader_factory = build_holiday_reader
 
     if not settings.google_api_key or not settings.holiday_calendar_id:

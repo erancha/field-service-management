@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
 
-from fsm.calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 
 
 class TestFernetTokenCipher:

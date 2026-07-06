@@ -10,11 +10,11 @@ from __future__ import annotations
 from typing import Callable
 from uuid import UUID
 
-from fsm.calendar.adapters.client_factory import build_calendar_client
+from fsm.google_calendar.adapters.client_factory import build_calendar_client
 from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
-from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
-from fsm.calendar.adapters.token_cipher import FernetTokenCipher
-from fsm.calendar.domain.errors import NotFoundError
+from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.google_calendar.domain.errors import NotFoundError
 from fsm.platform.dev_adapters import NullCalendarPort
 from fsm.scheduling.ports.calendar import CalendarPort
 

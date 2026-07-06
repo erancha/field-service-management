@@ -11,10 +11,10 @@ from __future__ import annotations
 import logging
 import threading
 
-from fsm.calendar.adapters.client_factory import build_calendar_client
+from fsm.google_calendar.adapters.client_factory import build_calendar_client
 from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter
-from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
-from fsm.calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.platform.calendar_errors import is_auth_error
 from fsm.platform.notifications_factory import build_notifications
 from fsm.scheduling.adapters.unit_of_work import SqlAlchemyUnitOfWork

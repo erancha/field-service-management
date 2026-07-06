@@ -135,9 +135,9 @@ ports-and-adapters (hexagonal) design:
 |---|---|
 | `identity` | Google OIDC sign-in, users, roles |
 | `scheduling` | service calls, appointments, availability, lifecycle — the core domain (no external I/O) |
-| `calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
+| `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
 | `notifications` | in-app feed + email/.ics behind `NotificationPort` |
-| `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the calendar context's client) |
+| `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the google_calendar context's client) |
 | `shared` | shared kernel: the declarative ORM `Base` and Google OAuth endpoint URIs — the only package a context may import from outside itself |
 
 ### Import rules
@@ -154,7 +154,7 @@ flowchart TD
         n_adapters[adapters] --> n_application[application] --> n_ports[ports] --> n_domain[domain]
     end
 
-    subgraph calendar["fsm.calendar"]
+    subgraph google_calendar["fsm.google_calendar"]
         direction TB
         c_adapters[adapters] --> c_application[application] --> c_ports[ports] --> c_domain[domain]
     end
@@ -172,7 +172,7 @@ flowchart TD
     shared["fsm.shared<br/>ORM Base, Google OAuth endpoint URIs"]
 
     platform --> notifications
-    platform --> calendar
+    platform --> google_calendar
     platform --> scheduling
     platform --> identity
     platform --> shared
@@ -189,8 +189,8 @@ libraries (SQLAlchemy, Google clients).
 
 Contexts therefore integrate without knowing each other. The consumer declares an interface in
 its own `ports` package (`scheduling.ports.CalendarPort`), and `platform` builds and injects the
-implementation (`platform.calendar_bridge.GoogleCalendarAdapter`, written against the calendar
-context's `GoogleCalendarClient` port). Application code receives its dependencies as constructor
+implementation (`platform.calendar_bridge.GoogleCalendarAdapter`, written against the
+google_calendar context's `GoogleCalendarClient` port). Application code receives its dependencies as constructor
 arguments and names only these interfaces, never concrete adapters.
 
 These rules are **enforced in CI**: the import-linter contracts in `backend/pyproject.toml`

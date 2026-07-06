@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from fsm.calendar.adapters.client import GoogleApiCalendarClient
-from fsm.calendar.adapters.client_factory import build_calendar_client
+from fsm.google_calendar.adapters.client import GoogleApiCalendarClient
+from fsm.google_calendar.adapters.client_factory import build_calendar_client
 
 
 def test_build_calendar_client_returns_google_api_client_wrapping_stub_service():
     stub_service = MagicMock()
 
-    with patch("fsm.calendar.adapters.client_factory.build") as mock_build:
+    with patch("fsm.google_calendar.adapters.client_factory.build") as mock_build:
         mock_build.return_value = stub_service
         client = build_calendar_client(
             refresh_token="rt-abc123",
@@ -31,9 +31,9 @@ def test_build_calendar_client_returns_google_api_client_wrapping_stub_service()
 def test_build_calendar_client_passes_correct_credentials_to_discovery_build():
     stub_service = MagicMock()
 
-    with patch("fsm.calendar.adapters.client_factory.build") as mock_build:
+    with patch("fsm.google_calendar.adapters.client_factory.build") as mock_build:
         mock_build.return_value = stub_service
-        with patch("fsm.calendar.adapters.client_factory.Credentials") as mock_creds_cls:
+        with patch("fsm.google_calendar.adapters.client_factory.Credentials") as mock_creds_cls:
             mock_creds_instance = MagicMock()
             mock_creds_cls.return_value = mock_creds_instance
             build_calendar_client(
@@ -64,9 +64,9 @@ def test_build_calendar_client_defaults_to_narrow_scopes():
     calendar.freebusy, never the broad .../auth/calendar scope, so a refresh token minted for this
     client can never read or modify the technician's other calendars.
     """
-    with patch("fsm.calendar.adapters.client_factory.build") as mock_build:
+    with patch("fsm.google_calendar.adapters.client_factory.build") as mock_build:
         mock_build.return_value = MagicMock()
-        with patch("fsm.calendar.adapters.client_factory.Credentials") as mock_creds_cls:
+        with patch("fsm.google_calendar.adapters.client_factory.Credentials") as mock_creds_cls:
             build_calendar_client(
                 refresh_token="rt-abc123",
                 client_id="cid",

@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 from fsm.platform.config import Settings
 from fsm.platform.dispatcher_runner import build_dispatcher, make_auth_disconnect_handler, run_forever
-from fsm.calendar.adapters.orm import CalendarConnectionRow
+from fsm.google_calendar.adapters.orm import CalendarConnectionRow
 from fsm.scheduling.adapters.orm import AppointmentRow, OutboxRow, ServiceCallRow
 
 
@@ -175,7 +175,7 @@ class TestAuthDisconnectOnDispatchError:
 
     def test_auth_error_disconnects_connection(self, pg_session_factory, pg_settings):
         from cryptography.fernet import Fernet
-        from fsm.calendar.adapters.token_cipher import FernetTokenCipher
+        from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
         from fsm.platform.calendar_resolver import build_calendar_resolver
         from fsm.scheduling.adapters.unit_of_work import SqlAlchemyUnitOfWork
         from fsm.scheduling.application.calendar_projection_dispatcher import (

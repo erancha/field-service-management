@@ -363,7 +363,7 @@ def get_availability_pool(
     name so the customer's choice implicitly selects the earliest-available technician. Results
     are sorted by start then technician_id; limit caps them to the earliest N when given.
     """
-    from fsm.calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
+    from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
     from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 
     ranked: list[tuple[UUID, datetime, datetime]] = []
