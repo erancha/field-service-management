@@ -9,6 +9,10 @@ from email.message import EmailMessage
 
 _log = logging.getLogger(__name__)
 
+# Socket timeout in seconds applied to every SMTP connection: it bounds connect and all subsequent
+# operations, so a notification send can never park the calling request thread indefinitely.
+_DEFAULT_SMTP_TIMEOUT = 10.0
+
 # iTIP method declared by the invitation itself (RFC 5545 METHOD property).
 _ICS_METHOD_RE = re.compile(r"^METHOD:([A-Za-z-]+)\r?$", re.MULTILINE)
 
@@ -40,6 +44,7 @@ class SmtpEmailSender:
         password: str | None,
         from_addr: str,
         use_tls: bool = True,
+        timeout: float = _DEFAULT_SMTP_TIMEOUT,
     ) -> None:
         self._host = host
         self._port = port
@@ -47,6 +52,7 @@ class SmtpEmailSender:
         self._password = password
         self._from_addr = from_addr
         self._use_tls = use_tls
+        self._timeout = timeout
 
     def send(
         self,
@@ -56,7 +62,7 @@ class SmtpEmailSender:
         ics: str | None = None,
     ) -> None:
         msg = self._build_message(to, subject, body, ics)
-        with smtplib.SMTP(self._host, self._port) as smtp:
+        with smtplib.SMTP(self._host, self._port, timeout=self._timeout) as smtp:
             if self._use_tls:
                 smtp.starttls(context=ssl.create_default_context())
             if self._username and self._password:
