@@ -77,8 +77,9 @@ include_external_packages = true
 #                -> itself and fsm.shared only; never another context, never fsm.platform
 #   fsm.shared   -> nothing in fsm
 # Within a context, layers import downward only (adapters -> application -> ports -> domain);
-# domain, application, and ports use only the context itself and the standard library, so
-# adapters is the sole layer that may import fsm.shared or infrastructure libraries.
+# domain, application, and ports use only the context itself, the standard library, and
+# fsm.shared.constants (the product brand). Only adapters may import the rest of fsm.shared
+# (the SQLAlchemy Base, the OAuth URIs) or infrastructure libraries.
 
 [[tool.importlinter.contracts]]
 name = "Platform composes independent contexts over the shared kernel"
@@ -125,6 +126,11 @@ forbidden_modules = [
     "googleapiclient",
     "cryptography",
     "smtplib",
+]
+# fsm.shared is forbidden wholesale so any future shared submodule is denied to inner layers by
+# default; fsm.shared.constants (the product brand) is the single explicit exception.
+ignore_imports = [
+    "fsm.** -> fsm.shared.constants",
 ]
 
 [[tool.importlinter.contracts]]

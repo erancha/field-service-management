@@ -12,6 +12,7 @@ from fsm.google_calendar.domain.connection import CalendarConnection, CalendarCo
 from fsm.google_calendar.domain.errors import NotFoundError
 from fsm.google_calendar.ports.repositories import CalendarConnectionRepository
 from fsm.google_calendar.ports.token_cipher import TokenCipher
+from fsm.shared.constants import BRAND
 
 
 class CalendarConnectionService:
@@ -48,7 +49,7 @@ class CalendarConnectionService:
         try:
             connection = self._repo.get(technician_id)
         except NotFoundError:
-            calendar_id = self._client.create_calendar("Field Service Management")
+            calendar_id = self._client.create_calendar(BRAND)
             connection = CalendarConnection(
                 technician_id=technician_id,
                 fsm_calendar_id=calendar_id,

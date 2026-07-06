@@ -6,6 +6,7 @@ import { AdminPage } from './AdminPage.tsx'
 import { TechnicianWaiting } from '../features/technician/TechnicianWaiting.tsx'
 import { TechnicianDeclined } from '../features/technician/TechnicianDeclined.tsx'
 import { OnboardingGate } from '../features/profile/OnboardingGate.tsx'
+import { BRAND } from '../constants.ts'
 
 export function HomePage() {
   const { auth, refresh } = useAuth()
@@ -53,7 +54,7 @@ export function HomePage() {
   return (
     <div className="home-page">
       <div className="home-page__hero">
-        <h1>Field Service Management</h1>
+        <h1>{BRAND}</h1>
         <p>Schedule and manage field service appointments.</p>
       </div>
       <div className="home-page__auth">

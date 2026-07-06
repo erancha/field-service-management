@@ -21,6 +21,7 @@ from fsm.platform.api.scheduling_routes import router as scheduling_router
 from fsm.platform.events import build_event_bus
 from fsm.platform.logging import configure_logging
 from fsm.scheduling.domain.errors import SchedulingError
+from fsm.shared.constants import BRAND
 
 
 def create_app(
@@ -50,7 +51,7 @@ def create_app(
         for stop_event in worker_stop_events:
             stop_event.set()
 
-    app = FastAPI(title=f"Field Service Management ({role})", lifespan=lifespan)
+    app = FastAPI(title=f"{BRAND} ({role})", lifespan=lifespan)
     app.state.session_factory = session_factory
     # Starlette types handlers as taking the Exception base, but it only invokes this one with
     # the SchedulingError instances it is registered for.
@@ -164,7 +165,7 @@ def _landing_html(role: str) -> str:
 <html lang="en">
 <head><meta charset="utf-8"><title>FSM — {role}</title></head>
 <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto;">
-  <h1>Field Service Management</h1>
+  <h1>{BRAND}</h1>
   <p>Role: <strong>{role}</strong></p>
   <ul>
     <li><a href="/docs">Interactive API documentation</a></li>

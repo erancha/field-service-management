@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from fsm.shared.constants import BRAND
+
 _TITLE_PROBLEM_LIMIT = 60
 _GENERIC_TITLE = "Field service appointment"
-_BRAND = "Field Service Management"
 
 
 @dataclass(frozen=True)
@@ -67,4 +68,4 @@ class AppointmentContext:
         segments = [s for s in (parties, problem) if s]
         if not segments:
             return _GENERIC_TITLE
-        return f"{_BRAND}: " + " : ".join(segments)
+        return f"{BRAND}: " + " : ".join(segments)

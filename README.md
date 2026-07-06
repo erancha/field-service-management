@@ -139,7 +139,7 @@ ports-and-adapters (hexagonal) design:
 | `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
 | `notifications` | in-app feed for both parties + technician email behind `NotificationPort` |
 | `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the google_calendar context's client) |
-| `shared` | shared kernel: the declarative ORM `Base` and Google OAuth endpoint URIs — the only package a context may import from outside itself |
+| `shared` | shared kernel: the declarative ORM `Base`, Google OAuth endpoint URIs, and product identity constants (the brand name) — the only package a context may import from outside itself |
 
 ### Import rules
 
@@ -184,9 +184,9 @@ flowchart TD
     i_adapters --> shared
 ```
 
-The three inner layers (`application`, `ports`, `domain`) use only their own context and the
-standard library — `adapters` is the sole layer that may import `shared` and infrastructure
-libraries (SQLAlchemy, Google clients).
+The three inner layers (`application`, `ports`, `domain`) use only their own context, the standard
+library, and `shared.constants` (the product brand). Only `adapters` may import the rest of `shared`
+(the ORM `Base`, OAuth URIs) and infrastructure libraries (SQLAlchemy, Google clients).
 
 Contexts therefore integrate without knowing each other. The consumer declares an interface in
 its own `ports` package (`scheduling.ports.CalendarPort`), and `platform` builds and injects the
