@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 from fastapi.testclient import TestClient
 from testcontainers.postgres import PostgresContainer
@@ -48,6 +50,48 @@ def test_session_cookie_is_not_secure_for_local_and_test(app_env):
 
     (middleware,) = app.user_middleware
     assert middleware.kwargs["https_only"] is False
+
+
+def _worker_settings() -> Settings:
+    return Settings(
+        database_url="postgresql+psycopg://fsm:fsm@localhost:5432/fsm",
+        app_env="test",
+        fsm_dispatch_enabled=True,
+        fsm_sync_enabled=True,
+    )
+
+
+@pytest.fixture
+def stubbed_worker_runners(monkeypatch):
+    """Replace both worker loops with an idle wait so tests exercise app wiring, not the runners."""
+    import fsm.platform.dispatcher_runner as dispatcher_runner
+    import fsm.platform.sync_runner as sync_runner
+
+    def idle_runner(session_factory, settings, stop_event):
+        stop_event.wait()
+
+    monkeypatch.setattr(dispatcher_runner, "run_forever", idle_runner)
+    monkeypatch.setattr(sync_runner, "run_forever", idle_runner)
+
+
+def test_create_app_with_workers_emits_no_deprecation_warnings(stubbed_worker_runners):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        app = create_app(session_factory=lambda: None, settings=_worker_settings())
+
+    app.state.dispatcher_stop_event.set()
+    app.state.sync_stop_event.set()
+
+
+def test_shutdown_sets_worker_stop_events(stubbed_worker_runners):
+    app = create_app(session_factory=lambda: None, settings=_worker_settings())
+
+    with TestClient(app):
+        assert not app.state.dispatcher_stop_event.is_set()
+        assert not app.state.sync_stop_event.is_set()
+
+    assert app.state.dispatcher_stop_event.is_set()
+    assert app.state.sync_stop_event.is_set()
 
 
 @pytest.fixture(scope="module")

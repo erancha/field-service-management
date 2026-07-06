@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable
 
@@ -34,7 +35,22 @@ def create_app(
     """
     configure_logging()
     role = os.environ.get("FSM_ROLE", "unknown")
-    app = FastAPI(title=f"Field Service Management ({role})")
+
+    if settings is None:
+        from fsm.platform.config import get_settings
+        settings = get_settings()
+
+    # Stop events of the worker threads started below; the lifespan sets them all on shutdown.
+    worker_stop_events: list[threading.Event] = []
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        """Signal every started worker thread to stop when the server shuts down."""
+        yield
+        for stop_event in worker_stop_events:
+            stop_event.set()
+
+    app = FastAPI(title=f"Field Service Management ({role})", lifespan=lifespan)
     app.state.session_factory = session_factory
     # Starlette types handlers as taking the Exception base, but it only invokes this one with
     # the SchedulingError instances it is registered for.
@@ -45,9 +61,6 @@ def create_app(
     app.include_router(backoffice_router)
     app.include_router(events_router)
 
-    if settings is None:
-        from fsm.platform.config import get_settings
-        settings = get_settings()
     app.state.settings = settings
     app.state.event_bus = build_event_bus(settings)
 
@@ -70,6 +83,7 @@ def create_app(
 
         stop_event = threading.Event()
         app.state.dispatcher_stop_event = stop_event
+        worker_stop_events.append(stop_event)
 
         thread = threading.Thread(
             target=run_forever,
@@ -79,10 +93,6 @@ def create_app(
         )
         thread.start()
 
-        @app.on_event("shutdown")
-        def _stop_dispatcher() -> None:
-            stop_event.set()
-
     if settings.fsm_sync_enabled:
         from fsm.platform.sync_runner import run_forever as sync_run_forever
 
@@ -90,6 +100,7 @@ def create_app(
 
         sync_stop_event = threading.Event()
         app.state.sync_stop_event = sync_stop_event
+        worker_stop_events.append(sync_stop_event)
 
         sync_thread = threading.Thread(
             target=sync_run_forever,
@@ -98,10 +109,6 @@ def create_app(
             name="fsm-sync",
         )
         sync_thread.start()
-
-        @app.on_event("shutdown")
-        def _stop_sync() -> None:
-            sync_stop_event.set()
 
     @app.get("/health")
     def health() -> dict[str, str]:
