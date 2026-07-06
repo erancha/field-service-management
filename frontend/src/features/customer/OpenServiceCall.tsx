@@ -39,7 +39,7 @@ export function OpenServiceCall({ onCreated }: OpenServiceCallProps) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
-            rows={3}
+            rows={20}
             placeholder="Describe the issue…"
           />
         </label>

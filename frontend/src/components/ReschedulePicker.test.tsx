@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ReschedulePicker } from './ReschedulePicker.tsx'
 import { fetchAvailability } from '../api/scheduling.ts'
@@ -41,17 +41,28 @@ describe('ReschedulePicker', () => {
     expect(container.querySelector('input')).toBeNull()
   })
 
-  it('confirms with the selected slot times', async () => {
+  it('pre-selects and focuses the first slot so confirming is a single click', async () => {
     const onConfirm = vi.fn()
     render(<ReschedulePicker technicianId="tech-1" onConfirm={onConfirm} />)
 
     const [firstSlot] = await screen.findAllByRole('button', { name: /–/ })
+    await waitFor(() => expect(firstSlot).toHaveClass('slot-picker__slot--selected'))
+    expect(firstSlot).toHaveFocus()
     const confirm = screen.getByRole('button', { name: /confirm/i })
-    expect(confirm).toBeDisabled()
+    expect(confirm).toBeEnabled()
 
-    await userEvent.click(firstSlot)
     await userEvent.click(confirm)
     expect(onConfirm).toHaveBeenCalledWith(SLOTS[0].start, SLOTS[0].end)
+  })
+
+  it('confirms with a different slot after the customer picks it', async () => {
+    const onConfirm = vi.fn()
+    render(<ReschedulePicker technicianId="tech-1" onConfirm={onConfirm} />)
+
+    const [, secondSlot] = await screen.findAllByRole('button', { name: /–/ })
+    await userEvent.click(secondSlot)
+    await userEvent.click(screen.getByRole('button', { name: /confirm/i }))
+    expect(onConfirm).toHaveBeenCalledWith(SLOTS[1].start, SLOTS[1].end)
   })
 
   it('says there are no slots when the technician is fully booked', async () => {

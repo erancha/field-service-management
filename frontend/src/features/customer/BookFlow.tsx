@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ServiceCall, PooledSlot } from '../../api/types.ts'
 import { usePooledAvailability } from '../../hooks/useAvailability.ts'
+import { useSlotSelection } from '../../hooks/useSlotSelection.ts'
 import { useAppointments } from '../../hooks/useAppointments.ts'
 import { PooledSlotPicker } from '../../components/PooledSlotPicker.tsx'
 import { Button } from '../../components/Button.tsx'
@@ -19,10 +20,11 @@ const SLOT_COUNT = 5
 
 export function BookFlow({ serviceCall }: BookFlowProps) {
   const [booked, setBooked] = useState(false)
-  const [selectedSlot, setSelectedSlot] = useState<PooledSlot | null>(null)
 
   const availability = usePooledAvailability()
   const appts = useAppointments()
+  const { selected: selectedSlot, setSelected: setSelectedSlot, firstSlotRef } =
+    useSlotSelection<PooledSlot>(availability.slots)
 
   useEffect(() => {
     void availability.fetch({
@@ -72,6 +74,7 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
         slots={availability.slots}
         selected={selectedSlot}
         onSelect={setSelectedSlot}
+        firstSlotRef={firstSlotRef}
       />
       <div className="book-flow__actions">
         <Button onClick={handleBook} disabled={!selectedSlot} loading={appts.loading}>

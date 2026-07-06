@@ -263,6 +263,13 @@ body {
   border-color: var(--color-primary);
 }
 
+/* :focus rather than :focus-visible — the picker moves focus programmatically to the first
+   slot when a list loads, and browsers skip the :focus-visible ring for script-moved focus. */
+.slot-picker__slot:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
 .slot-picker__slot--selected {
   background: #dbeafe;
   border-color: var(--color-primary);

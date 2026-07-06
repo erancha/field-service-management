@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AuthContext } from '../auth/authContext.ts'
@@ -61,6 +61,23 @@ function renderBookFlow() {
 }
 
 describe('BookFlow', () => {
+  it('pre-selects and focuses the first slot so booking is a single click', async () => {
+    vi.mocked(fetchPooledAvailability).mockResolvedValue({ slots: [slot] })
+    vi.mocked(createAppointment).mockResolvedValue(appointment)
+
+    renderBookFlow()
+
+    const slotButton = await screen.findByRole('button', { name: /dana/i })
+    await waitFor(() => expect(slotButton).toHaveClass('slot-picker__slot--selected'))
+    expect(slotButton).toHaveFocus()
+    const bookButton = screen.getByRole('button', { name: /book selected slot/i })
+    expect(bookButton).toBeEnabled()
+
+    await userEvent.click(bookButton)
+
+    expect(await screen.findByText('Appointment Booked')).toBeInTheDocument()
+  })
+
   it('shows the confirmation screen when booking succeeds', async () => {
     vi.mocked(fetchPooledAvailability).mockResolvedValue({ slots: [slot] })
     vi.mocked(createAppointment).mockResolvedValue(appointment)
