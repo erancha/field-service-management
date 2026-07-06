@@ -13,21 +13,25 @@ from typing import Protocol, runtime_checkable
 class GoogleCalendarClient(Protocol):
     """Narrow outbound interface to a Google Calendar API backend."""
 
-    def import_event(self, calendar_id: str, body: dict) -> dict:
-        """Upsert an event by iCalUID and return the resource dict.
+    def insert_event(self, calendar_id: str, body: dict, *, send_updates: str = "all") -> dict:
+        """Create a new event and notify attendees per send_updates.
 
-        Wraps events.import_, which creates the event if the iCalUID is new or
-        updates the existing event if the iCalUID already exists. This makes
-        CREATE idempotent: retrying with the same iCalUID resolves to the same
-        Google Calendar event rather than creating a duplicate.
+        Unlike events.import, this delivers guest invitations. A duplicate iCalUID raises the
+        Google 409; callers recover the existing id via find_event_id_by_ical_uid.
         """
         ...
 
-    def update_event(self, calendar_id: str, event_id: str, body: dict) -> dict:
+    def find_event_id_by_ical_uid(self, calendar_id: str, ical_uid: str) -> str | None:
+        """Return the event id whose iCalUID matches, or None if not found."""
+        ...
+
+    def update_event(
+        self, calendar_id: str, event_id: str, body: dict, *, send_updates: str = "all"
+    ) -> dict:
         """Replace an existing event resource and return the updated resource dict."""
         ...
 
-    def delete_event(self, calendar_id: str, event_id: str) -> None:
+    def delete_event(self, calendar_id: str, event_id: str, *, send_updates: str = "all") -> None:
         """Delete the event; no return value."""
         ...
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import pathlib
 import uuid
+from datetime import datetime, timezone
 from typing import Callable
 from unittest.mock import MagicMock
 
@@ -17,9 +18,13 @@ from pydantic import SecretStr
 from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
 from fsm.google_calendar.domain.connection import CalendarConnection, CalendarConnectionStatus
 from fsm.google_calendar.domain.errors import NotFoundError
+from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.config import Settings
 from fsm.platform.dev_adapters import NullCalendarPort
+from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment_context import AppointmentContext
+from fsm.scheduling.domain.time_range import TimeRange
 
 
 # ---------------------------------------------------------------------------
@@ -216,8 +221,7 @@ class TestConfiguredSettings:
 
         tech_id = uuid.uuid4()
         fsm_cal_id = "cal-abc-999"
-        cipher = __import__("fsm.google_calendar.adapters.token_cipher", fromlist=["FernetTokenCipher"]).FernetTokenCipher
-        encrypted_token = cipher(real_key).encrypt("refresh-token-value")
+        encrypted_token = FernetTokenCipher(real_key).encrypt("refresh-token-value")
 
         from fsm.google_calendar.adapters.orm import CalendarConnectionRow
 
@@ -261,6 +265,106 @@ class TestConfiguredSettings:
         assert fake_factory_calls[0]["refresh_token"] == "refresh-token-value"
         assert fake_factory_calls[0]["client_id"] == "test-id"
         assert fake_factory_calls[0]["client_secret"] == "test-secret"
+
+
+# ---------------------------------------------------------------------------
+# Customer attendee wiring (build_email_resolver_via_factory as a real resolver caller)
+# ---------------------------------------------------------------------------
+
+class TestAttendeeEmailWiring:
+    """Confirms build_email_resolver_via_factory's session_factory() call actually resolves
+    an email end-to-end through the adapter the resolver returns, since Task 1 added the
+    factory-based resolver without a caller exercising it against a session_factory."""
+
+    def test_created_event_carries_resolved_customer_email_as_attendee(self) -> None:
+        from cryptography.fernet import Fernet
+
+        from fsm.google_calendar.adapters.orm import CalendarConnectionRow
+        from fsm.identity.adapters.orm import UserRow
+
+        real_key = Fernet.generate_key().decode()
+        settings = Settings(
+            database_url="postgresql+psycopg://x:x@localhost/x",
+            google_client_id="test-id",
+            google_client_secret=SecretStr("test-secret"),
+            fsm_token_key=SecretStr(real_key),
+        )
+
+        tech_id = uuid.uuid4()
+        customer_id = uuid.uuid4()
+        fsm_cal_id = "cal-attendee-1"
+        encrypted_token = FernetTokenCipher(real_key).encrypt("refresh-token-value")
+
+        session_factory_calls = []
+
+        def session_factory():
+            session_factory_calls.append(1)
+
+            class _Sess:
+                def __enter__(self_):
+                    return self_
+
+                def __exit__(self_, *_: object) -> None:
+                    pass
+
+                def get(self_, model_cls, row_id):
+                    if model_cls is CalendarConnectionRow and row_id == tech_id:
+                        return CalendarConnectionRow(
+                            technician_id=tech_id,
+                            fsm_calendar_id=fsm_cal_id,
+                            encrypted_refresh_token=encrypted_token,
+                            status="CONNECTED",
+                        )
+                    if model_cls is UserRow and row_id == customer_id:
+                        return UserRow(
+                            id=customer_id,
+                            google_sub="sub-1",
+                            email="customer@example.com",
+                            name="Ada Lovelace",
+                            role="CUSTOMER",
+                            role_status="APPROVED",
+                        )
+                    return None
+
+            return _Sess()
+
+        fake_client = MagicMock()
+        fake_client.insert_event.return_value = {"id": "evt-attendee"}
+
+        resolver = build_calendar_resolver(
+            session_factory=session_factory,
+            settings=settings,
+            client_factory=lambda **_kwargs: fake_client,
+        )
+        adapter = resolver(tech_id)
+        assert isinstance(adapter, GoogleCalendarAdapter)
+
+        # The resolver's session_factory() is called once, eagerly, to load the calendar
+        # connection; the attendee_email resolver only opens its own session lazily when
+        # create_event actually needs the customer's email.
+        assert len(session_factory_calls) == 1
+
+        now = datetime(2026, 7, 6, 9, 0, tzinfo=timezone.utc)
+        appointment = Appointment(
+            id=uuid.uuid4(),
+            service_call_id=uuid.uuid4(),
+            technician_id=tech_id,
+            customer_id=customer_id,
+            time_range=TimeRange(now, datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc)),
+            status=AppointmentStatus.SCHEDULED,
+            details=None,
+            created_at=now,
+            updated_at=now,
+        )
+        adapter.create_event(appointment, AppointmentContext(customer_name="Ada"))
+
+        # A second session_factory() call happened lazily inside attendee_email, proving the
+        # Task 1 factory resolver was actually exercised with a real session_factory.
+        assert len(session_factory_calls) == 2
+        _cal_id, body = fake_client.insert_event.call_args[0]
+        assert body["attendees"] == [
+            {"email": "customer@example.com", "responseStatus": "needsAction"}
+        ]
 
 
 # ---------------------------------------------------------------------------

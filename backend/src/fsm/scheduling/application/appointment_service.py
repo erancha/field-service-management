@@ -215,11 +215,11 @@ class AppointmentService:
         return appt
 
     def add_details(self, appointment_id: UUID, text: str) -> Appointment:
-        """Attach free-text details to an appointment and propagate them to both calendars.
+        """Attach free-text details to an appointment and propagate them to the calendar event.
 
-        The outbox UPDATE projects the details into the technician's Google event; the
-        appointment_updated notification re-sends the customer's ICS invitation (with a
-        higher SEQUENCE) so their calendar entry picks up the details too.
+        The outbox UPDATE re-projects the details into the shared FSM Google event; the customer,
+        a guest on that event, is notified of the change by Google. The appointment_updated
+        notification writes the in-app feed rows and emails the technician.
         """
         appt = self._appointments.get(appointment_id)
         now = self._clock()

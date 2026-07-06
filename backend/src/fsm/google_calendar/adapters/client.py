@@ -23,18 +23,37 @@ class GoogleApiCalendarClient:
     def __init__(self, service: Any) -> None:
         self._service = service
 
-    def import_event(self, calendar_id: str, body: dict) -> dict:
-        return self._service.events().import_(calendarId=calendar_id, body=body).execute()
-
-    def update_event(self, calendar_id: str, event_id: str, body: dict) -> dict:
+    def insert_event(self, calendar_id: str, body: dict, *, send_updates: str = "all") -> dict:
         return (
             self._service.events()
-            .update(calendarId=calendar_id, eventId=event_id, body=body)
+            .insert(calendarId=calendar_id, body=body, sendUpdates=send_updates)
             .execute()
         )
 
-    def delete_event(self, calendar_id: str, event_id: str) -> None:
-        self._service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+    def find_event_id_by_ical_uid(self, calendar_id: str, ical_uid: str) -> str | None:
+        response = (
+            self._service.events()
+            .list(calendarId=calendar_id, iCalUID=ical_uid, showDeleted=False)
+            .execute()
+        )
+        items = response.get("items", [])
+        return items[0]["id"] if items else None
+
+    def update_event(
+        self, calendar_id: str, event_id: str, body: dict, *, send_updates: str = "all"
+    ) -> dict:
+        return (
+            self._service.events()
+            .update(calendarId=calendar_id, eventId=event_id, body=body, sendUpdates=send_updates)
+            .execute()
+        )
+
+    def delete_event(self, calendar_id: str, event_id: str, *, send_updates: str = "all") -> None:
+        (
+            self._service.events()
+            .delete(calendarId=calendar_id, eventId=event_id, sendUpdates=send_updates)
+            .execute()
+        )
 
     def query_busy(
         self,

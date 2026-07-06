@@ -1,8 +1,9 @@
 """Delivering implementation of the scheduling NotificationPort.
 
-Writes an in-app Notification for each affected party (customer + technician)
-and attempts email delivery. Email failures are caught and logged so a broken
-SMTP configuration can never cause a booking to fail.
+Writes an in-app Notification for each affected party (customer + technician) and attempts
+email delivery to the technician. The customer's calendar invitation is delivered by Google as
+a guest on the appointment's calendar event, so this port never emails the customer. Email
+failures are caught and logged so a broken SMTP configuration can never cause a booking to fail.
 """
 from __future__ import annotations
 
@@ -11,7 +12,6 @@ import uuid
 from datetime import datetime, timezone, tzinfo
 from typing import Callable
 
-from fsm.notifications.application.ics import build_ics
 from fsm.notifications.domain.notification import Notification, NotificationKind
 from fsm.notifications.ports.appointment_context import AppointmentContextView
 from fsm.notifications.ports.email_sender import EmailSender
@@ -68,7 +68,7 @@ def _context_lines(context: AppointmentContextView) -> str:
 
 
 class DeliveringNotificationPort:
-    """NotificationPort that writes in-app feed rows and sends email.
+    """NotificationPort that writes in-app feed rows and emails the technician.
 
     recipient_email resolves a user_id to an email address (or None when the
     user has no address). This callable is injected to avoid importing the
@@ -78,17 +78,12 @@ class DeliveringNotificationPort:
     resolver never raises: a failed lookup yields a visible placeholder for fields required on
     this surface and None for optional ones, so the port calls it unguarded.
 
-    ical_uid maps an appointment id to the UID stamped on outgoing ICS invitations. It is
-    injected because the scheme is owned by the scheduling domain (the same UID identifies the
-    appointment's Google Calendar projection), which notifications may not import.
-
-    organizer_address is the email address used as the ICS ORGANIZER, matching the SMTP From.
-    When set, appointment notifications include iTIP invitations (REQUEST for booking/reschedule,
-    CANCEL for cancellation); otherwise plain events are sent.
-
     local_zone maps the appointment's technician_id to the timezone bodies render times in. An
     appointment is a physical visit, so one zone — the technician's service region — is correct
     for both parties.
+
+    The customer receives an in-app feed row only: their calendar invitation is delivered by
+    Google as a guest on the appointment's Google Calendar event, not by this port.
 
     Feed writes share the caller's transaction via the session-bound feed_repo.
     Email sends are best-effort: any exception is caught and logged so that
@@ -102,18 +97,14 @@ class DeliveringNotificationPort:
         recipient_email: Callable[[uuid.UUID], str | None],
         context_resolver: Callable[[object], AppointmentContextView],
         *,
-        ical_uid: Callable[[uuid.UUID], str],
         local_zone: Callable[[uuid.UUID], tzinfo],
-        organizer_address: str | None = None,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self._feed_repo = feed_repo
         self._email_sender = email_sender
         self._recipient_email = recipient_email
         self._context_resolver = context_resolver
-        self._ical_uid = ical_uid
         self._local_zone = local_zone
-        self._organizer_address = organizer_address
         self._clock = clock
 
     def _start_text(self, appointment) -> str:
@@ -130,7 +121,6 @@ class DeliveringNotificationPort:
             appointment,
             kind=NotificationKind.BOOKED,
             subject_base="Appointment booked",
-            ics_method="REQUEST",
             body=lambda context: (
                 f"Your appointment has been booked for "
                 f"{self._start_text(appointment)}.{_context_lines(context)}"
@@ -142,7 +132,6 @@ class DeliveringNotificationPort:
             appointment,
             kind=NotificationKind.RESCHEDULED,
             subject_base="Appointment rescheduled",
-            ics_method="REQUEST",
             body=lambda context: (
                 f"Your appointment has been rescheduled to "
                 f"{self._start_text(appointment)}.{_context_lines(context)}"
@@ -158,7 +147,6 @@ class DeliveringNotificationPort:
             appointment,
             kind=NotificationKind.UPDATED,
             subject_base="Appointment updated",
-            ics_method="REQUEST",
             body=lambda context: (
                 f"Your appointment for {self._start_text(appointment)} "
                 f"has been updated.{_context_lines(context)}{details_block}"
@@ -170,7 +158,6 @@ class DeliveringNotificationPort:
             appointment,
             kind=NotificationKind.CANCELLED,
             subject_base="Appointment cancelled",
-            ics_method="CANCEL",
             body=lambda context: f"Your appointment has been cancelled.{_context_lines(context)}",
         )
 
@@ -184,31 +171,23 @@ class DeliveringNotificationPort:
         *,
         kind: NotificationKind,
         subject_base: str,
-        ics_method: str,
         body: Callable[[AppointmentContextView], str],
     ) -> None:
         """Run the shared delivery sequence for one appointment lifecycle event.
 
-        Both parties receive the same subject and body: a feed entry each, an email with the iTIP
-        invitation for the customer, and a plain email for the technician.
+        Both parties receive the same subject and body as a feed entry; only the technician
+        also gets an email. The customer's calendar invitation is delivered by Google as a
+        guest on the appointment's calendar event.
         """
         now = self._clock()
         context = self._context_resolver(appointment)
         subject = _subject(subject_base, context)
         rendered_body = body(context)
-        customer_email = self._recipient_email(appointment.customer_id)
-        ics = build_ics(
-            appointment, context, uid=self._ical_uid(appointment.id),
-            method=ics_method, organizer=self._organizer_address, attendee=customer_email,
-        )
 
         self._add_feed(appointment.customer_id, kind, subject, rendered_body, now)
         self._add_feed(appointment.technician_id, kind, subject, rendered_body, now)
 
-        self._send_email(
-            appointment.customer_id, subject, rendered_body, ics=ics, email=customer_email
-        )
-        self._send_email(appointment.technician_id, subject, rendered_body, ics=None)
+        self._send_email(appointment.technician_id, subject, rendered_body)
 
     def _add_feed(
         self,
@@ -228,21 +207,12 @@ class DeliveringNotificationPort:
         )
         self._feed_repo.add(notification)
 
-    def _send_email(
-        self,
-        user_id: uuid.UUID,
-        subject: str,
-        body: str,
-        *,
-        ics: str | None,
-        email: str | None = None,
-    ) -> None:
+    def _send_email(self, user_id: uuid.UUID, subject: str, body: str) -> None:
         try:
-            if email is None:
-                email = self._recipient_email(user_id)
+            email = self._recipient_email(user_id)
             if email is None:
                 return
-            self._email_sender.send(email, subject, body, ics)
+            self._email_sender.send(email, subject, body)
         except Exception:
             _log.exception(
                 "Email send failed for user_id=%s subject=%r; continuing",

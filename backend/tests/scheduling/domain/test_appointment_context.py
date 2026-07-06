@@ -45,13 +45,13 @@ class TestProblemSummary:
 class TestSummaryLine:
     def test_combines_name_and_problem(self) -> None:
         ctx = AppointmentContext(customer_name="Ada Lovelace", problem_description="No hot water")
-        assert ctx.summary_line() == "Ada Lovelace — No hot water"
+        assert ctx.summary_line() == "Field Service Management: Ada Lovelace : No hot water"
 
     def test_name_alone_when_no_problem(self) -> None:
-        assert AppointmentContext(customer_name="Ada").summary_line() == "Ada"
+        assert AppointmentContext(customer_name="Ada").summary_line() == "Field Service Management: Ada"
 
     def test_problem_alone_when_no_name(self) -> None:
-        assert AppointmentContext(problem_description="No hot water").summary_line() == "No hot water"
+        assert AppointmentContext(problem_description="No hot water").summary_line() == "Field Service Management: No hot water"
 
     def test_generic_fallback_when_empty(self) -> None:
         assert AppointmentContext().summary_line() == "Field service appointment"
@@ -59,6 +59,23 @@ class TestSummaryLine:
     def test_whitespace_only_parts_are_treated_as_absent(self) -> None:
         ctx = AppointmentContext(customer_name="  ", problem_description=" \n ")
         assert ctx.summary_line() == "Field service appointment"
+
+    def test_full_four_parts(self) -> None:
+        ctx = AppointmentContext(
+            customer_name="John Doe",
+            problem_description="Leaking faucet",
+            technician_name="Jane Tech",
+        )
+        assert ctx.summary_line() == "Field Service Management: Jane Tech -- John Doe : Leaking faucet"
+
+    def test_truncates_problem_with_technician(self) -> None:
+        long = "x" * 200
+        ctx = AppointmentContext(
+            customer_name="John", problem_description=long, technician_name="Jane"
+        )
+        line = ctx.summary_line()
+        assert line.startswith("Field Service Management: Jane -- John : ")
+        assert line.endswith("…")
 
 
 def test_holds_address_and_phone() -> None:
@@ -83,3 +100,4 @@ def test_technician_fields_default_to_none() -> None:
     ctx = AppointmentContext()
     assert ctx.technician_name is None
     assert ctx.technician_phone is None
+

@@ -214,8 +214,11 @@ class TestAuthDisconnectOnDispatchError:
 
         def auth_failing_client_factory(**kwargs):
             class _Client:
-                def import_event(self, calendar_id, body):
+                def insert_event(self, calendar_id, body, *, send_updates="all"):
                     raise RefreshError("invalid_grant: Token has been revoked.")
+
+                def find_event_id_by_ical_uid(self, calendar_id, ical_uid):
+                    return None
 
                 def update_event(self, *a, **kw):
                     pass

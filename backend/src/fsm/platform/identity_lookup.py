@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Callable
 
 from sqlalchemy.orm import Session
 
@@ -38,5 +39,32 @@ def build_contact_resolver(session: Session):
         if user is None:
             return ContactInfo()
         return ContactInfo(address=user.address, phone=user.phone)
+
+    return _resolve
+
+
+def build_email_resolver(session: Session) -> Callable[[uuid.UUID], str | None]:
+    """Return a callable mapping a user id to their email (or None) on `session`.
+
+    Shared by the notification sender (technician email) and the calendar bridge (customer
+    attendee) so email resolution has a single definition.
+    """
+    def _resolve(user_id: uuid.UUID) -> str | None:
+        user = load_user(session, user_id)
+        return user.email if user else None
+
+    return _resolve
+
+
+def build_email_resolver_via_factory(session_factory) -> Callable[[uuid.UUID], str | None]:
+    """Email resolver that opens its own short session per call.
+
+    Used where no request-scoped session is in hand (the calendar bridge resolves the customer
+    email lazily when a projection runs). Delegates to build_email_resolver so the lookup lives
+    in one place.
+    """
+    def _resolve(user_id: uuid.UUID) -> str | None:
+        with session_factory() as session:
+            return build_email_resolver(session)(user_id)
 
     return _resolve

@@ -5,6 +5,7 @@ Targets a single configured calendar identified by calendar_id.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Callable
 from uuid import UUID
 
 from fsm.google_calendar.ports.client import GoogleCalendarClient
@@ -17,9 +18,16 @@ from fsm.scheduling.domain.time_range import TimeRange
 class GoogleCalendarAdapter:
     """Implements fsm.scheduling.ports.CalendarPort via the thin GoogleCalendarClient seam."""
 
-    def __init__(self, client: GoogleCalendarClient, calendar_id: str) -> None:
+    def __init__(
+        self,
+        client: GoogleCalendarClient,
+        calendar_id: str,
+        *,
+        attendee_email: Callable[[UUID], str | None] | None = None,
+    ) -> None:
         self._client = client
         self._calendar_id = calendar_id
+        self._attendee_email = attendee_email
 
     # ------------------------------------------------------------------
     # CalendarPort
@@ -36,9 +44,19 @@ class GoogleCalendarAdapter:
 
     def create_event(self, appointment: Appointment, context: AppointmentContext) -> str:
         body = self._build_body(appointment, context)
-        body["iCalUID"] = build_ical_uid(appointment.id)
-        result = self._client.import_event(self._calendar_id, body)
-        return result["id"]
+        ical_uid = build_ical_uid(appointment.id)
+        body["iCalUID"] = ical_uid
+        try:
+            result = self._client.insert_event(self._calendar_id, body)
+            return result["id"]
+        except Exception as exc:
+            # Crash-retry safety: a duplicate iCalUID makes insert return 409; recover the existing
+            # event id so a re-projected CREATE resolves to the same event instead of duplicating it.
+            if getattr(getattr(exc, "resp", None), "status", None) == 409:
+                existing = self._client.find_event_id_by_ical_uid(self._calendar_id, ical_uid)
+                if existing is not None:
+                    return existing
+            raise
 
     def update_event(
         self,
@@ -96,4 +114,10 @@ class GoogleCalendarAdapter:
             description_parts.append(f"Phone: {phone}")
         if description_parts:
             body["description"] = "\n\n".join(description_parts)
+        if self._attendee_email is not None:
+            customer_email = self._attendee_email(appointment.customer_id)
+            if customer_email:
+                body["attendees"] = [
+                    {"email": customer_email, "responseStatus": "needsAction"}
+                ]
         return body

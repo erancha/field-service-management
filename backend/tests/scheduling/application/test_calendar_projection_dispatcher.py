@@ -160,10 +160,11 @@ class TestCreateEntry:
         (mark_processed never committed). The dispatcher treats the commit error as a transient
         failure, bumps attempts, and keeps the entry PENDING for retry.
 
-        On the retry, create_event is called again. Because create_event uses import_event with
-        a deterministic iCalUID (fsm-{appointment_id}@fsm.local), the Google Calendar API
-        upserts rather than inserts — the iCalUID upsert returns the same event id, so no
-        duplicate calendar event is created. The fake verifies this property.
+        On the retry, create_event is called again. Because create_event sets a deterministic
+        iCalUID (fsm-{appointment_id}@fsm.local) and inserts via events.insert, the Google
+        Calendar API rejects the duplicate iCalUID with an HTTP 409; create_event recovers the
+        existing event id via find_event_id_by_ical_uid, so no duplicate calendar event is
+        created. The fake verifies this property.
         """
         appt_id = UUID("aaaaaaaa-0000-0000-0000-000000000009")
         appt_repo.add(_make_appointment(appt_id))
@@ -183,10 +184,10 @@ class TestCreateEntry:
         count2 = dispatcher.run_once(limit=1)
         assert count2 == 1
         assert outbox.get_status(entry_id) == "PROCESSED"
-        assert len(calendar.import_calls) == 2, "create_event (import_event) called twice across two runs"
+        assert len(calendar.create_calls) == 2, "create_event called twice across two runs"
         # Both calls returned the same event id — no duplicate event.
-        event_ids = {event_id for event_id, _ in calendar.import_calls}
-        assert len(event_ids) == 1, "Both calls resolved to the same event id (iCalUID upsert)"
+        event_ids = {event_id for event_id, _ in calendar.create_calls}
+        assert len(event_ids) == 1, "Both calls resolved to the same event id via 409 recovery"
 
 
 class TestUpdateEntry:

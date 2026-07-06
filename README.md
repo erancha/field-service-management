@@ -12,8 +12,9 @@ design → plan → implementation cycle.
 vision below. Google OIDC sign-in with roles, one-click technician calendar connect, customer
 self-booking with a database-enforced no-double-booking guarantee, two-way Google Calendar sync
 (outbound projection + inbound reconcile), central holiday exclusions, per-technician working hours
-and time off, and in-app + email/.ics notifications (`.ics` = a calendar-invite attachment the
-recipient can add to their own calendar). Google is required configuration — it is the only sign-in
+and time off, in-app notifications for both parties plus an email to the technician, and the customer
+added as a real guest on the appointment's Google Calendar event (Google delivers their invite,
+update, and cancellation). Google is required configuration — it is the only sign-in
 path, so its environment variables must be set and every booking and scheduling action needs a
 signed-in session. Email and holiday integrations are driven by environment variables and degrade
 gracefully when unset.
@@ -136,7 +137,7 @@ ports-and-adapters (hexagonal) design:
 | `identity` | Google OIDC sign-in, users, roles |
 | `scheduling` | service calls, appointments, availability, lifecycle — the core domain (no external I/O) |
 | `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
-| `notifications` | in-app feed + email/.ics behind `NotificationPort` |
+| `notifications` | in-app feed for both parties + technician email behind `NotificationPort` |
 | `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the google_calendar context's client) |
 | `shared` | shared kernel: the declarative ORM `Base` and Google OAuth endpoint URIs — the only package a context may import from outside itself |
 
@@ -147,7 +148,7 @@ none from a context up to `platform`:
 
 ```mermaid
 flowchart TD
-    platform["fsm.platform<br/>composition root — web wiring, workers, calendar_bridge"]
+    platform["fsm.platform:<br/>composition root — web wiring, workers, calendar_bridge"]
 
     subgraph notifications["fsm.notifications"]
         direction TB
@@ -169,7 +170,7 @@ flowchart TD
         i_adapters[adapters] --> i_application[application] --> i_ports[ports] --> i_domain[domain]
     end
 
-    shared["fsm.shared<br/>ORM Base, Google OAuth endpoint URIs"]
+    shared["fsm.shared:<br/>ORM Base, Google OAuth endpoint URIs"]
 
     platform --> notifications
     platform --> google_calendar

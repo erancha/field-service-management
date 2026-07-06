@@ -85,11 +85,19 @@ class InMemoryAppointmentRepository:
         ]
 
 
+class _FakeHttp409(Exception):
+    """Duck-types googleapiclient.errors.HttpError's resp.status for a 409 duplicate."""
+
+    def __init__(self) -> None:
+        self.resp = type("R", (), {"status": 409})()
+
+
 class FakeGoogleCalendarClient:
     """In-memory GoogleCalendarClient for unit tests.
 
-    import_event upserts by iCalUID so retried CREATEs resolve to the same event id,
-    matching the idempotency guarantee of the real events.import_ API call.
+    insert_event raises a fake HTTP 409 on a duplicate iCalUID, matching the real
+    events.insert behavior; find_event_id_by_ical_uid recovers the existing id so a
+    retried CREATE resolves to the same event id rather than duplicating.
     update_event reuses the supplied event id.
     """
 
@@ -99,31 +107,33 @@ class FakeGoogleCalendarClient:
         self._by_ical_uid: dict[str, str] = {}
         self.updated: list[tuple[str, dict]] = []
         self.deleted: list[str] = []
-        self.imported: list[dict] = []
+        self.inserted: list[dict] = []
 
-    def import_event(self, calendar_id: str, body: dict) -> dict:
-        """Upsert by iCalUID — a second call with the same iCalUID returns the same id."""
+    def insert_event(self, calendar_id: str, body: dict, *, send_updates: str = "all") -> dict:
+        """Create a new event; raise a fake HTTP 409 if the iCalUID already exists."""
         ical_uid = body.get("iCalUID", "")
         if ical_uid in self._by_ical_uid:
-            existing_id = self._by_ical_uid[ical_uid]
-            stored = dict(body, id=existing_id)
-            self._events[existing_id] = stored
-        else:
-            self._counter += 1
-            event_id = f"evt-{self._counter}"
-            self._by_ical_uid[ical_uid] = event_id
-            stored = dict(body, id=event_id)
-            self._events[event_id] = stored
-        self.imported.append(stored)
+            raise _FakeHttp409()
+        self._counter += 1
+        event_id = f"evt-{self._counter}"
+        self._by_ical_uid[ical_uid] = event_id
+        stored = dict(body, id=event_id)
+        self._events[event_id] = stored
+        self.inserted.append(stored)
         return stored
 
-    def update_event(self, calendar_id: str, event_id: str, body: dict) -> dict:
+    def find_event_id_by_ical_uid(self, calendar_id: str, ical_uid: str) -> str | None:
+        return self._by_ical_uid.get(ical_uid)
+
+    def update_event(
+        self, calendar_id: str, event_id: str, body: dict, *, send_updates: str = "all"
+    ) -> dict:
         stored = dict(body, id=event_id)
         self._events[event_id] = stored
         self.updated.append((event_id, stored))
         return stored
 
-    def delete_event(self, calendar_id: str, event_id: str) -> None:
+    def delete_event(self, calendar_id: str, event_id: str, *, send_updates: str = "all") -> None:
         self._events.pop(event_id, None)
         self.deleted.append(event_id)
 
@@ -142,7 +152,7 @@ class FakeCalendarPort:
     events are recorded in public attributes for assertion in tests. Event ids are
     deterministic sequential strings (evt-1, evt-2, ...) using a counter.
 
-    import_event upserts by iCalUID: a retried CREATE with the same iCalUID returns
+    create_event upserts by iCalUID: a retried CREATE with the same iCalUID returns
     the original event id, preventing duplicate calendar events on retry.
     """
 
@@ -155,7 +165,7 @@ class FakeCalendarPort:
         self.created_contexts: dict[str, AppointmentContext] = {}
         self.updated_contexts: dict[str, AppointmentContext] = {}
         self.deleted_event_ids: list[str] = []
-        self.import_calls: list[tuple[str, Appointment]] = []
+        self.create_calls: list[tuple[str, Appointment]] = []
 
     def set_busy(self, technician_id: UUID, ranges: list[TimeRange]) -> None:
         """Replace the busy interval list for a technician (test helper)."""
@@ -179,7 +189,7 @@ class FakeCalendarPort:
             self._ical_uid_to_event_id[ical_uid] = event_id
         self.created_events[event_id] = appointment
         self.created_contexts[event_id] = context
-        self.import_calls.append((event_id, appointment))
+        self.create_calls.append((event_id, appointment))
         return event_id
 
     def update_event(self, external_event_id: str, appointment: Appointment, context: AppointmentContext) -> None:

@@ -109,17 +109,6 @@ def test_context_resolver_populates_technician_name_and_phone_from_technician_pr
     assert context.technician_phone == "+972-50-999"
 
 
-def test_factory_passes_smtp_sender_as_organizer_address() -> None:
-    from fsm.platform.notifications_factory import build_notifications
-
-    class _Settings:
-        smtp_host = None
-        smtp_sender_address = "ops@fsm.example"
-
-    port = build_notifications(session=_RaisingSession(), settings=_Settings())
-    assert port._organizer_address == "ops@fsm.example"
-
-
 class _StoredTimezoneSession:
     """Session stub whose working-hours timezone query yields a fixed stored zone."""
 

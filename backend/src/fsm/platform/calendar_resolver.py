@@ -2,7 +2,7 @@
 
 The resolver is the bridge between the scheduling dispatcher (which knows only
 the CalendarPort protocol) and the concrete Google calendar infrastructure (which
-lives in the calendar bounded context). It belongs here — in the platform layer —
+lives in the google_calendar bounded context). It belongs here — in the platform layer —
 because only the composition root is allowed to import both contexts.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnecti
 from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.google_calendar.domain.errors import NotFoundError
 from fsm.platform.dev_adapters import NullCalendarPort
+from fsm.platform.identity_lookup import build_email_resolver_via_factory
 from fsm.scheduling.ports.calendar import CalendarPort
 
 
@@ -45,6 +46,8 @@ def build_calendar_resolver(
 
         return _null_resolver
 
+    attendee_email = build_email_resolver_via_factory(session_factory)
+
     def _resolver(technician_id: UUID) -> CalendarPort:
         with session_factory() as session:
             repo = SqlAlchemyCalendarConnectionRepository(session)
@@ -62,6 +65,8 @@ def build_calendar_resolver(
             client_id=settings.google_client_id,
             client_secret=settings.google_client_secret.get_secret_value(),
         )
-        return GoogleCalendarAdapter(client, connection.fsm_calendar_id)
+        return GoogleCalendarAdapter(
+            client, connection.fsm_calendar_id, attendee_email=attendee_email
+        )
 
     return _resolver

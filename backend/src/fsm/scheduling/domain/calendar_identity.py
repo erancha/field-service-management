@@ -1,8 +1,8 @@
 """Identity scheme linking an appointment to its calendar event (fsm-{appointment_id}@fsm.local).
 
 This iCalUID is the identity key of the two-way calendar sync: the Google Calendar projection
-and the emailed ICS invitation both stamp events with it, and inbound reconciliation recognizes
-FSM-owned events by parsing it back. Every producer and consumer of the scheme must go through
+stamps the event with it on insert, and inbound reconciliation recognizes FSM-owned events by
+parsing it back. Every producer and consumer of the scheme must go through
 this module — a format drift between sites breaks dispatch dedupe and inbound reconciliation
 silently, because foreign-looking events are discarded by design.
 """

@@ -21,10 +21,9 @@ from fsm.notifications.application.delivering_notifications import DeliveringNot
 from fsm.notifications.ports.email_sender import EmailSender
 from fsm.platform.config import DEFAULT_TIMEZONE
 from fsm.platform.context_rendering import required_field
-from fsm.platform.identity_lookup import load_user
+from fsm.platform.identity_lookup import build_email_resolver, load_user
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
 from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
-from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.notifications import NotificationPort
 
@@ -63,9 +62,7 @@ def build_notifications(session: Session, settings) -> NotificationPort:
     else:
         email_sender = LoggingEmailSender()
 
-    def recipient_email(user_id: uuid.UUID) -> str | None:
-        user = load_user(session, user_id)
-        return user.email if user else None
+    recipient_email = build_email_resolver(session)
 
     def local_zone(technician_id: uuid.UUID) -> tzinfo:
         """Zone notification times render in: the technician's stored timezone, else the
@@ -115,7 +112,5 @@ def build_notifications(session: Session, settings) -> NotificationPort:
         email_sender=email_sender,
         recipient_email=recipient_email,
         context_resolver=appointment_context,
-        ical_uid=build_ical_uid,
         local_zone=local_zone,
-        organizer_address=sender_address,
     )

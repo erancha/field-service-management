@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 _TITLE_PROBLEM_LIMIT = 60
 _GENERIC_TITLE = "Field service appointment"
+_BRAND = "Field Service Management"
 
 
 @dataclass(frozen=True)
@@ -28,9 +29,9 @@ class AppointmentContext:
     resolver populates them for the customer, and the dispatcher resolver populates them for the
     technician's own event so the technician can confirm the contact the customer was given.
 
-    Title composition lives here so the Google event title and the ICS SUMMARY render
-    identically and the email subject leads with the same problem summary. Notification
-    application code calls these methods duck-typed: the import contracts bar
+    Title composition lives here so the Google event title and the technician email subject are
+    built from the same appointment data. Notification application code calls these methods
+    duck-typed through AppointmentContextView: the import contracts bar
     fsm.notifications.application from importing fsm.scheduling.
     """
 
@@ -52,10 +53,18 @@ class AppointmentContext:
         return first_line[: _TITLE_PROBLEM_LIMIT - 1].rstrip() + "…"
 
     def summary_line(self) -> str:
-        """Compose "{customer} — {short problem}", falling back to whichever part is known,
-        then to a generic title when neither is."""
-        name = (self.customer_name or "").strip()
+        """Compose "Field Service Management: {technician} -- {customer} : {problem}".
+
+        Google renders this as the customer's invite subject, so the brand leads and the parties
+        and job type follow. The two parties are joined by " -- " to set them apart from the
+        problem, which follows after " : ". Segments are included only when known; the problem is
+        truncated to the title limit. When no segment is known the generic title stands in.
+        """
+        technician = (self.technician_name or "").strip()
+        customer = (self.customer_name or "").strip()
         problem = self.problem_summary()
-        if name and problem:
-            return f"{name} — {problem}"
-        return name or problem or _GENERIC_TITLE
+        parties = " -- ".join(p for p in (technician, customer) if p)
+        segments = [s for s in (parties, problem) if s]
+        if not segments:
+            return _GENERIC_TITLE
+        return f"{_BRAND}: " + " : ".join(segments)
