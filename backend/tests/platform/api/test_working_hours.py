@@ -1,4 +1,4 @@
-"""Integration tests for working-hours and timezone endpoints.
+"""Integration tests for the working-hours endpoints.
 
 Tests:
 - PUT /technicians/{id}/working-hours stores a Mon–Fri schedule.
@@ -6,8 +6,6 @@ Tests:
 - GET /availability returns slots on Friday and none on Sunday for a Mon–Fri schedule.
 - Invalid window (start >= end) → 400.
 - Duplicate weekday in payload → 400.
-- PUT /technicians/{id}/timezone with an invalid zone → 400.
-- With a stored timezone, availability slot boundaries reflect that zone.
 """
 from __future__ import annotations
 
@@ -184,78 +182,3 @@ def test_availability_no_slots_on_sunday_with_mon_fri_schedule(client, authentic
     )
     assert resp.status_code == 200
     assert resp.json()["slots"] == []
-
-
-# ---------------------------------------------------------------------------
-# Timezone endpoints
-# ---------------------------------------------------------------------------
-
-
-def test_put_timezone_returns_200(client, authenticate):
-    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
-    resp = client.put(
-        f"/api/technicians/{tech_id}/timezone",
-        json={"timezone": "Europe/London"},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["timezone"] == "Europe/London"
-
-
-def test_get_timezone_returns_stored(client, authenticate):
-    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
-    client.put(
-        f"/api/technicians/{tech_id}/timezone",
-        json={"timezone": "America/New_York"},
-    )
-
-    resp = client.get(f"/api/technicians/{tech_id}/timezone")
-    assert resp.status_code == 200
-    assert resp.json()["timezone"] == "America/New_York"
-
-
-def test_get_timezone_returns_default_when_unset(client, authenticate):
-    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
-    resp = client.get(f"/api/technicians/{tech_id}/timezone")
-    assert resp.status_code == 200
-    assert resp.json()["timezone"] == "Asia/Jerusalem"
-
-
-def test_put_invalid_timezone_returns_400(client, authenticate):
-    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
-    resp = client.put(
-        f"/api/technicians/{tech_id}/timezone",
-        json={"timezone": "Not/A/Real/Zone"},
-    )
-    assert resp.status_code == 400
-
-
-def test_availability_slot_boundaries_reflect_stored_timezone(client, authenticate):
-    """Slots for UTC+0 (Europe/London in winter) start at a different UTC hour than Asia/Jerusalem."""
-    tech_id = authenticate(client.app, role=Role.TECHNICIAN)
-
-    # Store Mon–Fri 09:00–10:00 schedule (1 slot per day)
-    client.put(
-        f"/api/technicians/{tech_id}/working-hours",
-        json={"windows": [{"weekday": wd, "start": "09:00:00", "end": "10:00:00"} for wd in range(5)]},
-    )
-    # Use a winter date (London = UTC+0) so math is clean
-    _MONDAY_JAN = date(2025, 1, 6)  # Monday
-    client.put(
-        f"/api/technicians/{tech_id}/timezone",
-        json={"timezone": "Europe/London"},
-    )
-
-    resp = client.get(
-        "/api/availability",
-        params={
-            "technician_id": str(tech_id),
-            "date_from": _MONDAY_JAN.isoformat(),
-            "date_to": _MONDAY_JAN.isoformat(),
-            "slot_minutes": 60,
-        },
-    )
-    assert resp.status_code == 200
-    slots = resp.json()["slots"]
-    assert len(slots) == 1
-    # In Europe/London (UTC+0 in January), 09:00 local = 09:00 UTC
-    assert "09:00:00" in slots[0]["start"]

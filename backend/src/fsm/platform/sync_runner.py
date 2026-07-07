@@ -118,7 +118,7 @@ def _process_connection(
             uow.appointments,
             uow.outbox,
             notifications,
-            availability_inputs=build_availability_inputs(session_factory),
+            availability_inputs=build_availability_inputs(session_factory, settings),
         )
         for change in changes:
             service.reconcile(change)

@@ -23,10 +23,13 @@ class _FakeSession:
 
 
 class _NoSmtpSettings:
-    """Settings stub with SMTP unconfigured, forcing the LoggingEmailSender fallback."""
+    """Settings stub: SMTP unconfigured (forces LoggingEmailSender) with a fixed service zone."""
 
     smtp_host = None
     smtp_sender_address = None
+
+    def __init__(self, timezone: str = "Asia/Jerusalem") -> None:
+        self.timezone = timezone
 
 
 @dataclass
@@ -109,47 +112,15 @@ def test_context_resolver_populates_technician_name_and_phone_from_technician_pr
     assert context.technician_phone == "+972-50-999"
 
 
-class _StoredTimezoneSession:
-    """Session stub whose working-hours timezone query yields a fixed stored zone."""
-
-    def __init__(self, tz: str) -> None:
-        self._tz = tz
-
-    def query(self, row_type):
-        return self
-
-    def filter(self, *args):
-        return self
-
-    def first(self):
-        from types import SimpleNamespace
-
-        return SimpleNamespace(timezone=self._tz)
-
-
-def test_local_zone_uses_the_technician_stored_timezone() -> None:
+def test_local_zone_uses_the_configured_service_region_timezone() -> None:
+    """Notification times render in Settings.timezone; the technician id does not affect the zone,
+    and no per-technician database read happens (the raising session is never touched)."""
     import zoneinfo
 
     from fsm.platform.notifications_factory import build_notifications
 
     port = build_notifications(
-        session=_StoredTimezoneSession("Europe/London"), settings=_NoSmtpSettings()
+        session=_RaisingSession(), settings=_NoSmtpSettings("Europe/London")
     )
 
     assert port._local_zone(uuid.uuid4()) == zoneinfo.ZoneInfo("Europe/London")
-
-
-def test_local_zone_degrades_to_the_region_default_when_the_read_fails(caplog) -> None:
-    import logging
-    import zoneinfo
-
-    from fsm.platform.config import DEFAULT_TIMEZONE
-    from fsm.platform.notifications_factory import build_notifications
-
-    port = build_notifications(session=_RaisingSession(), settings=_NoSmtpSettings())
-
-    with caplog.at_level(logging.ERROR):
-        zone = port._local_zone(uuid.uuid4())
-
-    assert zone == zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
-    assert any("Timezone lookup failed" in r.getMessage() for r in caplog.records)

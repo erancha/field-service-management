@@ -109,11 +109,6 @@ erDiagram
         time end_time
     }
 
-    TECHNICIAN_TIMEZONE {
-        uuid technician_id PK
-        text timezone "IANA name"
-    }
-
     HOLIDAY {
         date holiday_date PK
         text name
@@ -134,14 +129,13 @@ link to any other entity.
   booking.
 - **Appointment history is append-only.** Every lifecycle transition writes an `appointment_audit`
   row in the appointment's own transaction, keeping the log consistent with entity state.
-- **One connection / window per technician.** `calendar_connection` and `technician_timezone` key on
-  `technician_id` alone; `working_hours` and `time_off` use composite keys so a technician has at
-  most one window per weekday and one row per day off.
+- **One connection per technician.** `calendar_connection` keys on `technician_id` alone;
+  `working_hours` and `time_off` use composite keys so a technician has at most one window per
+  weekday and one row per day off.
 
 ## Glossary
 
-In the diagram, `PK` marks a primary key, `UK` a unique key, and an `IANA name` is a timezone
-identifier from the IANA database (for example `Europe/Berlin`).
+In the diagram, `PK` marks a primary key and `UK` a unique key.
 
 | Ref | Term | Meaning |
 | --- | --- | --- |

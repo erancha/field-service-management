@@ -24,10 +24,13 @@ class GoogleCalendarAdapter:
         calendar_id: str,
         *,
         attendee_email: Callable[[UUID], str | None] | None = None,
+        time_zone: str = "UTC",
     ) -> None:
         self._client = client
         self._calendar_id = calendar_id
         self._attendee_email = attendee_email
+        # IANA zone Google renders the event in and resolves DST/recurrence against.
+        self._time_zone = time_zone
 
     # ------------------------------------------------------------------
     # CalendarPort
@@ -85,8 +88,8 @@ class GoogleCalendarAdapter:
         )
         body: dict = {
             "summary": context.summary_line(),
-            "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
-            "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
+            "start": {"dateTime": start.isoformat(), "timeZone": self._time_zone},
+            "end": {"dateTime": end.isoformat(), "timeZone": self._time_zone},
         }
         # The customer guest may move the event; the inbound reconciler validates every move
         # against the booking policy and reverts unavailable times.

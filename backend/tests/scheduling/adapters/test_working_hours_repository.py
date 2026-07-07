@@ -127,22 +127,3 @@ def test_per_technician_isolation(session):
     # tech_a's configuration must be unaffected.
     result_a = repo.get_for_technician(tech_a)
     assert len(result_a.windows) == 5
-
-
-def test_timezone_upsert_round_trip(session):
-    tech_id = uuid.uuid4()
-    repo = SqlAlchemyWorkingHoursRepository(session)
-
-    repo.set_timezone(tech_id, "Europe/London")
-    assert repo.get_timezone(tech_id) == "Europe/London"
-
-    # Upsert should replace the previous value.
-    repo.set_timezone(tech_id, "America/New_York")
-    assert repo.get_timezone(tech_id) == "America/New_York"
-
-
-def test_get_timezone_returns_none_when_unset(session):
-    tech_id = uuid.uuid4()
-    repo = SqlAlchemyWorkingHoursRepository(session)
-
-    assert repo.get_timezone(tech_id) is None

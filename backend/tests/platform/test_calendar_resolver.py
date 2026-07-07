@@ -20,7 +20,7 @@ from fsm.google_calendar.domain.connection import CalendarConnection, CalendarCo
 from fsm.google_calendar.domain.errors import NotFoundError
 from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.platform.calendar_resolver import build_calendar_resolver
-from fsm.platform.config import Settings
+from fsm.platform.config import DEFAULT_TIMEZONE, Settings
 from fsm.platform.dev_adapters import NullCalendarPort
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.appointment_context import AppointmentContext
@@ -265,6 +265,71 @@ class TestConfiguredSettings:
         assert fake_factory_calls[0]["refresh_token"] == "refresh-token-value"
         assert fake_factory_calls[0]["client_id"] == "test-id"
         assert fake_factory_calls[0]["client_secret"] == "test-secret"
+
+
+# ---------------------------------------------------------------------------
+# Service-region timezone wiring
+# ---------------------------------------------------------------------------
+
+class TestTimezoneWiring:
+    """The resolver stamps the configured service-region timezone (Settings.timezone) onto the
+    adapter."""
+
+    def _resolve_adapter(self, configured_timezone: str | None) -> GoogleCalendarAdapter:
+        from cryptography.fernet import Fernet
+
+        from fsm.google_calendar.adapters.orm import CalendarConnectionRow
+
+        real_key = Fernet.generate_key().decode()
+        settings_kwargs = dict(
+            database_url="postgresql+psycopg://x:x@localhost/x",
+            google_client_id="test-id",
+            google_client_secret=SecretStr("test-secret"),
+            fsm_token_key=SecretStr(real_key),
+        )
+        if configured_timezone is not None:
+            settings_kwargs["timezone"] = configured_timezone
+        settings = Settings(**settings_kwargs)
+
+        tech_id = uuid.uuid4()
+        encrypted_token = FernetTokenCipher(real_key).encrypt("refresh-token-value")
+
+        def session_factory():
+            class _Sess:
+                def __enter__(self_):
+                    return self_
+
+                def __exit__(self_, *_: object) -> None:
+                    pass
+
+                def get(self_, model_cls, tid):
+                    if model_cls is CalendarConnectionRow and tid == tech_id:
+                        return CalendarConnectionRow(
+                            technician_id=tech_id,
+                            fsm_calendar_id="cal-tz-1",
+                            encrypted_refresh_token=encrypted_token,
+                            status="CONNECTED",
+                        )
+                    return None
+
+            return _Sess()
+
+        resolver = build_calendar_resolver(
+            session_factory=session_factory,
+            settings=settings,
+            client_factory=lambda **_kwargs: MagicMock(),
+        )
+        adapter = resolver(tech_id)
+        assert isinstance(adapter, GoogleCalendarAdapter)
+        return adapter
+
+    def test_configured_zone_is_stamped_on_adapter(self) -> None:
+        adapter = self._resolve_adapter("America/New_York")
+        assert adapter._time_zone == "America/New_York"
+
+    def test_defaults_to_region_default_when_unconfigured(self) -> None:
+        adapter = self._resolve_adapter(None)
+        assert adapter._time_zone == DEFAULT_TIMEZONE
 
 
 # ---------------------------------------------------------------------------

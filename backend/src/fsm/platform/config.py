@@ -1,5 +1,6 @@
 """Application configuration loaded from the environment."""
 
+import zoneinfo
 from functools import lru_cache
 from typing import Literal
 
@@ -7,8 +8,6 @@ from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# Service-region timezone assumed wherever no technician-specific timezone is stored: slot
-# generation, the timezone API's fallback, and notification wall-clock rendering.
 DEFAULT_TIMEZONE = "Asia/Jerusalem"
 
 
@@ -19,6 +18,9 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     app_env: Literal["local", "test", "staging", "prod"] = "local"
+
+    # IANA zone the single service region operates in; appointment times are rendered in it.
+    timezone: str = DEFAULT_TIMEZONE
 
     # Which deployment this process serves: technician | customer | backoffice. Drives the
     # sign-in role assignment (see SignInHost) and the landing-page title.
@@ -87,6 +89,15 @@ class Settings(BaseSettings):
     def _blank_to_none(cls, value: object) -> object:
         if isinstance(value, str) and value.strip() == "":
             return None
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_iana_zone(cls, value: str) -> str:
+        try:
+            zoneinfo.ZoneInfo(value)
+        except zoneinfo.ZoneInfoNotFoundError as exc:
+            raise ValueError(f"Unknown timezone: {value!r}") from exc
         return value
 
     @property

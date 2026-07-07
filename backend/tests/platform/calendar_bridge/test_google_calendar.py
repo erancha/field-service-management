@@ -226,6 +226,36 @@ class TestCreateEvent:
 
 
 # ---------------------------------------------------------------------------
+# Event timezone stamping
+# ---------------------------------------------------------------------------
+
+class TestEventTimezone:
+    def test_boundaries_carry_injected_timezone(self, appointment: Appointment) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(
+            client=client, calendar_id=CALENDAR_ID, time_zone="Europe/Jerusalem"
+        )
+
+        adapter.create_event(appointment, AppointmentContext())
+
+        _, body, _ = client.inserted[0]
+        assert body["start"]["timeZone"] == "Europe/Jerusalem"
+        assert body["end"]["timeZone"] == "Europe/Jerusalem"
+
+    def test_boundaries_default_to_utc_when_no_zone_injected(
+        self, appointment: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment, AppointmentContext())
+
+        _, body, _ = client.inserted[0]
+        assert body["start"]["timeZone"] == "UTC"
+        assert body["end"]["timeZone"] == "UTC"
+
+
+# ---------------------------------------------------------------------------
 # update_event
 # ---------------------------------------------------------------------------
 

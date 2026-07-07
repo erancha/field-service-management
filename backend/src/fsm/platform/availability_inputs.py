@@ -4,17 +4,15 @@ Degrades rather than stalls: corrupt working hours fall back to the default sche
 holiday or day-off read failure falls back to no exclusions — each logged — so a policy-data
 problem can never stall the sync poller.
 
-The timezone is the technician's stored IANA zone, falling back to UTC when unset or unknown.
-OPEN GAP (issue #53): the slot routes fall back to the caller's browser timezone instead, so
-for a technician with no stored timezone the hours validated here diverge from the hours their
-offered slots imply — legitimate calendar moves can be rejected. Resolving the technician
-timezone once for both paths is tracked there.
+Working hours validate in the service-region timezone (Settings.timezone), the same zone the
+slot routes offer availability in, so the hours checked here match the hours the offered slots
+imply.
 """
 from __future__ import annotations
 
 import logging
 import zoneinfo
-from datetime import datetime, timezone, tzinfo
+from datetime import datetime, tzinfo
 from typing import Callable
 from uuid import UUID
 
@@ -30,6 +28,7 @@ _log = logging.getLogger(__name__)
 
 def build_availability_inputs(
     session_factory,
+    settings,
 ) -> Callable[[UUID, datetime], AvailabilityInputs]:
     """Return a resolver mapping (technician_id, proposed start) to their policy inputs.
 
@@ -37,22 +36,11 @@ def build_availability_inputs(
     local day the proposed start falls on, which is the only day is_available consults.
     Each call opens a short session, so the resolver is safe to hold across poll cycles.
     """
+    tz: tzinfo = zoneinfo.ZoneInfo(settings.timezone)
 
     def _resolve(technician_id: UUID, proposed_start: datetime) -> AvailabilityInputs:
         with session_factory() as session:
             wh_repo = SqlAlchemyWorkingHoursRepository(session)
-
-            tz: tzinfo = timezone.utc
-            stored_tz = wh_repo.get_timezone(technician_id)
-            if stored_tz is not None:
-                try:
-                    tz = zoneinfo.ZoneInfo(stored_tz)
-                except zoneinfo.ZoneInfoNotFoundError:
-                    _log.warning(
-                        "Unknown stored timezone %r for technician %s; validating in UTC",
-                        stored_tz,
-                        technician_id,
-                    )
 
             try:
                 working_hours = wh_repo.get_for_technician(technician_id)

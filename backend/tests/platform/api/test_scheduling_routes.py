@@ -214,7 +214,6 @@ def test_availability_returns_slots(client, auth):
             "date_from": "2025-01-05",  # Sunday (Israeli work week)
             "date_to": "2025-01-05",
             "slot_minutes": 60,
-            "tz": "Asia/Jerusalem",
         },
     )
     assert response.status_code == 200
@@ -230,8 +229,10 @@ def test_availability_returns_slots(client, auth):
 def test_availability_excludes_slots_that_begin_before_now(client, auth, monkeypatch):
     """The endpoint drops slots whose start is before the current time.
 
-    Freezes the availability clock to 12:30 UTC on a working Monday so only the
-    13:00–17:00 slots remain from the default 09:00–17:00 UTC schedule.
+    Freezes the availability clock to 12:30 UTC on a working Monday. Slots are generated and
+    rendered in the service-region zone Asia/Jerusalem (UTC+2 in January), where 12:30 UTC is
+    14:30 local, so only the 15:00 and 16:00 local slots of the default 09:00–17:00 schedule
+    start at or after now.
     """
     from fsm.platform.api import scheduling_routes
 
@@ -249,12 +250,11 @@ def test_availability_excludes_slots_that_begin_before_now(client, auth, monkeyp
             "date_from": "2025-01-06",  # Monday (default working day)
             "date_to": "2025-01-06",
             "slot_minutes": 60,
-            "tz": "UTC",
         },
     )
     assert response.status_code == 200
     slot_hours = [int(s["start"][11:13]) for s in response.json()["slots"]]
-    assert slot_hours == [13, 14, 15, 16]
+    assert slot_hours == [15, 16]
 
 
 def test_availability_friday_returns_no_slots(client, auth):
@@ -268,80 +268,10 @@ def test_availability_friday_returns_no_slots(client, auth):
             "date_from": "2025-01-03",  # Friday
             "date_to": "2025-01-03",
             "slot_minutes": 60,
-            "tz": "Asia/Jerusalem",
         },
     )
     assert response.status_code == 200
     assert response.json()["slots"] == []
-
-
-def test_availability_invalid_timezone_returns_400(client, auth):
-    auth()
-    response = client.get(
-        "/api/availability",
-        params={
-            "technician_id": str(uuid.uuid4()),
-            "date_from": "2025-01-05",
-            "date_to": "2025-01-05",
-            "tz": "Fake/Timezone",
-        },
-    )
-    assert response.status_code == 400
-
-
-def test_availability_corrupt_stored_timezone_falls_back_and_logs(
-    client, auth, pg_session_factory, caplog
-):
-    """A stored timezone that no longer resolves via ZoneInfo degrades to the caller-supplied
-    tz, and the degradation is logged so a corrupt row doesn't silently reshape availability.
-    """
-    from fsm.scheduling.adapters.orm import TechnicianTimezoneRow
-
-    auth()
-    tech_id = uuid.uuid4()
-    with pg_session_factory() as session:
-        with session.begin():
-            session.add(TechnicianTimezoneRow(technician_id=tech_id, timezone="Not/AZone"))
-
-    with caplog.at_level("WARNING", logger="fsm.platform.api.scheduling_routes"):
-        response = client.get(
-            "/api/availability",
-            params={
-                "technician_id": str(tech_id),
-                "date_from": "2025-01-05",  # Sunday (default working day)
-                "date_to": "2025-01-05",
-                "slot_minutes": 60,
-                "tz": "Asia/Jerusalem",
-            },
-        )
-    assert response.status_code == 200
-    # Falls back to the caller-supplied tz, so the default 09:00-17:00 schedule still
-    # yields 8 one-hour slots rather than an empty or 500 response.
-    assert len(response.json()["slots"]) == 8
-    assert "Not/AZone" in caplog.text and str(tech_id) in caplog.text
-
-
-def test_availability_unexpected_timezone_error_propagates(client, auth, monkeypatch):
-    """Only ZoneInfoNotFoundError is degraded; any other error reading the stored timezone
-    must surface rather than being absorbed into a default.
-    """
-    from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
-
-    def _boom(self, technician_id):
-        raise RuntimeError("timezone store unavailable")
-
-    monkeypatch.setattr(SqlAlchemyWorkingHoursRepository, "get_timezone", _boom)
-    auth()
-    with pytest.raises(RuntimeError, match="timezone store unavailable"):
-        client.get(
-            "/api/availability",
-            params={
-                "technician_id": str(uuid.uuid4()),
-                "date_from": "2025-01-05",
-                "date_to": "2025-01-05",
-                "tz": "Asia/Jerusalem",
-            },
-        )
 
 
 def test_availability_corrupt_working_hours_falls_back_and_logs(
@@ -374,7 +304,6 @@ def test_availability_corrupt_working_hours_falls_back_and_logs(
                 "date_from": "2025-01-05",  # Sunday
                 "date_to": "2025-01-05",
                 "slot_minutes": 60,
-                "tz": "Asia/Jerusalem",
             },
         )
     assert response.status_code == 200
@@ -401,7 +330,6 @@ def test_availability_unexpected_working_hours_error_propagates(client, auth, mo
                 "technician_id": str(uuid.uuid4()),
                 "date_from": "2025-01-05",
                 "date_to": "2025-01-05",
-                "tz": "Asia/Jerusalem",
             },
         )
 

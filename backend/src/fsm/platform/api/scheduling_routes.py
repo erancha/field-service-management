@@ -49,13 +49,10 @@ from fsm.platform.api.schemas import (
     RescheduleRequest,
     ServiceCallResponse,
     SlotResponse,
-    TimezoneRequest,
-    TimezoneResponse,
     WorkingHoursRequest,
     WorkingHoursResponse,
 )
 from fsm.platform.calendar_resolver import build_calendar_resolver
-from fsm.platform.config import DEFAULT_TIMEZONE
 from fsm.platform.dev_adapters import LoggingNotificationPort, NullCalendarPort
 from fsm.platform.identity_lookup import build_contact_resolver
 from fsm.platform.notifications_factory import build_notifications
@@ -259,35 +256,21 @@ def _compute_slots(
     date_from: date,
     date_to: date,
     slot_minutes: int,
-    tz_hint: zoneinfo.ZoneInfo | None = None,
 ) -> list[TimeRange]:
     """Return proposed availability slots for one technician over a date range.
 
-    Applies working hours, the technician's stored timezone (falling back to tz_hint
-    or the region default), holiday exclusions, day-off exclusions, and free/busy
-    subtraction from the technician's connected calendar. Holiday, day-off, and
-    calendar reads fail open on any error, mirroring the individual helper functions.
-    An unresolvable stored timezone falls back to tz_hint; stored hours that fail
-    domain validation fall back to the standard Israeli work-week schedule. Any
-    other error propagates rather than being silently absorbed.
+    Applies working hours, the service-region timezone, holiday exclusions, day-off
+    exclusions, and free/busy subtraction from the technician's connected calendar.
+    Holiday, day-off, and calendar reads fail open on any error, mirroring the individual
+    helper functions. Stored hours that fail domain validation fall back to the standard
+    Israeli work-week schedule. Any other error propagates rather than being silently absorbed.
     """
     from fsm.scheduling.adapters.working_hours_repository import (
         SqlAlchemyWorkingHoursRepository,
     )
 
-    tz_info: zoneinfo.ZoneInfo = tz_hint if tz_hint is not None else zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    tz_info = zoneinfo.ZoneInfo(_get_settings(request).timezone)
     wh_repo = SqlAlchemyWorkingHoursRepository(uow.session)
-
-    stored_tz = wh_repo.get_timezone(technician_id)
-    if stored_tz is not None:
-        try:
-            tz_info = zoneinfo.ZoneInfo(stored_tz)
-        except zoneinfo.ZoneInfoNotFoundError:
-            _log.warning(
-                "Unknown stored timezone %r for technician %s; falling back to caller-supplied timezone",
-                stored_tz,
-                technician_id,
-            )
 
     try:
         working_hours = wh_repo.get_for_technician(technician_id)
@@ -330,16 +313,10 @@ def get_availability(
     date_from: Annotated[date, Query()],
     date_to: Annotated[date, Query()],
     slot_minutes: Annotated[int, Query(ge=1)] = 60,
-    tz: Annotated[str, Query()] = DEFAULT_TIMEZONE,
 ) -> AvailabilityResponse:
     """Return available booking slots for a technician over a date range."""
-    try:
-        tz_info = zoneinfo.ZoneInfo(tz)
-    except zoneinfo.ZoneInfoNotFoundError:
-        raise HTTPException(status_code=400, detail=f"Unknown timezone: {tz!r}")
-
     with _build_uow(request) as uow:
-        slots = _compute_slots(request, uow, technician_id, date_from, date_to, slot_minutes, tz_info)
+        slots = _compute_slots(request, uow, technician_id, date_from, date_to, slot_minutes)
 
     return AvailabilityResponse(
         slots=[SlotResponse(start=s.start, end=s.end) for s in slots]
@@ -525,47 +502,6 @@ def get_working_hours(
     return WorkingHoursResponse(
         windows=[DailyHoursSchema(weekday=dh.weekday, start=dh.start, end=dh.end) for dh in hours.windows]
     )
-
-
-@router.put("/technicians/{technician_id}/timezone", response_model=TimezoneResponse)
-def put_timezone(
-    technician_id: UUID,
-    body: TimezoneRequest,
-    request: Request,
-    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
-) -> TimezoneResponse:
-    """Store the technician's IANA timezone, validating it against the system timezone database."""
-    from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
-
-    _assert_self(technician_id, user)
-    try:
-        zoneinfo.ZoneInfo(body.timezone)
-    except zoneinfo.ZoneInfoNotFoundError:
-        raise HTTPException(status_code=400, detail=f"Unknown timezone: {body.timezone!r}")
-
-    with _build_uow(request) as uow:
-        repo = SqlAlchemyWorkingHoursRepository(uow.session)
-        repo.set_timezone(technician_id, body.timezone)
-        uow.commit()
-
-    return TimezoneResponse(timezone=body.timezone)
-
-
-@router.get("/technicians/{technician_id}/timezone", response_model=TimezoneResponse)
-def get_timezone(
-    technician_id: UUID,
-    request: Request,
-    user: SessionUser = Depends(require_role(Role.TECHNICIAN)),
-) -> TimezoneResponse:
-    """Return the technician's timezone (the region default when unset)."""
-    from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
-
-    _assert_self(technician_id, user)
-    with _build_uow(request) as uow:
-        repo = SqlAlchemyWorkingHoursRepository(uow.session)
-        stored = repo.get_timezone(technician_id)
-
-    return TimezoneResponse(timezone=stored if stored is not None else DEFAULT_TIMEZONE)
 
 
 # ---------------------------------------------------------------------------

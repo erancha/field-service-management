@@ -137,13 +137,3 @@ class WorkingHoursRow(Base):
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
 
 
-class TechnicianTimezoneRow(Base):
-    """Persistent row for a technician's IANA timezone preference.
-
-    technician_id is the sole PK; upsert via ON CONFLICT DO UPDATE replaces the value.
-    """
-
-    __tablename__ = "technician_timezone"
-
-    technician_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    timezone: Mapped[str] = mapped_column(Text, nullable=False)

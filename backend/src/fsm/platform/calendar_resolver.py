@@ -33,9 +33,10 @@ def build_calendar_resolver(
     yields NullCalendarPort so the app operates without credentials.
 
     For configured environments, each call opens a short session, loads the
-    technician's CalendarConnection and encrypted token, decrypts it, builds a
-    client, and returns a GoogleCalendarAdapter scoped to that technician's
-    calendar. A fresh client is built on every call; none is shared across calls.
+    technician's CalendarConnection and encrypted token, decrypts it, builds a client,
+    and returns a GoogleCalendarAdapter scoped to that technician's calendar and stamped
+    with the service-region timezone (Settings.timezone). A fresh client is built on every
+    call; none is shared across calls.
 
     The injectable client_factory parameter (default: build_calendar_client)
     allows tests to supply a fake that avoids real Google API calls.
@@ -66,7 +67,10 @@ def build_calendar_resolver(
             client_secret=settings.google_client_secret.get_secret_value(),
         )
         return GoogleCalendarAdapter(
-            client, connection.fsm_calendar_id, attendee_email=attendee_email
+            client,
+            connection.fsm_calendar_id,
+            attendee_email=attendee_email,
+            time_zone=settings.timezone,
         )
 
     return _resolver

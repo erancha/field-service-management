@@ -19,11 +19,9 @@ from fsm.notifications.adapters.feed_repository import SqlAlchemyNotificationFee
 from fsm.notifications.adapters.smtp_email_sender import LoggingEmailSender, SmtpEmailSender
 from fsm.notifications.application.delivering_notifications import DeliveringNotificationPort
 from fsm.notifications.ports.email_sender import EmailSender
-from fsm.platform.config import DEFAULT_TIMEZONE
 from fsm.platform.context_rendering import required_field
 from fsm.platform.identity_lookup import build_email_resolver, load_user
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
-from fsm.scheduling.adapters.working_hours_repository import SqlAlchemyWorkingHoursRepository
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.ports.notifications import NotificationPort
 
@@ -69,20 +67,12 @@ def build_notifications(session: Session, settings) -> NotificationPort:
     email_sender = build_email_sender(settings)
     recipient_email = build_email_resolver(session)
 
-    def local_zone(technician_id: uuid.UUID) -> tzinfo:
-        """Zone notification times render in: the technician's stored timezone, else the
-        region default. Degrades to the default (logged) so a timezone-read failure can
-        never block the notification."""
-        try:
-            stored = SqlAlchemyWorkingHoursRepository(session).get_timezone(technician_id)
-            return zoneinfo.ZoneInfo(stored or DEFAULT_TIMEZONE)
-        except Exception:
-            _log.exception(
-                "Timezone lookup failed for technician_id=%s; using %s",
-                technician_id,
-                DEFAULT_TIMEZONE,
-            )
-            return zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    app_zone = zoneinfo.ZoneInfo(settings.timezone)
+
+    def local_zone(_technician_id: uuid.UUID) -> tzinfo:
+        """Zone notification times render in. A visit is physical, so the single service-region
+        timezone is correct for both parties regardless of technician."""
+        return app_zone
 
     def appointment_context(appointment) -> AppointmentContext:
         try:

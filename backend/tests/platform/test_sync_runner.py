@@ -22,10 +22,13 @@ from fsm.google_calendar.adapters.orm import CalendarConnectionRow
 
 
 _TZ = timezone.utc
+# The reconciler validates inbound moves against the default Sun–Thu 09:00–17:00 schedule in the
+# service-region zone Asia/Jerusalem. 2024-06-10 is a Monday in IDT (UTC+3), so 09:00–17:00 local is
+# 06:00–14:00 UTC; the move below (13:00–15:00 local) lands inside that window and is accepted.
 _APPT_START = datetime(2024, 6, 10, 9, 0, tzinfo=_TZ)
 _APPT_END = datetime(2024, 6, 10, 11, 0, tzinfo=_TZ)
-_NEW_START = datetime(2024, 6, 10, 14, 0, tzinfo=_TZ)
-_NEW_END = datetime(2024, 6, 10, 16, 0, tzinfo=_TZ)
+_NEW_START = datetime(2024, 6, 10, 10, 0, tzinfo=_TZ)
+_NEW_END = datetime(2024, 6, 10, 12, 0, tzinfo=_TZ)
 _APPT_UPDATED_AT = datetime(2024, 6, 10, 8, 0, tzinfo=_TZ)
 # The inbound change must be strictly newer than _APPT_UPDATED_AT
 _EVENT_UPDATED_AT = datetime(2024, 6, 10, 8, 30, tzinfo=_TZ)
