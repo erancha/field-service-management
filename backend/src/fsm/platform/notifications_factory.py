@@ -1,10 +1,10 @@
-"""Factory for constructing the delivering NotificationPort.
+"""Factories for outbound email and the delivering NotificationPort.
 
-Builds a DeliveringNotificationPort wired to the caller's SQLAlchemy session
-so that feed writes participate in the same transaction as the appointment change.
-SMTP is used when a host and a sender account are configured (smtp_sender_address,
-which defaults to the SMTP login); otherwise the LoggingEmailSender fallback is used
-so the in-app feed still works without an SMTP server.
+build_email_sender selects the process-wide EmailSender: SMTP when a host and a sender account
+are configured (smtp_sender_address, which defaults to the SMTP login), otherwise the
+LoggingEmailSender fallback so email-producing flows work without an SMTP server.
+build_notifications wires a DeliveringNotificationPort to the caller's SQLAlchemy session so
+that feed writes participate in the same transaction as the appointment change.
 """
 from __future__ import annotations
 
@@ -30,6 +30,30 @@ from fsm.scheduling.ports.notifications import NotificationPort
 _log = logging.getLogger(__name__)
 
 
+def build_email_sender(settings) -> EmailSender:
+    """Return the outbound EmailSender selected by the SMTP configuration.
+
+    SMTP when a host and a sender account are configured; otherwise the LoggingEmailSender
+    fallback, so every email-producing flow works without an SMTP server.
+    """
+    sender_address = settings.smtp_sender_address
+    if settings.smtp_host and sender_address:
+        password = (
+            settings.smtp_password.get_secret_value()
+            if settings.smtp_password is not None
+            else None
+        )
+        return SmtpEmailSender(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_username,
+            password=password,
+            from_addr=sender_address,
+            use_tls=settings.smtp_use_tls,
+        )
+    return LoggingEmailSender()
+
+
 def build_notifications(session: Session, settings) -> NotificationPort:
     """Return a DeliveringNotificationPort bound to `session`.
 
@@ -42,26 +66,7 @@ def build_notifications(session: Session, settings) -> NotificationPort:
     placeholders (logged as warnings) rather than failing the booking.
     """
     feed_repo = SqlAlchemyNotificationFeedRepository(session)
-
-    sender_address = settings.smtp_sender_address
-    email_sender: EmailSender
-    if settings.smtp_host and sender_address:
-        password = (
-            settings.smtp_password.get_secret_value()
-            if settings.smtp_password is not None
-            else None
-        )
-        email_sender = SmtpEmailSender(
-            host=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_username,
-            password=password,
-            from_addr=sender_address,
-            use_tls=settings.smtp_use_tls,
-        )
-    else:
-        email_sender = LoggingEmailSender()
-
+    email_sender = build_email_sender(settings)
     recipient_email = build_email_resolver(session)
 
     def local_zone(technician_id: uuid.UUID) -> tzinfo:

@@ -33,9 +33,11 @@ from fsm.platform.api.oauth_flow import (
     restore_code_verifier,
     state_matches,
 )
+from fsm.platform.admin_alerts import send_technician_access_requested
 from fsm.platform.api.oauth_redirect import resolve_redirect_uri
 from fsm.platform.api.schemas import UpdateProfileRequest
 from fsm.platform.events import ADMINS_CHANNEL, publish_to_app
+from fsm.platform.notifications_factory import build_email_sender
 
 router = APIRouter(prefix="/auth")
 
@@ -116,14 +118,16 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
     with factory() as session:
         svc = IdentityService(auth=auth_adapter, users=SqlAlchemyUserRepository(session))
         try:
-            outcome = svc.sign_in(id_token, host=host, admin_emails=settings.admin_email_set)
+            sign_in_outcome = svc.sign_in(
+                id_token, host=host, admin_emails=settings.admin_email_set
+            )
         except BackOfficeAccessDenied:
             session.rollback()
             return JSONResponse({"detail": "Not authorised for the back office"}, status_code=403)
         session.commit()
 
-    user = outcome.user
-    if outcome.requested_pending:
+    user = sign_in_outcome.user
+    if sign_in_outcome.requested_pending:
         await _publish(
             request.app,
             ADMINS_CHANNEL,
@@ -134,7 +138,13 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
                 "name": user.name,
             },
         )
-    elif outcome.withdrew_pending:
+        send_technician_access_requested(
+            build_email_sender(settings),
+            settings.admin_email_set,
+            requester_name=user.name,
+            requester_email=user.email,
+        )
+    elif sign_in_outcome.withdrew_pending:
         await _publish(
             request.app,
             ADMINS_CHANNEL,

@@ -10,6 +10,7 @@ import pytest
 
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.notifications.domain.notification import Notification, NotificationKind
+from tests.notifications.fakes import FakeEmailSender, RaisingEmailSender
 
 
 # ---------------------------------------------------------------------------
@@ -38,23 +39,6 @@ class FakeFeedRepository:
 
     def mark_read(self, notification_id: uuid.UUID) -> None:
         pass
-
-
-class FakeEmailSender:
-    """In-memory EmailSender that records calls."""
-
-    def __init__(self) -> None:
-        self.sent: list[dict] = []
-
-    def send(self, to: str, subject: str, body: str) -> None:
-        self.sent.append({"to": to, "subject": subject, "body": body})
-
-
-class RaisingEmailSender:
-    """EmailSender that always raises — used to verify booking-safety."""
-
-    def send(self, to: str, subject: str, body: str) -> None:
-        raise RuntimeError("SMTP unavailable")
 
 
 # ---------------------------------------------------------------------------

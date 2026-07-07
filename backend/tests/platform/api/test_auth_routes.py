@@ -49,7 +49,7 @@ def pg_session_factory():
         del os.environ["DATABASE_URL"]
 
 
-def _settings_with_google(pg_url: str) -> Settings:
+def _settings_with_google(pg_url: str, **overrides) -> Settings:
     return Settings(
         database_url=pg_url,
         app_env="test",
@@ -57,6 +57,7 @@ def _settings_with_google(pg_url: str) -> Settings:
         google_client_secret="test-client-secret",
         google_redirect_uri="http://localhost:8001/auth/google/callback",
         session_secret="test-session-secret-32-bytes-long!!",
+        **overrides,
     )
 
 
@@ -213,6 +214,51 @@ def test_callback_creates_user_sets_session_and_me_returns_user(pg_session_facto
     # /auth/me returns 401 after logout
     me_after_logout = client.get("/auth/me")
     assert me_after_logout.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 3a. Sign-in landing in TECHNICIAN/PENDING emails the back-office admins
+# ---------------------------------------------------------------------------
+
+
+def test_pending_technician_sign_in_emails_back_office_admins(pg_session_factory, caplog):
+    """A sign-in that lands in TECHNICIAN/PENDING emails every configured admin.
+
+    The SSE push reaches only admins with the dashboard open; the email must go out from the same
+    callback so approval latency never depends on an open browser tab. The suite runs with SMTP
+    disabled, so delivery is observed through the LoggingEmailSender fallback's log record.
+    """
+    import logging
+
+    settings = _settings_with_google(
+        os.environ["DATABASE_URL"],
+        fsm_role="technician",
+        admin_emails="admin@example.com",
+    )
+    identity = VerifiedIdentity(
+        google_sub="google-sub-tech-pending",
+        email="tech.pending@example.com",
+        name="Tex Pending",
+    )
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    from urllib.parse import parse_qs, urlparse
+
+    login_resp = client.get("/auth/google/login")
+    state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
+
+    with caplog.at_level(logging.INFO, logger="fsm.notifications.adapters.smtp_email_sender"):
+        callback_resp = client.get(f"/auth/google/callback?code=fake-code&state={state}")
+
+    assert callback_resp.status_code == 307
+    logged = [record.getMessage() for record in caplog.records]
+    assert any(
+        "admin@example.com" in message and "Technician access request" in message
+        for message in logged
+    ), f"no admin alert email observed; log records: {logged}"
 
 
 # ---------------------------------------------------------------------------
