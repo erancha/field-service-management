@@ -138,6 +138,17 @@ class DeliveringNotificationPort:
             ),
         )
 
+    def appointment_reschedule_rejected(self, appointment) -> None:
+        self._deliver(
+            appointment,
+            kind=NotificationKind.RESCHEDULE_REJECTED,
+            subject_base="Appointment time change rejected",
+            body=lambda context: (
+                f"The requested time is not available. The appointment remains at "
+                f"{self._start_text(appointment)}.{_context_lines(context)}"
+            ),
+        )
+
     def appointment_updated(self, appointment) -> None:
         details = appointment.details
         details_block = (

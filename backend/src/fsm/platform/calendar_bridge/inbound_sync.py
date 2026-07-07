@@ -54,11 +54,19 @@ def _map_event(raw_event: dict) -> InboundEventChange | None:
             end=_parse_utc(end_dt_str),
         )
 
+    # The attendees key is absent on events projected without a guest (bare contexts,
+    # events predating the guest model) — a legal state that simply means no RSVP exists.
+    customer_declined = any(
+        attendee.get("responseStatus") == "declined"
+        for attendee in raw_event.get("attendees", ())
+    )
+
     return InboundEventChange(
         appointment_id=appointment_id,
         cancelled=cancelled,
         new_time_range=new_time_range,
         updated_at=_parse_utc(raw_event["updated"]),
+        customer_declined=customer_declined,
     )
 
 

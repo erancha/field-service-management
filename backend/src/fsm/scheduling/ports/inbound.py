@@ -16,12 +16,18 @@ class InboundEventChange:
     iCalUID (built and parsed by domain.calendar_identity). updated_at is the Google event's last
     modification time, used for last-write-wins arbitration against the DB row.
 
-    Only the time window and cancellation are carried inbound. The event description is a
-    rendered projection composed of problem, details, and contact lines, not a source of
-    truth, so it is deliberately not reconciled back onto the appointment.
+    customer_declined reports the customer attendee's RSVP: True when the guest declined the
+    invitation, which is also how Google records the guest deleting the event from their own
+    calendar. cancelled, by contrast, means the event itself was deleted from the technician's
+    calendar.
+
+    Only the time window, cancellation, and the guest's decline are carried inbound. The event
+    description is a rendered projection composed of problem, details, and contact lines, not a
+    source of truth, so it is deliberately not reconciled back onto the appointment.
     """
 
     appointment_id: UUID
     cancelled: bool
     new_time_range: TimeRange | None
     updated_at: datetime
+    customer_declined: bool = False

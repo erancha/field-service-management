@@ -14,6 +14,7 @@ deterministic answer) but may not reflect real duration.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, tzinfo
 from typing import Container, Iterable
 
@@ -98,3 +99,42 @@ def generate_slots(
         current += one_day
 
     return slots
+
+
+@dataclass(frozen=True)
+class AvailabilityInputs:
+    """One technician's booking-policy inputs for validating a proposed time.
+
+    excluded_dates carries both holidays and the technician's days off, already merged;
+    the predicate treats them identically.
+    """
+
+    working_hours: WeeklyWorkingHours
+    tz: tzinfo
+    excluded_dates: frozenset[date]
+
+
+def is_available(
+    *,
+    working_hours: WeeklyWorkingHours,
+    tz: tzinfo,
+    excluded_dates: Container[date],
+    time_range: TimeRange,
+) -> bool:
+    """Return True iff time_range fits the booking policy on its local day.
+
+    The range must fall on a single local (tz) day that is a working day and not
+    excluded, and lie entirely within that day's working window. Ranges spanning
+    local midnight are rejected — no working window crosses midnight.
+    """
+    local_start = time_range.start.astimezone(tz)
+    local_end = time_range.end.astimezone(tz)
+    if local_start.date() != local_end.date():
+        return False
+    day = local_start.date()
+    if day in excluded_dates:
+        return False
+    window = working_hours.window_for(day.weekday())
+    if window is None:
+        return False
+    return window.start <= local_start.time() and local_end.time() <= window.end

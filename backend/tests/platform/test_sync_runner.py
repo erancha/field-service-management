@@ -193,3 +193,61 @@ class TestPollOnce:
             assert conn_row.status == "DISCONNECTED", (
                 f"Expected DISCONNECTED, got {conn_row.status!r}"
             )
+
+    def test_customer_decline_cancels_appointment(self, pg_session_factory, pg_settings):
+        appt_id = uuid.uuid4()
+        tech_id = uuid.uuid4()
+        cal_id = f"cal-test-{uuid.uuid4()}"
+
+        fernet_key = pg_settings.fsm_token_key.get_secret_value()
+        from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+        encrypted_token = FernetTokenCipher(fernet_key).encrypt("fake-refresh-token")
+
+        with pg_session_factory() as seed_session:
+            with seed_session.begin():
+                seed_session.add(CalendarConnectionRow(
+                    technician_id=tech_id,
+                    fsm_calendar_id=cal_id,
+                    encrypted_refresh_token=encrypted_token,
+                    status="CONNECTED",
+                    sync_token=None,
+                ))
+                seed_session.add(AppointmentRow(
+                    id=appt_id,
+                    service_call_id=uuid.uuid4(),
+                    technician_id=tech_id,
+                    customer_id=uuid.uuid4(),
+                    start_at=_APPT_START,
+                    end_at=_APPT_END,
+                    status="SCHEDULED",
+                    details=None,
+                    external_event_id="evt-decline-test",
+                    created_at=_APPT_UPDATED_AT,
+                    updated_at=_APPT_UPDATED_AT,
+                ))
+
+        raw_events = [
+            {
+                "iCalUID": f"fsm-{appt_id}@fsm.local",
+                "status": "confirmed",
+                "start": {"dateTime": _APPT_START.isoformat()},
+                "end": {"dateTime": _APPT_END.isoformat()},
+                "updated": _EVENT_UPDATED_AT.isoformat(),
+                "attendees": [
+                    {"email": "customer@example.com", "responseStatus": "declined"}
+                ],
+            }
+        ]
+
+        class FakeClient:
+            def list_changes(self, calendar_id, sync_token):
+                return raw_events, _NEXT_SYNC_TOKEN
+
+        count = poll_once(
+            pg_session_factory, pg_settings, client_factory=lambda **kwargs: FakeClient()
+        )
+        assert count == 1
+
+        with pg_session_factory() as read_session:
+            appt_row = read_session.get(AppointmentRow, appt_id)
+            assert appt_row.status == "CANCELLED"

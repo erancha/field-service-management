@@ -1,9 +1,10 @@
 """Inbound reconciliation service for the scheduling bounded context.
 
-Reconciles technician-initiated Google Calendar edits back into the FSM database.
-The DB is the merge authority: when an inbound change conflicts with an existing
-active appointment, the DB's version wins and a re-projection UPDATE is enqueued to
-push the authoritative state back onto the calendar.
+Reconciles Google Calendar edits — by the technician on their own calendar or by the
+customer guest — back into the FSM database. The DB is the merge authority: when an
+inbound change conflicts with an existing active appointment or falls outside the
+booking policy, the DB's version wins and a re-projection UPDATE is enqueued to push
+the authoritative state back onto the calendar.
 
 Last-write-wins (LWW) arbitration uses the Google event's last-modification timestamp
 against the appointment's updated_at: a change that is not strictly newer than the
@@ -14,9 +15,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Callable
+from uuid import UUID
 
 from fsm.scheduling.domain.appointment import AppointmentStatus
+from fsm.scheduling.domain.availability import AvailabilityInputs, is_available
 from fsm.scheduling.domain.errors import NotFoundError
+from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.inbound import InboundEventChange
 from fsm.scheduling.ports.notifications import NotificationPort
 from fsm.scheduling.ports.outbox import OutboxOperation, OutboxRepository
@@ -30,8 +34,11 @@ class ReconciliationService:
 
     Core responsibilities:
     - LWW arbitration: discards stale inbound edits based on updated_at comparison
-    - DB-authority overlap guard: re-projects the DB's time when a Google edit would
-      create a double-booking
+    - Booking-policy guard: an inbound time-move outside working hours, on an excluded day, or
+      double-booking is reverted (re-projection UPDATE) and reported via
+      appointment_reschedule_rejected
+    - Customer decline: cancels the appointment, removes the calendar event, and notifies both
+      parties
     - Routes cancel/reschedule/no-op paths to the correct domain mutation and notification;
       description-only inbound edits are ignored (the description is a rendered projection)
     """
@@ -42,11 +49,13 @@ class ReconciliationService:
         outbox: OutboxRepository,
         notifications: NotificationPort,
         *,
+        availability_inputs: Callable[[UUID, datetime], AvailabilityInputs],
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._appointments = appointments
         self._outbox = outbox
         self._notifications = notifications
+        self._availability_inputs = availability_inputs
         self._clock = clock
 
     def reconcile(self, change: InboundEventChange) -> None:
@@ -73,26 +82,24 @@ class ReconciliationService:
             self._notifications.appointment_cancelled(appt)
             return
 
-        if change.new_time_range is not None and change.new_time_range != appt.time_range:
-            conflicting = self._appointments.list_for_technician_between(
-                appt.technician_id,
-                change.new_time_range.start,
-                change.new_time_range.end,
+        if change.customer_declined:
+            # The declined event still exists on the technician's calendar (only the RSVP
+            # changed), so removing it needs an explicit DELETE, unlike the cancelled branch.
+            appt.cancel(now=self._clock())
+            self._appointments.save(appt)
+            self._outbox.enqueue(
+                OutboxOperation.DELETE, appt.id, external_event_id=appt.external_event_id
             )
-            for existing in conflicting:
-                if existing.id == appt.id:
-                    continue
-                if existing.time_range.overlaps(change.new_time_range):
-                    # DB wins: the inbound edit would double-book; re-project the DB's
-                    # authoritative time back onto the Google event via an UPDATE entry.
-                    _log.warning(
-                        "inbound reschedule for appointment %s conflicts with appointment %s "
-                        "— DB wins, enqueuing re-projection UPDATE",
-                        appt.id,
-                        existing.id,
-                    )
-                    self._outbox.enqueue(OutboxOperation.UPDATE, appt.id)
-                    return
+            self._notifications.appointment_cancelled(appt)
+            return
+
+        if change.new_time_range is not None and change.new_time_range != appt.time_range:
+            if not self._accepts(appt, change.new_time_range):
+                # DB wins: re-project the authoritative time back onto the Google event and
+                # tell both parties why the move did not stick.
+                self._outbox.enqueue(OutboxOperation.UPDATE, appt.id)
+                self._notifications.appointment_reschedule_rejected(appt)
+                return
 
             appt.reschedule(change.new_time_range, now=self._clock())
             self._appointments.save(appt)
@@ -103,3 +110,31 @@ class ReconciliationService:
         # own outbound update. The event description is a rendered composition (problem +
         # details + phone), not the raw details field, so reflecting it back would overwrite
         # appt.details with the whole body and compound on every re-projection. Left as a no-op.
+
+    def _accepts(self, appt, new_time_range: TimeRange) -> bool:
+        """True iff the proposed time satisfies the full booking policy for this technician."""
+        inputs = self._availability_inputs(appt.technician_id, new_time_range.start)
+        if not is_available(
+            working_hours=inputs.working_hours,
+            tz=inputs.tz,
+            excluded_dates=inputs.excluded_dates,
+            time_range=new_time_range,
+        ):
+            _log.warning(
+                "inbound reschedule for appointment %s falls outside the booking policy",
+                appt.id,
+            )
+            return False
+        for existing in self._appointments.list_for_technician_between(
+            appt.technician_id, new_time_range.start, new_time_range.end
+        ):
+            if existing.id == appt.id:
+                continue
+            if existing.time_range.overlaps(new_time_range):
+                _log.warning(
+                    "inbound reschedule for appointment %s conflicts with appointment %s",
+                    appt.id,
+                    existing.id,
+                )
+                return False
+        return True

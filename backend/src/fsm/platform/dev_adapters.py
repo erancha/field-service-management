@@ -71,6 +71,13 @@ class LoggingNotificationPort:
             appointment.time_range.start.isoformat(),
         )
 
+    def appointment_reschedule_rejected(self, appointment: Appointment) -> None:
+        _log.info(
+            "Notification — appointment_reschedule_rejected: appointment_id=%s kept_start=%s",
+            appointment.id,
+            appointment.time_range.start.isoformat(),
+        )
+
     def appointment_updated(self, appointment: Appointment) -> None:
         _log.info(
             "Notification — appointment_updated: appointment_id=%s",

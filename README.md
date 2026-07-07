@@ -13,8 +13,10 @@ vision below. Google OIDC sign-in with roles, one-click technician calendar conn
 self-booking with a database-enforced no-double-booking guarantee, two-way Google Calendar sync
 (outbound projection + inbound reconcile), central holiday exclusions, per-technician working hours
 and time off, in-app notifications for both parties plus an email to the technician, and the customer
-added as a real guest on the appointment's Google Calendar event (Google delivers their invite,
-update, and cancellation). Google is required configuration — it is the only sign-in
+added as a real guest on the appointment's Google Calendar event — Google delivers their invite,
+update, and cancellation, a guest decline (or deleting the event) cancels the appointment, and a
+guest time-move is validated against the technician's availability and reverted with a notification
+when the time is not bookable. Google is required configuration — it is the only sign-in
 path, so its environment variables must be set and every booking and scheduling action needs a
 signed-in session. Email and holiday integrations are driven by environment variables and degrade
 gracefully when unset.

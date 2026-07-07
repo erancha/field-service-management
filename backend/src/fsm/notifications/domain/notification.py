@@ -10,6 +10,7 @@ from enum import Enum
 class NotificationKind(str, Enum):
     BOOKED = "BOOKED"
     RESCHEDULED = "RESCHEDULED"
+    RESCHEDULE_REJECTED = "RESCHEDULE_REJECTED"
     UPDATED = "UPDATED"
     CANCELLED = "CANCELLED"
 

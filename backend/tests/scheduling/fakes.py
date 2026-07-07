@@ -285,6 +285,11 @@ class InMemoryOutboxRepository:
         return list(self._entries)
 
     @property
+    def entries(self) -> list[OutboxEntry]:
+        """Alias for all_entries used by tests that assert on a single enqueued entry."""
+        return self.all_entries
+
+    @property
     def pending_entries(self) -> list[OutboxEntry]:
         return [e for e in self._entries if self._statuses.get(e.id) == "PENDING"]
 
@@ -303,6 +308,9 @@ class FakeNotificationPort:
 
     def appointment_rescheduled(self, appointment: Appointment) -> None:
         self.calls.append(("rescheduled", appointment))
+
+    def appointment_reschedule_rejected(self, appointment: Appointment) -> None:
+        self.calls.append(("reschedule_rejected", appointment))
 
     def appointment_updated(self, appointment: Appointment) -> None:
         self.calls.append(("updated", appointment))

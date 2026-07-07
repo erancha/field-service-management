@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID
+import uuid
 
 
-from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter
+from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter, _map_event
 
 
 _APPT_ID_1 = UUID("11111111-1111-1111-1111-111111111111")
@@ -118,3 +119,56 @@ class TestGoogleCalendarSyncAdapter:
         adapter = GoogleCalendarSyncAdapter(CapturingClient(), "cal-id")
         adapter.list_changes("my-sync-token")
         assert received == ["my-sync-token"]
+
+
+def _raw_event(appointment_id, **overrides):
+    base = {
+        "iCalUID": f"fsm-{appointment_id}@fsm.local",
+        "status": "confirmed",
+        "updated": "2024-06-10T08:30:00Z",
+        "start": {"dateTime": "2024-06-10T09:00:00Z"},
+        "end": {"dateTime": "2024-06-10T11:00:00Z"},
+    }
+    base.update(overrides)
+    return base
+
+
+class TestCustomerDeclinedMapping:
+    def test_declined_attendee_sets_flag(self):
+        appt_id = uuid.uuid4()
+        raw = _raw_event(
+            appt_id,
+            attendees=[{"email": "c@x.com", "responseStatus": "declined"}],
+        )
+        change = _map_event(raw)
+        assert change is not None
+        assert change.customer_declined is True
+
+    def test_needs_action_attendee_leaves_flag_unset(self):
+        appt_id = uuid.uuid4()
+        raw = _raw_event(
+            appt_id,
+            attendees=[{"email": "c@x.com", "responseStatus": "needsAction"}],
+        )
+        change = _map_event(raw)
+        assert change is not None
+        assert change.customer_declined is False
+
+    def test_absent_attendees_leaves_flag_unset(self):
+        appt_id = uuid.uuid4()
+        change = _map_event(_raw_event(appt_id))
+        assert change is not None
+        assert change.customer_declined is False
+
+    def test_decline_carries_alongside_time_change(self):
+        appt_id = uuid.uuid4()
+        raw = _raw_event(
+            appt_id,
+            attendees=[{"email": "c@x.com", "responseStatus": "declined"}],
+            start={"dateTime": "2024-06-10T14:00:00Z"},
+            end={"dateTime": "2024-06-10T16:00:00Z"},
+        )
+        change = _map_event(raw)
+        assert change is not None
+        assert change.customer_declined is True
+        assert change.new_time_range is not None

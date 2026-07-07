@@ -508,6 +508,15 @@ def test_build_body_omits_attendee_when_email_is_none():
     assert "attendees" not in body
 
 
+def test_build_body_lets_guests_modify_the_event():
+    client = FakeGoogleCalendarClient()
+    adapter = GoogleCalendarAdapter(
+        client, "cal-1", attendee_email=lambda _customer_id: "cust@example.com"
+    )
+    body = adapter._build_body(_appointment(), AppointmentContext())
+    assert body["guestsCanModify"] is True
+
+
 # ---------------------------------------------------------------------------
 # insert_event + sendUpdates + 409 duplicate recovery
 # ---------------------------------------------------------------------------

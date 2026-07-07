@@ -412,3 +412,33 @@ class TestAppointmentUpdated:
         assert msg["subject"].startswith("Appointment updated")
         assert "has been updated" in msg["body"]
         assert "Details: Gate code 4321" in msg["body"]
+
+
+class TestAppointmentRescheduleRejected:
+    def test_writes_two_feed_rows_with_rejected_kind(self):
+        appt = _make_appointment()
+        feed = FakeFeedRepository()
+        port = _port(appt, feed, FakeEmailSender(), {})
+
+        port.appointment_reschedule_rejected(appt)
+
+        assert len(feed.added) == 2
+        assert all(n.kind == NotificationKind.RESCHEDULE_REJECTED for n in feed.added)
+
+    def test_sends_one_email_to_the_technician_only_with_kept_time(self):
+        cust_id = uuid.uuid4()
+        tech_id = uuid.uuid4()
+        appt = _make_appointment(customer_id=cust_id, technician_id=tech_id)
+        feed = FakeFeedRepository()
+        sender = FakeEmailSender()
+        emails = {cust_id: "c@example.com", tech_id: "t@example.com"}
+
+        port = _port(appt, feed, sender, emails)
+        port.appointment_reschedule_rejected(appt)
+
+        assert len(sender.sent) == 1
+        assert sender.sent[0]["to"] == "t@example.com"
+        assert sender.sent[0]["subject"].startswith("Appointment time change rejected")
+        assert "The requested time is not available. The appointment remains at" in (
+            sender.sent[0]["body"]
+        )

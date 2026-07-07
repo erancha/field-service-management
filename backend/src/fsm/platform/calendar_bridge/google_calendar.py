@@ -88,6 +88,9 @@ class GoogleCalendarAdapter:
             "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
         }
+        # The customer guest may move the event; the inbound reconciler validates every move
+        # against the booking policy and reverts unavailable times.
+        body["guestsCanModify"] = True
         address = (context.service_address or "").strip()
         if address:
             body["location"] = address

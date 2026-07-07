@@ -12,6 +12,7 @@ import logging
 import threading
 
 from fsm.google_calendar.adapters.client_factory import build_calendar_client
+from fsm.platform.availability_inputs import build_availability_inputs
 from fsm.platform.calendar_bridge.inbound_sync import GoogleCalendarSyncAdapter
 from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
@@ -113,7 +114,12 @@ def _process_connection(
 
     with SqlAlchemyUnitOfWork(session_factory) as uow:
         notifications = caller_notifications or build_notifications(uow.session, settings)
-        service = ReconciliationService(uow.appointments, uow.outbox, notifications)
+        service = ReconciliationService(
+            uow.appointments,
+            uow.outbox,
+            notifications,
+            availability_inputs=build_availability_inputs(session_factory),
+        )
         for change in changes:
             service.reconcile(change)
         uow.commit()

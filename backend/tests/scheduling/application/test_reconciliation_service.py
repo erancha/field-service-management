@@ -1,14 +1,16 @@
 """Unit tests for ReconciliationService using in-memory fakes."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
 
 from fsm.scheduling.application.reconciliation_service import ReconciliationService
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.availability import AvailabilityInputs
 from fsm.scheduling.domain.time_range import TimeRange
+from fsm.scheduling.domain.working_hours import DailyHours, WeeklyWorkingHours
 from fsm.scheduling.ports.inbound import InboundEventChange
 from fsm.scheduling.ports.outbox import OutboxOperation
 from tests.scheduling.fakes import (
@@ -70,6 +72,18 @@ def clock_time() -> datetime:
     return _BASE + timedelta(minutes=30)
 
 
+def _permissive_inputs(technician_id: UUID, proposed_start: datetime) -> AvailabilityInputs:
+    """Every weekday 00:00-23:59, no exclusions — isolates tests from the hours policy."""
+    all_day = tuple(
+        DailyHours(weekday=wd, start=time(0, 0), end=time(23, 59)) for wd in range(7)
+    )
+    return AvailabilityInputs(
+        working_hours=WeeklyWorkingHours(windows=all_day),
+        tz=timezone.utc,
+        excluded_dates=frozenset(),
+    )
+
+
 @pytest.fixture
 def svc(
     appt_repo: InMemoryAppointmentRepository,
@@ -81,6 +95,7 @@ def svc(
         appointments=appt_repo,
         outbox=outbox,
         notifications=notifications,
+        availability_inputs=_permissive_inputs,
         clock=lambda: clock_time,
     )
 
@@ -232,11 +247,12 @@ class TestOverlapDBWins:
         saved = appt_repo.get(appt.id)
         assert saved.time_range == _DEFAULT_RANGE
         assert saved.status == AppointmentStatus.SCHEDULED
-        assert len(notifications.calls) == 0
+        assert len(notifications.calls) == 1
         pending = outbox.pending_entries
         assert len(pending) == 1
         assert pending[0].operation == OutboxOperation.UPDATE
         assert pending[0].appointment_id == appt.id
+        assert ("reschedule_rejected", appt) in notifications.calls
 
 
 class TestEchoNoOp:
@@ -390,3 +406,141 @@ class TestAlreadyCancelled:
         assert saved.status == AppointmentStatus.CANCELLED
         assert len(notifications.calls) == 0
         assert len(outbox.all_entries) == 0
+
+
+def _change(
+    appt: Appointment,
+    *,
+    cancelled: bool = False,
+    new_time_range: TimeRange | None = None,
+    customer_declined: bool = False,
+    updated_at: datetime | None = None,
+) -> InboundEventChange:
+    return InboundEventChange(
+        appointment_id=appt.id,
+        cancelled=cancelled,
+        new_time_range=new_time_range,
+        updated_at=updated_at or (_BASE + timedelta(minutes=5)),
+        customer_declined=customer_declined,
+    )
+
+
+class TestCustomerDecline:
+    def test_decline_cancels_deletes_event_and_notifies(self, svc, appt_repo, outbox, notifications):
+        appt = _make_appointment()
+        appt.external_event_id = "evt-1"
+        appt_repo.add(appt)
+
+        svc.reconcile(_change(appt, customer_declined=True))
+
+        assert appt_repo.get(appt.id).status is AppointmentStatus.CANCELLED
+        [entry] = outbox.entries
+        assert entry.operation is OutboxOperation.DELETE
+        assert entry.external_event_id == "evt-1"
+        assert ("cancelled", appt) in notifications.calls
+
+    def test_decline_wins_over_simultaneous_time_change(self, svc, appt_repo, outbox, notifications):
+        appt = _make_appointment()
+        appt_repo.add(appt)
+        moved = TimeRange(
+            start=_DEFAULT_RANGE.start + timedelta(hours=3),
+            end=_DEFAULT_RANGE.end + timedelta(hours=3),
+        )
+
+        svc.reconcile(_change(appt, customer_declined=True, new_time_range=moved))
+
+        assert appt_repo.get(appt.id).status is AppointmentStatus.CANCELLED
+        assert all(kind != "rescheduled" for kind, _ in notifications.calls)
+
+    def test_stale_decline_is_discarded(self, svc, appt_repo, outbox, notifications):
+        appt = _make_appointment(updated_at=_BASE + timedelta(hours=1))
+        appt_repo.add(appt)
+
+        svc.reconcile(_change(appt, customer_declined=True, updated_at=_BASE))
+
+        assert appt_repo.get(appt.id).status is AppointmentStatus.SCHEDULED
+        assert outbox.entries == []
+        assert notifications.calls == []
+
+    def test_decline_of_cancelled_appointment_is_noop(self, svc, appt_repo, outbox, notifications):
+        appt = _make_appointment(status=AppointmentStatus.CANCELLED)
+        appt_repo.add(appt)
+
+        svc.reconcile(_change(appt, customer_declined=True))
+
+        assert outbox.entries == []
+        assert notifications.calls == []
+
+
+class TestBookingPolicyValidation:
+    def _svc_with_hours(self, appt_repo, outbox, notifications, clock_time):
+        """Service whose availability inputs are the real default schedule (Sun-Thu 9-17 UTC)."""
+        def _inputs(technician_id: UUID, proposed_start: datetime) -> AvailabilityInputs:
+            return AvailabilityInputs(
+                working_hours=WeeklyWorkingHours.default(),
+                tz=timezone.utc,
+                excluded_dates=frozenset(),
+            )
+
+        return ReconciliationService(
+            appt_repo, outbox, notifications,
+            availability_inputs=_inputs,
+            clock=lambda: clock_time,
+        )
+
+    def test_out_of_hours_move_reverts_and_notifies(self, appt_repo, outbox, notifications, clock_time):
+        svc = self._svc_with_hours(appt_repo, outbox, notifications, clock_time)
+        appt = _make_appointment()
+        appt_repo.add(appt)
+        evening = TimeRange(
+            start=datetime(2024, 6, 10, 18, 0, tzinfo=_TZ),
+            end=datetime(2024, 6, 10, 20, 0, tzinfo=_TZ),
+        )
+
+        svc.reconcile(_change(appt, new_time_range=evening))
+
+        assert appt_repo.get(appt.id).time_range == _DEFAULT_RANGE
+        [entry] = outbox.entries
+        assert entry.operation is OutboxOperation.UPDATE
+        assert ("reschedule_rejected", appt) in notifications.calls
+
+    def test_excluded_day_move_reverts_and_notifies(self, appt_repo, outbox, notifications, clock_time):
+        def _inputs(technician_id: UUID, proposed_start: datetime) -> AvailabilityInputs:
+            return AvailabilityInputs(
+                working_hours=WeeklyWorkingHours.default(),
+                tz=timezone.utc,
+                excluded_dates=frozenset({date(2024, 6, 10)}),
+            )
+
+        svc = ReconciliationService(
+            appt_repo, outbox, notifications,
+            availability_inputs=_inputs,
+            clock=lambda: clock_time,
+        )
+        appt = _make_appointment()
+        appt_repo.add(appt)
+        same_day = TimeRange(
+            start=datetime(2024, 6, 10, 12, 0, tzinfo=_TZ),
+            end=datetime(2024, 6, 10, 14, 0, tzinfo=_TZ),
+        )
+
+        svc.reconcile(_change(appt, new_time_range=same_day))
+
+        assert appt_repo.get(appt.id).time_range == _DEFAULT_RANGE
+        [entry] = outbox.entries
+        assert entry.operation is OutboxOperation.UPDATE
+        assert ("reschedule_rejected", appt) in notifications.calls
+
+    def test_valid_move_reschedules(self, appt_repo, outbox, notifications, clock_time):
+        svc = self._svc_with_hours(appt_repo, outbox, notifications, clock_time)
+        appt = _make_appointment()
+        appt_repo.add(appt)
+        afternoon = TimeRange(
+            start=datetime(2024, 6, 10, 14, 0, tzinfo=_TZ),
+            end=datetime(2024, 6, 10, 16, 0, tzinfo=_TZ),
+        )
+
+        svc.reconcile(_change(appt, new_time_range=afternoon))
+
+        assert appt_repo.get(appt.id).time_range == afternoon
+        assert ("rescheduled", appt) in notifications.calls

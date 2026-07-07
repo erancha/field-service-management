@@ -23,6 +23,10 @@ class NotificationPort(Protocol):
         """Notify relevant parties that an appointment has been rescheduled."""
         ...
 
+    def appointment_reschedule_rejected(self, appointment: Appointment) -> None:
+        """Notify relevant parties that a requested time change was rejected and reverted."""
+        ...
+
     def appointment_updated(self, appointment: Appointment) -> None:
         """Notify relevant parties that an appointment's content changed without moving in time."""
         ...

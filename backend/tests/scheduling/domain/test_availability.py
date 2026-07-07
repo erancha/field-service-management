@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 
 from fsm.scheduling.domain import TimeRange, WeeklyWorkingHours
-from fsm.scheduling.domain.availability import generate_slots
+from fsm.scheduling.domain.availability import generate_slots, is_available
 
 UTC = ZoneInfo("UTC")
 JERUSALEM = ZoneInfo("Asia/Jerusalem")
@@ -383,3 +383,106 @@ def test_unsorted_busy_intervals_produce_correct_result():
     assert slots_sorted == slots_reversed
     # 8 total - 3 blocked = 5 free
     assert len(slots_sorted) == 5
+
+
+class TestIsAvailable:
+    """is_available accepts a range iff it fits working hours on a non-excluded local day."""
+
+    _TZ_UTC = timezone.utc
+    # Monday 2024-06-10; WeeklyWorkingHours.default() works Sun-Thu 09:00-17:00.
+    _MONDAY = date(2024, 6, 10)
+
+    def _range(self, start_h, start_m, end_h, end_m, tz=None):
+        tz = tz or self._TZ_UTC
+        d = self._MONDAY
+        return TimeRange(
+            start=datetime(d.year, d.month, d.day, start_h, start_m, tzinfo=tz),
+            end=datetime(d.year, d.month, d.day, end_h, end_m, tzinfo=tz),
+        )
+
+    def test_inside_working_hours_passes(self):
+        assert is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset(),
+            time_range=self._range(9, 0, 11, 0),
+        )
+
+    def test_range_ending_exactly_at_window_end_passes(self):
+        assert is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset(),
+            time_range=self._range(15, 0, 17, 0),
+        )
+
+    def test_range_starting_before_window_fails(self):
+        assert not is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset(),
+            time_range=self._range(8, 30, 10, 0),
+        )
+
+    def test_range_ending_after_window_fails(self):
+        assert not is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset(),
+            time_range=self._range(16, 0, 17, 30),
+        )
+
+    def test_non_working_weekday_fails(self):
+        # 2024-06-14 is a Friday — not in the default Sun-Thu schedule.
+        friday = TimeRange(
+            start=datetime(2024, 6, 14, 10, 0, tzinfo=self._TZ_UTC),
+            end=datetime(2024, 6, 14, 11, 0, tzinfo=self._TZ_UTC),
+        )
+        assert not is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset(),
+            time_range=friday,
+        )
+
+    def test_excluded_date_fails(self):
+        assert not is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset({self._MONDAY}),
+            time_range=self._range(9, 0, 11, 0),
+        )
+
+    def test_range_spanning_local_days_fails(self):
+        overnight = TimeRange(
+            start=datetime(2024, 6, 10, 16, 0, tzinfo=self._TZ_UTC),
+            end=datetime(2024, 6, 11, 10, 0, tzinfo=self._TZ_UTC),
+        )
+        assert not is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=self._TZ_UTC,
+            excluded_dates=frozenset(),
+            time_range=overnight,
+        )
+
+    def test_localization_governs_the_window(self):
+        # 06:30-08:30 UTC is 09:30-11:30 at UTC+3 — inside the local window even
+        # though the UTC wall clock is before opening.
+        tz_plus3 = timezone(timedelta(hours=3))
+        rng = TimeRange(
+            start=datetime(2024, 6, 10, 6, 30, tzinfo=timezone.utc),
+            end=datetime(2024, 6, 10, 8, 30, tzinfo=timezone.utc),
+        )
+        assert is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=tz_plus3,
+            excluded_dates=frozenset(),
+            time_range=rng,
+        )
+        # The same instants evaluated as UTC wall clock start at 06:30 — rejected.
+        assert not is_available(
+            working_hours=WeeklyWorkingHours.default(),
+            tz=timezone.utc,
+            excluded_dates=frozenset(),
+            time_range=rng,
+        )
