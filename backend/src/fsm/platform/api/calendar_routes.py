@@ -3,13 +3,15 @@
 Wiring:
 - GET /calendar/connect/login    → redirect to Google Calendar authorization (or 401/403/503)
 - GET /calendar/connect/callback → exchange code, connect or reconnect the technician's calendar,
-                                   persist connection; denied or insufficient consent redirects
-                                   back to the SPA flagged
+                                   persist connection, and re-project upcoming appointments when a
+                                   deleted calendar was replaced; denied or insufficient consent
+                                   redirects back to the SPA flagged
+- POST /calendar/disconnect      → mark the caller's connection DISCONNECTED
 - GET /calendar/status           → return connected status for the session user
 
-The connect endpoints require an APPROVED TECHNICIAN session: a connected calendar makes its
-owner appear in customer-facing pooled availability, so calendar onboarding is gated on the
-back-office approval decision, not on authentication alone. /calendar/status only reports the
+The connect and disconnect endpoints require an APPROVED TECHNICIAN session: a connected calendar
+makes its owner appear in customer-facing pooled availability, so calendar onboarding is gated on
+the back-office approval decision, not on authentication alone. /calendar/status only reports the
 caller's own connection and needs just an authenticated session.
 
 Injectable seams on app.state allow tests to bypass real Google without patching globals:
@@ -19,6 +21,7 @@ Injectable seams on app.state allow tests to bypass real Google without patching
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
@@ -30,6 +33,7 @@ from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
 from fsm.google_calendar.application.connection_service import CalendarConnectionService
 from fsm.google_calendar.domain.errors import NotFoundError
 from fsm.google_calendar.scopes import CALENDAR_OAUTH_SCOPES
+from fsm.platform.calendar_reprojection import reproject_active_appointments
 from fsm.identity.domain.role import Role
 from fsm.platform.api.auth_deps import SessionUser, require_role
 from fsm.platform.api.oauth_flow import (
@@ -175,12 +179,26 @@ def calendar_connect_callback(
         refresh_token = token_exchange(flow, code)
         client = client_factory(refresh_token)
         with factory() as session:
+            repo = SqlAlchemyCalendarConnectionRepository(session)
+            try:
+                previous_calendar_id = repo.get(technician_id).fsm_calendar_id
+            except NotFoundError:
+                previous_calendar_id = None
             service = CalendarConnectionService(
-                repo=SqlAlchemyCalendarConnectionRepository(session),
+                repo=repo,
                 cipher=FernetTokenCipher(settings.fsm_token_key.get_secret_value()),
                 client=client,
             )
-            service.connect(technician_id, refresh_token)
+            connection = service.connect(technician_id, refresh_token)
+            # A changed calendar id means the previous one was deleted in Google and a replacement
+            # was provisioned; its events must be rebuilt from the appointments held here.
+            if (
+                previous_calendar_id is not None
+                and connection.fsm_calendar_id != previous_calendar_id
+            ):
+                reproject_active_appointments(
+                    session, technician_id, now=datetime.now(timezone.utc)
+                )
             session.commit()
     except _google_connect_errors() as exc:
         # A denied or insufficient calendar consent only fails here, on the first Google call
@@ -198,6 +216,31 @@ def calendar_connect_callback(
 
     clear_flow_session(request, _SESSION_PREFIX)
     return RedirectResponse("/", status_code=307)
+
+
+@router.post("/disconnect")
+def calendar_disconnect(
+    request: Request, user: SessionUser = Depends(require_role(Role.TECHNICIAN))
+):
+    """Mark the caller's calendar connection DISCONNECTED, dropping them from pooled availability.
+
+    Gated on the same approved-technician role as connect. Reports 404 when the caller has no
+    connection, so the absence surfaces instead of passing as a no-op success.
+    """
+    factory = get_session_factory(request.app)
+    with factory() as session:
+        repo = SqlAlchemyCalendarConnectionRepository(session)
+        try:
+            connection = repo.get(user.id)
+        except NotFoundError:
+            return JSONResponse(
+                {"detail": "No calendar connection to disconnect"}, status_code=404
+            )
+        connection.disconnect()
+        repo.save(connection)
+        session.commit()
+
+    return JSONResponse({"connected": False})
 
 
 @router.get("/status")

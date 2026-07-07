@@ -1,4 +1,5 @@
 import { ConnectCalendar } from '../features/technician/ConnectCalendar.tsx'
+import { DisconnectCalendar } from '../features/technician/DisconnectCalendar.tsx'
 import { MyAppointments } from '../features/technician/MyAppointments.tsx'
 import { PageHeader } from '../features/layout/PageHeader.tsx'
 import { useCalendarStatus } from '../hooks/useCalendarStatus.ts'
@@ -9,7 +10,7 @@ interface TechnicianPageProps {
 }
 
 export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
-  const { state } = useCalendarStatus()
+  const { state, refresh } = useCalendarStatus()
 
   return (
     <div className="page">
@@ -18,7 +19,10 @@ export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
       <p className="page__id">
         Technician ID: <code>{technicianId}</code>
         {state.status === 'connected' && (
-          <span className="page__calendar-connected">✓ Google Calendar connected</span>
+          <>
+            <span className="page__calendar-connected">✓ Google Calendar connected</span>
+            <DisconnectCalendar onDisconnected={refresh} />
+          </>
         )}
       </p>
 

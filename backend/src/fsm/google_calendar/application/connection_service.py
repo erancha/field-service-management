@@ -42,6 +42,10 @@ class CalendarConnectionService:
         so a repeat consent never leaves an orphan calendar on the technician's account, replaces
         the stored credential with the fresh one, and returns the connection to CONNECTED.
 
+        When the stored calendar no longer resolves in Google — the technician deleted it —
+        reconnect provisions a replacement and repoints the row at it, so a deleted calendar
+        restores itself on the next connect.
+
         Returns the CONNECTED CalendarConnection. The plaintext refresh_token is never persisted
         or logged.
         """
@@ -56,6 +60,13 @@ class CalendarConnectionService:
                 status=CalendarConnectionStatus.CONNECTED,
             )
             self._repo.add(connection, encrypted_token)
+            return connection
+
+        if not self._client.calendar_exists(connection.fsm_calendar_id):
+            new_calendar_id = self._client.create_calendar(BRAND)
+            self._repo.reprovision(technician_id, new_calendar_id, encrypted_token)
+            connection.fsm_calendar_id = new_calendar_id
+            connection.status = CalendarConnectionStatus.CONNECTED
             return connection
 
         self._repo.reconnect(technician_id, encrypted_token)

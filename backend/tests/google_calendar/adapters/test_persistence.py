@@ -126,3 +126,23 @@ class TestSqlAlchemyCalendarConnectionRepository:
         repo = SqlAlchemyCalendarConnectionRepository(session)
         with pytest.raises(NotFoundError):
             repo.reconnect(uuid.uuid4(), "token")
+
+    def test_reprovision_repoints_calendar_token_and_clears_sync_token(self, session):
+        repo = SqlAlchemyCalendarConnectionRepository(session)
+        conn = _make_connection()
+        repo.add(conn, "stale-token")
+        repo.set_sync_token(conn.technician_id, "sync-token-from-old-calendar")
+
+        repo.reprovision(conn.technician_id, "cal-replacement-999", "fresh-token")
+
+        fetched = repo.get(conn.technician_id)
+        assert fetched.status == CalendarConnectionStatus.CONNECTED
+        assert fetched.fsm_calendar_id == "cal-replacement-999"
+        assert repo.get_encrypted_token(conn.technician_id) == "fresh-token"
+        # The stale sync token must not carry over: it belongs to the deleted calendar.
+        assert repo.get_sync_token(conn.technician_id) is None
+
+    def test_reprovision_unknown_technician_raises_not_found(self, session):
+        repo = SqlAlchemyCalendarConnectionRepository(session)
+        with pytest.raises(NotFoundError):
+            repo.reprovision(uuid.uuid4(), "cal-x", "token")

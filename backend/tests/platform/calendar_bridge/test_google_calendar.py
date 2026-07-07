@@ -74,6 +74,9 @@ class FakeGoogleCalendarClient:
     def create_calendar(self, summary: str) -> str:
         return "fake-calendar-id"
 
+    def calendar_exists(self, calendar_id: str) -> bool:
+        return True
+
     def list_changes(
         self, calendar_id: str, sync_token: str | None
     ) -> tuple[list[dict], str]:

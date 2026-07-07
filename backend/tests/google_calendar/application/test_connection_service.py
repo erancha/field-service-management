@@ -39,6 +39,16 @@ class FakeCalendarConnectionRepository:
         self._tokens[technician_id] = encrypted_refresh_token
         self._connections[technician_id].status = CalendarConnectionStatus.CONNECTED
 
+    def reprovision(
+        self, technician_id: uuid.UUID, new_calendar_id: str, encrypted_refresh_token: str
+    ) -> None:
+        if technician_id not in self._connections:
+            raise NotFoundError(f"No connection for {technician_id}")
+        connection = self._connections[technician_id]
+        connection.fsm_calendar_id = new_calendar_id
+        connection.status = CalendarConnectionStatus.CONNECTED
+        self._tokens[technician_id] = encrypted_refresh_token
+
 
 class FakeTokenCipher:
     """Reversible fake: prefix with 'enc:' to distinguish from plaintext."""
@@ -52,13 +62,26 @@ class FakeTokenCipher:
 
 class FakeGoogleCalendarClient:
     CANNED_CALENDAR_ID = "fake-calendar-id-001"
+    REPROVISIONED_CALENDAR_ID = "fake-calendar-id-002"
 
     def __init__(self):
         self.create_calendar_calls = 0
+        # Calendar ids that currently resolve on the account; discard one to simulate the
+        # technician deleting the FSM calendar in Google.
+        self.existing_calendars: set[str] = set()
 
     def create_calendar(self, summary: str) -> str:
         self.create_calendar_calls += 1
-        return self.CANNED_CALENDAR_ID
+        calendar_id = (
+            self.REPROVISIONED_CALENDAR_ID
+            if self.create_calendar_calls > 1
+            else self.CANNED_CALENDAR_ID
+        )
+        self.existing_calendars.add(calendar_id)
+        return calendar_id
+
+    def calendar_exists(self, calendar_id: str) -> bool:
+        return calendar_id in self.existing_calendars
 
     def update_event(self, calendar_id, event_id, body): ...
     def delete_event(self, calendar_id, event_id): ...
@@ -122,6 +145,26 @@ class TestCalendarConnectionService:
         # must never leave an orphan "Field Service Management" calendar on the account.
         assert connection.fsm_calendar_id == FakeGoogleCalendarClient.CANNED_CALENDAR_ID
         assert client.create_calendar_calls == 1
+
+    def test_reconnect_reprovisions_when_google_calendar_was_deleted(self):
+        """A technician who deleted the FSM calendar in Google gets a fresh one on reconnect.
+
+        The stored fsm_calendar_id no longer resolves, so reconnect provisions a replacement,
+        repoints the row, and returns to CONNECTED with the fresh credential.
+        """
+        svc, repo, cipher, client = self._make_service()
+        tech_id = uuid.uuid4()
+        svc.connect(tech_id, "first-token")
+        # The technician deletes the app-created calendar in Google; its id stops resolving.
+        client.existing_calendars.discard(FakeGoogleCalendarClient.CANNED_CALENDAR_ID)
+
+        connection = svc.connect(tech_id, "fresh-token")
+
+        assert connection.status == CalendarConnectionStatus.CONNECTED
+        assert connection.fsm_calendar_id == FakeGoogleCalendarClient.REPROVISIONED_CALENDAR_ID
+        assert repo.get(tech_id).fsm_calendar_id == FakeGoogleCalendarClient.REPROVISIONED_CALENDAR_ID
+        assert cipher.decrypt(repo.get_encrypted_token(tech_id)) == "fresh-token"
+        assert client.create_calendar_calls == 2
 
     def test_disconnect_flips_status_to_disconnected(self):
         svc, repo, cipher, client = self._make_service()

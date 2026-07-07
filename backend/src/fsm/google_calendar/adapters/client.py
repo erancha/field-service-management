@@ -78,6 +78,17 @@ class GoogleApiCalendarClient:
     def create_calendar(self, summary: str) -> str:
         return self._service.calendars().insert(body={"summary": summary}).execute()["id"]
 
+    def calendar_exists(self, calendar_id: str) -> bool:
+        from googleapiclient.errors import HttpError
+
+        try:
+            self._service.calendars().get(calendarId=calendar_id).execute()
+            return True
+        except HttpError as exc:
+            if exc.resp.status == 404:
+                return False
+            raise
+
     def list_changes(
         self, calendar_id: str, sync_token: str | None
     ) -> tuple[list[dict], str]:

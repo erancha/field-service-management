@@ -205,6 +205,46 @@ body {
   border-radius: var(--radius);
 }
 
+.calendar-disconnect {
+  margin-left: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-disconnect__trigger,
+.calendar-disconnect__confirm,
+.calendar-disconnect__cancel {
+  padding: 0;
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.calendar-disconnect__trigger,
+.calendar-disconnect__confirm,
+.calendar-disconnect__error {
+  color: var(--color-danger);
+}
+
+.calendar-disconnect__trigger:hover:not(:disabled),
+.calendar-disconnect__confirm:hover:not(:disabled),
+.calendar-disconnect__cancel:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.calendar-disconnect__cancel {
+  color: var(--color-text-muted);
+}
+
+.calendar-disconnect__trigger:disabled,
+.calendar-disconnect__confirm:disabled,
+.calendar-disconnect__cancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .page__nav {
   margin-top: 1.5rem;
   padding-top: 1rem;

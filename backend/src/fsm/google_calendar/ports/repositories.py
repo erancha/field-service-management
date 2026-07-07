@@ -52,6 +52,17 @@ class CalendarConnectionRepository(Protocol):
         """
         ...
 
+    def reprovision(
+        self, technician_id: uuid.UUID, new_calendar_id: str, encrypted_refresh_token: str
+    ) -> None:
+        """Repoint an existing connection at a freshly provisioned calendar and set it CONNECTED.
+
+        Replaces the stored calendar id and token together; used when the previous calendar was
+        deleted in Google. Clears any stale sync token so the next sync runs a full listing against
+        the new calendar. Raises NotFoundError if the technician has no connection.
+        """
+        ...
+
     def get_sync_token(self, technician_id: uuid.UUID) -> str | None:
         """Return the stored Google Calendar sync token for the given technician.
 

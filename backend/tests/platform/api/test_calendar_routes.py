@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
 
@@ -29,6 +29,8 @@ from testcontainers.postgres import PostgresContainer
 
 from fsm.google_calendar.adapters.repositories import SqlAlchemyCalendarConnectionRepository
 from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+from fsm.scheduling.adapters.orm import AppointmentRow
+from fsm.scheduling.adapters.outbox_repository import SqlAlchemyOutboxRepository
 from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
 from fsm.identity.domain.role import Role
 from fsm.identity.ports.auth import VerifiedIdentity
@@ -139,13 +141,16 @@ def _claim_technician_role(client: TestClient, pg_session_factory, approved: boo
 
 
 class _FakeCalendarClient:
-    """Minimal GoogleCalendarClient stub: only create_calendar is needed."""
+    """Minimal GoogleCalendarClient stub: provisions a calendar that thereafter resolves."""
 
     def __init__(self, calendar_id: str = "fsm-cal-123") -> None:
         self._calendar_id = calendar_id
 
     def create_calendar(self, summary: str) -> str:
         return self._calendar_id
+
+    def calendar_exists(self, calendar_id: str) -> bool:
+        return True
 
 
 class _ScopeDeniedCalendarClient:
@@ -341,6 +346,9 @@ class _NoProvisionCalendarClient:
     def create_calendar(self, summary: str) -> str:
         raise AssertionError("reconnect must reuse the existing calendar, not provision a new one")
 
+    def calendar_exists(self, calendar_id: str) -> bool:
+        return True
+
 
 def test_calendar_reconnect_stores_fresh_token_and_reactivates(pg_session_factory):
     """A technician whose connection is DISCONNECTED reconnects successfully.
@@ -394,6 +402,207 @@ def test_calendar_reconnect_stores_fresh_token_and_reactivates(pg_session_factor
     with pg_session_factory() as session:
         encrypted = SqlAlchemyCalendarConnectionRepository(session).get_encrypted_token(technician_id)
     assert FernetTokenCipher(key).decrypt(encrypted) == "fresh-token"
+
+
+class _DeletedCalendarClient:
+    """Reconnect-time client whose provisioned calendar was deleted in Google.
+
+    calendar_exists reports the old id as gone, so the reconnect must provision a replacement;
+    create_calendar hands back the new id.
+    """
+
+    def __init__(self, new_calendar_id: str) -> None:
+        self._new_calendar_id = new_calendar_id
+
+    def calendar_exists(self, calendar_id: str) -> bool:
+        return False
+
+    def create_calendar(self, summary: str) -> str:
+        return self._new_calendar_id
+
+
+def test_calendar_reconnect_reprovisions_when_calendar_deleted_in_google(pg_session_factory):
+    """A technician who deleted the FSM calendar in Google recovers by reconnecting.
+
+    The stored calendar id no longer resolves, so the reconnect provisions a fresh calendar and
+    repoints the connection at it.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-deleted-cal",
+        email="deleted-cal@example.com",
+        name="Deleted Cal Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    technician_id = _claim_technician_role(client, pg_session_factory)
+
+    # First connect provisions the original calendar.
+    cal_state = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "first-token"
+    app.state.calendar_client_factory_override = lambda rt: _FakeCalendarClient("fsm-cal-original")
+    assert client.get(f"/calendar/connect/callback?code=c1&state={cal_state}").status_code == 307
+
+    # The technician deletes that calendar in Google, then reconnects.
+    cal_state2 = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "fresh-token"
+    app.state.calendar_client_factory_override = lambda rt: _DeletedCalendarClient("fsm-cal-replacement")
+    assert client.get(f"/calendar/connect/callback?code=c2&state={cal_state2}").status_code == 307
+
+    status = client.get("/calendar/status").json()
+    assert status["connected"] is True
+    assert status["fsm_calendar_id"] == "fsm-cal-replacement"
+
+    with pg_session_factory() as session:
+        encrypted = SqlAlchemyCalendarConnectionRepository(session).get_encrypted_token(technician_id)
+    assert FernetTokenCipher(key).decrypt(encrypted) == "fresh-token"
+
+
+def test_calendar_disconnect_flips_status_to_disconnected(pg_session_factory):
+    """An approved technician disconnects an active calendar connection via the endpoint.
+
+    The connection is marked DISCONNECTED so its owner drops out of customer-facing pooled
+    availability; /calendar/status then reports the technician as no longer connected.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-disconnect",
+        email="disconnect@example.com",
+        name="Disconnect Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
+
+    cal_state = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "tok"
+    app.state.calendar_client_factory_override = lambda rt: _FakeCalendarClient("fsm-cal-disc")
+    assert client.get(f"/calendar/connect/callback?code=c1&state={cal_state}").status_code == 307
+    assert client.get("/calendar/status").json()["connected"] is True
+
+    resp = client.post("/calendar/disconnect")
+
+    assert resp.status_code == 200
+    assert resp.json()["connected"] is False
+    assert client.get("/calendar/status").json()["connected"] is False
+
+
+def test_calendar_disconnect_without_connection_returns_404(pg_session_factory):
+    """Disconnecting when no connection exists surfaces a 404 rather than silently succeeding."""
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-disc-none",
+        email="disc-none@example.com",
+        name="No Conn Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory)
+
+    resp = client.post("/calendar/disconnect")
+
+    assert resp.status_code == 404
+
+
+def test_calendar_disconnect_forbidden_for_pending_technician(pg_session_factory):
+    """A technician still awaiting approval cannot reach the disconnect endpoint."""
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-disc-pending",
+        email="disc-pending@example.com",
+        name="Pending Disc Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    _claim_technician_role(client, pg_session_factory, approved=False)
+
+    resp = client.post("/calendar/disconnect")
+
+    assert resp.status_code == 403
+
+
+def _seed_appointment(pg_session_factory, technician_id, *, start_at, status="SCHEDULED"):
+    appointment_id = uuid.uuid4()
+    with pg_session_factory() as session:
+        session.add(
+            AppointmentRow(
+                id=appointment_id,
+                service_call_id=uuid.uuid4(),
+                technician_id=technician_id,
+                customer_id=uuid.uuid4(),
+                start_at=start_at,
+                end_at=start_at + timedelta(hours=1),
+                status=status,
+                details=None,
+                external_event_id="stale-event-on-deleted-calendar",
+                created_at=start_at,
+                updated_at=start_at,
+            )
+        )
+        session.commit()
+    return appointment_id
+
+
+def test_calendar_reprovision_reprojects_active_appointments(pg_session_factory):
+    """Reconnecting after a calendar deletion replays the technician's upcoming appointments.
+
+    The freshly provisioned calendar starts empty, so each active future appointment is enqueued as
+    a CREATE for the dispatcher to rebuild on the new calendar.
+    """
+    key = _fernet_key()
+    settings = _settings_full(os.environ["DATABASE_URL"], key)
+    app = create_app(session_factory=pg_session_factory, settings=settings)
+    identity = VerifiedIdentity(
+        google_sub="google-sub-reproject",
+        email="reproject@example.com",
+        name="Reproject Tech",
+    )
+    app.state.token_exchange_override = _make_fake_token_exchange()
+    app.state.auth_adapter_override = _make_fake_auth_adapter(identity)
+    client = TestClient(app, follow_redirects=False)
+
+    _sign_in(client, app)
+    technician_id = _claim_technician_role(client, pg_session_factory)
+
+    cal_state = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "first-token"
+    app.state.calendar_client_factory_override = lambda rt: _FakeCalendarClient("fsm-cal-A")
+    assert client.get(f"/calendar/connect/callback?code=c1&state={cal_state}").status_code == 307
+
+    upcoming = _seed_appointment(
+        pg_session_factory, technician_id, start_at=datetime.now(timezone.utc) + timedelta(days=1)
+    )
+
+    # The technician deletes the calendar in Google, then reconnects onto a fresh one.
+    cal_state2 = parse_qs(urlparse(client.get("/calendar/connect/login").headers["location"]).query)["state"][0]
+    app.state.calendar_token_exchange_override = lambda flow, code: "fresh-token"
+    app.state.calendar_client_factory_override = lambda rt: _DeletedCalendarClient("fsm-cal-B")
+    assert client.get(f"/calendar/connect/callback?code=c2&state={cal_state2}").status_code == 307
+
+    with pg_session_factory() as session:
+        entries = SqlAlchemyOutboxRepository(session).list_pending(10)
+    create_targets = {e.appointment_id for e in entries if e.operation.value == "CREATE"}
+    assert upcoming in create_targets
 
 
 # ---------------------------------------------------------------------------

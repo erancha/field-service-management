@@ -48,6 +48,16 @@ class GoogleCalendarClient(Protocol):
         """Create a new calendar with the given summary and return its id."""
         ...
 
+    def calendar_exists(self, calendar_id: str) -> bool:
+        """Return whether a calendar with the given id still resolves on the account.
+
+        False once the technician deletes the app-created calendar in Google; used to decide
+        whether a reconnect can reuse the stored calendar or must provision a replacement. Google
+        propagates a deletion with a short lag, so a just-deleted calendar can still report True
+        briefly — recovery then lands on the next reconnect.
+        """
+        ...
+
     def list_changes(
         self, calendar_id: str, sync_token: str | None
     ) -> tuple[list[dict], str]:
