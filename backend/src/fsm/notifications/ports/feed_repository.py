@@ -4,15 +4,15 @@ from __future__ import annotations
 import uuid
 from typing import Protocol, runtime_checkable
 
-from fsm.notifications.domain.notification import Notification
+from fsm.notifications.domain.notification import Notification, NotificationEvent
 
 
 @runtime_checkable
 class NotificationFeedRepository(Protocol):
     """Outbound port for persisting and querying the per-user notification feed."""
 
-    def add(self, notification: Notification) -> None:
-        """Persist a new notification row."""
+    def add_event(self, event: NotificationEvent, user_ids: list[uuid.UUID]) -> None:
+        """Persist one shared event and a recipient row for each of user_ids."""
         ...
 
     def list_for_user(
@@ -24,6 +24,6 @@ class NotificationFeedRepository(Protocol):
         """Return notifications for a user, optionally filtered to unread ones only."""
         ...
 
-    def mark_read(self, notification_id: uuid.UUID) -> None:
-        """Flip the read flag to True for the given notification id."""
+    def mark_read(self, recipient_id: uuid.UUID) -> None:
+        """Flip the read flag to True for the given recipient id."""
         ...

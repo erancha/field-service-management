@@ -16,13 +16,28 @@ class NotificationKind(str, Enum):
 
 
 @dataclass(frozen=True)
-class Notification:
-    """Immutable record representing a single in-app notification for one user.
+class NotificationEvent:
+    """Immutable content of one appointment lifecycle event, shared by all recipients.
 
-    Each appointment lifecycle event produces one Notification per affected party
-    (customer and technician). read reflects the unread state at construction time;
-    the persisted read flag is updated in place on the stored row via the feed
-    repository's mark_read, not on this immutable entity.
+    A single event fans out to every affected party (customer and technician), who each read
+    the identical subject and body carried here.
+    """
+
+    id: uuid.UUID
+    kind: NotificationKind
+    subject: str
+    body: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class Notification:
+    """Immutable per-recipient view of a notification event for one user.
+
+    id is the recipient's own identifier — the handle mark_read targets to flip that user's
+    read flag without affecting the other recipient of the same event. read reflects the unread
+    state at construction time; the persisted flag is updated in place on the stored recipient
+    row via the feed repository's mark_read, not on this immutable entity.
     """
 
     id: uuid.UUID

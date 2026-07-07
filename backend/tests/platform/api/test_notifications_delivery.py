@@ -1,8 +1,8 @@
 """Integration test: booking via POST /appointments creates notification rows.
 
-Verifies that after a successful booking, the notification table contains rows
-for both the customer and technician user_ids. SMTP is unconfigured so the
-LoggingEmailSender fallback is used; the in-app feed write is the assertion target.
+Verifies that after a successful booking, one shared notification_event backs a
+notification_recipient row for both the customer and technician user_ids. SMTP is unconfigured
+so the LoggingEmailSender fallback is used; the in-app feed write is the assertion target.
 """
 from __future__ import annotations
 
@@ -56,7 +56,10 @@ class TestNotificationsDelivery:
     def test_book_appointment_creates_notification_rows_for_both_parties(
         self, client, pg_session_factory
     ):
-        from fsm.notifications.adapters.orm import NotificationRow
+        from fsm.notifications.adapters.orm import (
+            NotificationEventRow,
+            NotificationRecipientRow,
+        )
         from fsm.identity.adapters.orm import UserRow
         from fsm.platform.api.auth_deps import require_user, SessionUser
         from fsm.identity.domain.role import Role
@@ -104,24 +107,31 @@ class TestNotificationsDelivery:
         finally:
             client.app.dependency_overrides.pop(require_user, None)
 
-        with pg_session_factory() as sess:
-            cust_rows = (
-                sess.query(NotificationRow)
-                .filter(NotificationRow.user_id == cust_id)
-                .all()
-            )
-            tech_rows = (
-                sess.query(NotificationRow)
-                .filter(NotificationRow.user_id == tech_id)
+        def recipient_event(sess, user_id):
+            return (
+                sess.query(NotificationRecipientRow, NotificationEventRow)
+                .join(
+                    NotificationEventRow,
+                    NotificationRecipientRow.notification_event_id == NotificationEventRow.id,
+                )
+                .filter(NotificationRecipientRow.user_id == user_id)
                 .all()
             )
 
-        assert len(cust_rows) == 1, "Expected one notification row for the customer"
-        assert len(tech_rows) == 1, "Expected one notification row for the technician"
-        assert cust_rows[0].kind == "BOOKED"
-        assert tech_rows[0].kind == "BOOKED"
-        assert cust_rows[0].subject == "Appointment booked — Notification test"
-        assert "Problem: Notification test" in cust_rows[0].body
-        assert "Technician: Grace Hopper" in cust_rows[0].body
-        assert "Technician phone: +972-50-200" in cust_rows[0].body
-        assert str(appt_id) not in cust_rows[0].body
+        with pg_session_factory() as sess:
+            cust_rows = recipient_event(sess, cust_id)
+            tech_rows = recipient_event(sess, tech_id)
+
+        assert len(cust_rows) == 1, "Expected one notification recipient row for the customer"
+        assert len(tech_rows) == 1, "Expected one notification recipient row for the technician"
+        cust_recipient, cust_event = cust_rows[0]
+        tech_recipient, tech_event = tech_rows[0]
+
+        # Both parties hang off the single shared event, storing the booking body only once.
+        assert cust_event.id == tech_event.id
+        assert cust_event.kind == "BOOKED"
+        assert cust_event.subject == "Appointment booked — Notification test"
+        assert "Problem: Notification test" in cust_event.body
+        assert "Technician: Grace Hopper" in cust_event.body
+        assert "Technician phone: +972-50-200" in cust_event.body
+        assert str(appt_id) not in cust_event.body

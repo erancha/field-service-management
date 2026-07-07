@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone, tzinfo
 from typing import Callable
 
-from fsm.notifications.domain.notification import Notification, NotificationKind
+from fsm.notifications.domain.notification import NotificationEvent, NotificationKind
 from fsm.notifications.ports.appointment_context import AppointmentContextView
 from fsm.notifications.ports.email_sender import EmailSender
 from fsm.notifications.ports.feed_repository import NotificationFeedRepository
@@ -189,34 +189,25 @@ class DeliveringNotificationPort:
         Both parties receive the same subject and body as a feed entry; only the technician
         also gets an email. The customer's calendar invitation is delivered by Google as a
         guest on the appointment's calendar event.
+
+        The subject and body are rendered once into a single NotificationEvent that both
+        recipients share, so the identical content is stored exactly once.
         """
         now = self._clock()
         context = self._context_resolver(appointment)
         subject = _subject(subject_base, context)
         rendered_body = body(context)
 
-        self._add_feed(appointment.customer_id, kind, subject, rendered_body, now)
-        self._add_feed(appointment.technician_id, kind, subject, rendered_body, now)
-
-        self._send_email(appointment.technician_id, subject, rendered_body)
-
-    def _add_feed(
-        self,
-        user_id: uuid.UUID,
-        kind: NotificationKind,
-        subject: str,
-        body: str,
-        now: datetime,
-    ) -> None:
-        notification = Notification(
+        event = NotificationEvent(
             id=uuid.uuid4(),
-            user_id=user_id,
             kind=kind,
             subject=subject,
-            body=body,
+            body=rendered_body,
             created_at=now,
         )
-        self._feed_repo.add(notification)
+        self._feed_repo.add_event(event, [appointment.customer_id, appointment.technician_id])
+
+        self._send_email(appointment.technician_id, subject, rendered_body)
 
     def _send_email(self, user_id: uuid.UUID, subject: str, body: str) -> None:
         try:

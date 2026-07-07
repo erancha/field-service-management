@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from fsm.scheduling.domain.appointment_context import AppointmentContext
-from fsm.notifications.domain.notification import Notification, NotificationKind
+from fsm.notifications.domain.notification import Notification, NotificationEvent, NotificationKind
 from tests.notifications.fakes import FakeEmailSender, RaisingEmailSender
 
 
@@ -19,15 +19,31 @@ from tests.notifications.fakes import FakeEmailSender, RaisingEmailSender
 
 
 class FakeFeedRepository:
-    """In-memory NotificationFeedRepository for unit tests."""
+    """In-memory NotificationFeedRepository for unit tests.
+
+    events records each shared NotificationEvent once; added expands every event into the
+    per-recipient Notification read-model rows, so tests can assert both the single-event
+    dedup and the per-party fan-out.
+    """
 
     def __init__(self) -> None:
         self.added: list[Notification] = []
+        self.events: list[NotificationEvent] = []
         self._store: dict[uuid.UUID, Notification] = {}
 
-    def add(self, notification: Notification) -> None:
-        self.added.append(notification)
-        self._store[notification.id] = notification
+    def add_event(self, event: NotificationEvent, user_ids: list[uuid.UUID]) -> None:
+        self.events.append(event)
+        for user_id in user_ids:
+            notification = Notification(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                kind=event.kind,
+                subject=event.subject,
+                body=event.body,
+                created_at=event.created_at,
+            )
+            self.added.append(notification)
+            self._store[notification.id] = notification
 
     def list_for_user(
         self, user_id: uuid.UUID, *, unread_only: bool = False
@@ -131,6 +147,18 @@ class TestAppointmentBooked:
         user_ids = {n.user_id for n in feed.added}
         assert appt.customer_id in user_ids
         assert appt.technician_id in user_ids
+
+    def test_writes_one_shared_event_for_both_recipients(self):
+        appt = _make_appointment()
+        feed = FakeFeedRepository()
+        port = _port(appt, feed, FakeEmailSender(), {})
+
+        port.appointment_booked(appt)
+
+        assert len(feed.events) == 1
+        [event] = feed.events
+        assert event.kind == NotificationKind.BOOKED
+        assert {n.user_id for n in feed.added} == {appt.customer_id, appt.technician_id}
 
     def test_body_shows_readable_local_time_not_iso_offset(self):
         appt = _make_appointment()
