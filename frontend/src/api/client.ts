@@ -15,7 +15,10 @@ export class ApiException extends Error {
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.ok) {
     const text = await res.text()
-    return text ? (JSON.parse(text) as T) : ({} as T)
+    if (!text) {
+      throw new ApiException(res.status, `HTTP ${res.status} with an empty response body`)
+    }
+    return JSON.parse(text) as T
   }
 
   let detail = `HTTP ${res.status}`

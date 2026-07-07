@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiPatch } from './client.ts'
+import { apiGet, apiPatch, ApiException } from './client.ts'
 import { updateProfile } from './auth.ts'
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('handleResponse on an empty body', () => {
+  it('throws instead of fabricating {} for a typed call', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })))
+
+    await expect(apiGet('/auth/me')).rejects.toBeInstanceOf(ApiException)
+  })
+})
 
 describe('apiPatch', () => {
   it('sends a PATCH with a JSON body', async () => {
