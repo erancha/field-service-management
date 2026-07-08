@@ -46,6 +46,7 @@ export function CustomerPage({ customerId, email }: CustomerPageProps) {
         refetch={upcoming.refetch}
         showTechnicianName
         showReschedule
+        showCancel
       />
 
       {!hasUpcoming && phase === 'open-sc' && (

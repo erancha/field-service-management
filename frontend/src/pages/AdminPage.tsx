@@ -21,6 +21,7 @@ export function AdminPage({ email }: AdminPageProps) {
         refetch={upcoming.refetch}
         showTechnicianName
         showReschedule={false}
+        showCancel={false}
       />
       <TechnicianRequestQueue />
     </div>

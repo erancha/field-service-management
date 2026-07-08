@@ -42,6 +42,7 @@ export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
           refetch={upcoming.refetch}
           showTechnicianName={false}
           showReschedule={false}
+          showCancel
         />
       ) : (
         <ConnectCalendar status={state.status} />

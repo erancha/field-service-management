@@ -28,6 +28,7 @@ function renderList(overrides: Partial<React.ComponentProps<typeof UpcomingAppoi
       refetch={vi.fn().mockResolvedValue(undefined)}
       showTechnicianName={false}
       showReschedule={false}
+      showCancel={false}
       {...overrides}
     />,
   )
@@ -62,7 +63,7 @@ describe('UpcomingAppointments', () => {
       id: 'a1', service_call_id: 's1', technician_id: 't1', customer_id: 'c1',
       start: ITEM.start, end: ITEM.end, status: 'CANCELLED',
     })
-    renderList({ showTechnicianName: true, showReschedule: true, refetch })
+    renderList({ showTechnicianName: true, showReschedule: true, showCancel: true, refetch })
 
     await userEvent.click(screen.getByRole('button', { name: /expand appointment/i }))
     await userEvent.click(screen.getByRole('button', { name: /cancel appointment/i }))
@@ -71,8 +72,24 @@ describe('UpcomingAppointments', () => {
     await waitFor(() => expect(refetch).toHaveBeenCalled())
   })
 
-  it('does not offer cancel on the read-only (technician/admin) view', async () => {
-    renderList({ showTechnicianName: true, showReschedule: false })
+  it('lets the technician cancel without reschedule when showCancel is set alone', async () => {
+    const refetch = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(cancelAppointment).mockResolvedValue({
+      id: 'a1', service_call_id: 's1', technician_id: 't1', customer_id: 'c1',
+      start: ITEM.start, end: ITEM.end, status: 'CANCELLED',
+    })
+    renderList({ showReschedule: false, showCancel: true, refetch })
+
+    await userEvent.click(screen.getByRole('button', { name: /expand appointment/i }))
+    expect(screen.queryByRole('button', { name: /^reschedule$/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /cancel appointment/i }))
+
+    expect(cancelAppointment).toHaveBeenCalledWith('a1')
+    await waitFor(() => expect(refetch).toHaveBeenCalled())
+  })
+
+  it('does not offer cancel on the read-only (admin) view', async () => {
+    renderList({ showTechnicianName: true, showReschedule: false, showCancel: false })
     await userEvent.click(screen.getByRole('button', { name: /expand appointment/i }))
     expect(screen.queryByRole('button', { name: /cancel appointment/i })).toBeNull()
   })

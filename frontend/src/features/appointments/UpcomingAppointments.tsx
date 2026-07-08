@@ -11,6 +11,7 @@ interface Props {
   refetch: () => Promise<void>
   showTechnicianName: boolean
   showReschedule: boolean
+  showCancel: boolean
 }
 
 function formatWhen(iso: string): string {
@@ -43,10 +44,11 @@ function toAppointment(it: UpcomingAppointment): Appointment {
  *
  * Presentational over an appointment list supplied by the owning page, so that page can share the
  * same live-maintained data for its own decisions. Rows stay to two lines; a chevron toggle expands
- * a row into the shared AppointmentCard. The customer view additionally wires reschedule,
- * add-details, and cancel, refetching after each so the list stays authoritative.
+ * a row into the shared AppointmentCard. Reschedule and add-details are wired when showReschedule
+ * is set; cancel is wired independently when showCancel is set, each refetching afterward so the
+ * list stays authoritative.
  */
-export function UpcomingAppointments({ items, loading, error, refetch, showTechnicianName, showReschedule }: Props) {
+export function UpcomingAppointments({ items, loading, error, refetch, showTechnicianName, showReschedule, showCancel }: Props) {
   const { reschedule, addDetails, cancel, loading: mutating } = useAppointments()
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -122,7 +124,7 @@ export function UpcomingAppointments({ items, loading, error, refetch, showTechn
                       : undefined
                   }
                   onCancel={
-                    showReschedule
+                    showCancel
                       ? async (id) => {
                           await cancel(id)
                           setOpenId(null)
