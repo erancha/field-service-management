@@ -10,14 +10,34 @@ other having run first in the same process.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+
+
+@contextlib.contextmanager
+def _relaxed_token_scope():
+    """Set OAUTHLIB_RELAX_TOKEN_SCOPE for the enclosed block, restoring the prior value after.
+
+    oauthlib reads the flag at exchange time, so scoping it to the exchange keeps the relaxation
+    from leaking to unrelated OAuth exchanges elsewhere in the process while the check stays in
+    force for them.
+    """
+    previous = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+        else:
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = previous
 
 
 def fetch_token_relaxed(flow, code: str) -> None:
     """Exchange the authorization code on the flow, tolerating Google's scope normalisation.
 
-    Sets OAUTHLIB_RELAX_TOKEN_SCOPE before the exchange so oauthlib accepts the granted-vs-requested
-    scope mismatch, then completes the exchange in place; callers read flow.credentials afterwards.
+    Relaxes oauthlib's granted-vs-requested scope check only for the duration of the exchange, then
+    completes it in place; callers read flow.credentials afterwards.
     """
-    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
-    flow.fetch_token(code=code)
+    with _relaxed_token_scope():
+        flow.fetch_token(code=code)
