@@ -66,7 +66,8 @@ describe('UpcomingAppointments', () => {
     renderList({ showTechnicianName: true, showReschedule: true, showCancel: true, refetch })
 
     await userEvent.click(screen.getByRole('button', { name: /expand appointment/i }))
-    await userEvent.click(screen.getByRole('button', { name: /cancel appointment/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^cancel appointment$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /yes, cancel appointment/i }))
 
     expect(cancelAppointment).toHaveBeenCalledWith('a1')
     await waitFor(() => expect(refetch).toHaveBeenCalled())
@@ -82,7 +83,8 @@ describe('UpcomingAppointments', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /expand appointment/i }))
     expect(screen.queryByRole('button', { name: /^reschedule$/i })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: /cancel appointment/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^cancel appointment$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /yes, cancel appointment/i }))
 
     expect(cancelAppointment).toHaveBeenCalledWith('a1')
     await waitFor(() => expect(refetch).toHaveBeenCalled())

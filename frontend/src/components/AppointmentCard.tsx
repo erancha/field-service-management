@@ -32,12 +32,19 @@ export function AppointmentCard({
 }: AppointmentCardProps) {
   // At most one editing surface is open at a time; while one is open the card hides its other
   // actions so a destructive Cancel Appointment never sits beside an edit form's Save.
-  const [editing, setEditing] = useState<'none' | 'reschedule' | 'details'>('none')
+  const [editing, setEditing] = useState<'none' | 'reschedule' | 'details' | 'confirm-cancel'>('none')
   const [detailsText, setDetailsText] = useState('')
 
   function handleReschedule(start: string, end: string) {
     if (onReschedule) {
       onReschedule(appointment.id, start, end)
+      setEditing('none')
+    }
+  }
+
+  function handleCancel() {
+    if (onCancel) {
+      onCancel(appointment.id)
       setEditing('none')
     }
   }
@@ -93,10 +100,26 @@ export function AppointmentCard({
             </Button>
           )}
           {onCancel && (
-            <Button variant="danger" onClick={() => onCancel(appointment.id)} loading={loading}>
+            <Button variant="danger" onClick={() => setEditing('confirm-cancel')} loading={loading}>
               Cancel Appointment
             </Button>
           )}
+        </div>
+      )}
+
+      {!isCancelled && editing === 'confirm-cancel' && onCancel && (
+        <div className="appointment-card__confirm">
+          <p className="appointment-card__confirm-message">
+            Cancel this appointment? This can't be undone.
+          </p>
+          <div className="appointment-card__form-actions">
+            <Button variant="danger" onClick={handleCancel} loading={loading}>
+              Yes, Cancel Appointment
+            </Button>
+            <Button variant="secondary" onClick={() => setEditing('none')}>
+              Keep Appointment
+            </Button>
+          </div>
         </div>
       )}
 

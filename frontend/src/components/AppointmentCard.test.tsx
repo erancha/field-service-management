@@ -113,6 +113,43 @@ describe('AppointmentCard focused editing', () => {
   })
 })
 
+describe('AppointmentCard cancel confirmation', () => {
+  it('asks for confirmation instead of cancelling on the first click', async () => {
+    const onCancel = vi.fn()
+    render(<AppointmentCard appointment={makeAppointment()} onCancel={onCancel} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /cancel appointment/i }))
+
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /keep appointment/i })).toBeInTheDocument()
+  })
+
+  it('cancels only after the confirmation is accepted', async () => {
+    const onCancel = vi.fn()
+    const appointment = makeAppointment()
+    render(<AppointmentCard appointment={appointment} onCancel={onCancel} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /^cancel appointment$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /yes, cancel appointment/i }))
+
+    expect(onCancel).toHaveBeenCalledWith(appointment.id)
+  })
+
+  it('keeps the appointment and restores the actions when confirmation is dismissed', async () => {
+    const onCancel = vi.fn()
+    render(
+      <AppointmentCard appointment={makeAppointment()} onReschedule={vi.fn()} onCancel={onCancel} />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /^cancel appointment$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /keep appointment/i }))
+
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /^reschedule$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^cancel appointment$/i })).toBeInTheDocument()
+  })
+})
+
 describe('AppointmentCard details', () => {
   it('labels the action Add Details when the appointment has none', () => {
     render(<AppointmentCard appointment={makeAppointment()} onAddDetails={vi.fn()} />)
