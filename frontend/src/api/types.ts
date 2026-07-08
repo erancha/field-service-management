@@ -48,6 +48,7 @@ export interface UpcomingAppointment {
   technician_name: string
   customer_name: string
   address: string | null
+  created_at: string
 }
 
 export interface UpcomingAppointmentsResponse {

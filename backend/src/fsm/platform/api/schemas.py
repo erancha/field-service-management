@@ -108,6 +108,7 @@ class UpcomingAppointmentResponse(BaseModel):
     technician_name: str
     customer_name: str
     address: str | None
+    created_at: datetime
 
 
 class UpcomingAppointmentsResponse(BaseModel):

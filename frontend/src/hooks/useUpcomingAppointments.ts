@@ -16,15 +16,18 @@ export interface UpcomingAppointmentsResult {
  *
  * Fetches once on mount, then refetches whenever an appointment.changed event arrives or the SSE
  * stream reconnects (so a change missed while disconnected is picked up). The server scopes the
- * result to the authenticated role, so the same hook serves every dashboard.
+ * result to the authenticated role, so the same hook serves every dashboard. When `enabled` is
+ * false the hook neither fetches nor subscribes, letting a page defer loading until the list is
+ * actually reachable.
  */
-export function useUpcomingAppointments(limit: number): UpcomingAppointmentsResult {
+export function useUpcomingAppointments(limit: number, enabled = true): UpcomingAppointmentsResult {
   const [items, setItems] = useState<UpcomingAppointment[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const firstOpen = useRef(true)
 
   const refetch = useCallback(async () => {
+    if (!enabled) return
     setLoading(true)
     setError(null)
     try {
@@ -35,7 +38,7 @@ export function useUpcomingAppointments(limit: number): UpcomingAppointmentsResu
     } finally {
       setLoading(false)
     }
-  }, [limit])
+  }, [limit, enabled])
 
   useEffect(() => {
     void refetch()
@@ -43,7 +46,7 @@ export function useUpcomingAppointments(limit: number): UpcomingAppointmentsResu
 
   useEventStream(
     { 'appointment.changed': () => void refetch() },
-    true,
+    enabled,
     () => {
       // The initial connect already ran the mount fetch; only reconnects need a catch-up refetch.
       if (firstOpen.current) {

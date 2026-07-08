@@ -1,19 +1,28 @@
 import { useState } from 'react'
 import type { Appointment, UpcomingAppointment } from '../../api/types.ts'
-import { useUpcomingAppointments } from '../../hooks/useUpcomingAppointments.ts'
 import { useAppointments } from '../../hooks/useAppointments.ts'
 import { AppointmentCard } from '../../components/AppointmentCard.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
-import { Button } from '../../components/Button.tsx'
 
 interface Props {
-  limit: number
+  items: UpcomingAppointment[]
+  loading: boolean
+  error: string | null
+  refetch: () => Promise<void>
   showTechnicianName: boolean
   showReschedule: boolean
 }
 
 function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000
+
+// An appointment counts as freshly scheduled while its booking is under a day old, cueing the
+// customer to the one they just made.
+function isRecentlyScheduled(createdAtIso: string): boolean {
+  return Date.now() - new Date(createdAtIso).getTime() < RECENT_WINDOW_MS
 }
 
 function toAppointment(it: UpcomingAppointment): Appointment {
@@ -32,13 +41,13 @@ function toAppointment(it: UpcomingAppointment): Appointment {
 /**
  * Compact "what's next" list for a role's dashboard.
  *
- * Rows stay to two lines and live-refresh through useUpcomingAppointments. Open expands the row
- * into the shared AppointmentCard; the customer view additionally wires reschedule and add-details,
- * refetching the list after either so the shown times stay authoritative.
+ * Presentational over an appointment list supplied by the owning page, so that page can share the
+ * same live-maintained data for its own decisions. Rows stay to two lines; a chevron toggle expands
+ * a row into the shared AppointmentCard. The customer view additionally wires reschedule,
+ * add-details, and cancel, refetching after each so the list stays authoritative.
  */
-export function UpcomingAppointments({ limit, showTechnicianName, showReschedule }: Props) {
-  const { items, loading, error, refetch } = useUpcomingAppointments(limit)
-  const { reschedule, addDetails, loading: mutating } = useAppointments()
+export function UpcomingAppointments({ items, loading, error, refetch, showTechnicianName, showReschedule }: Props) {
+  const { reschedule, addDetails, cancel, loading: mutating } = useAppointments()
   const [openId, setOpenId] = useState<string | null>(null)
 
   return (
@@ -52,7 +61,10 @@ export function UpcomingAppointments({ limit, showTechnicianName, showReschedule
       ) : (
         <ul className="upcoming__list">
           {items.map((it) => (
-            <li key={it.id} className="upcoming__item">
+            <li
+              key={it.id}
+              className={`upcoming__item${isRecentlyScheduled(it.created_at) ? ' upcoming__item--recent' : ''}`}
+            >
               <div className="upcoming__row">
                 <div className="upcoming__summary">
                   <span className="upcoming__line">
@@ -65,12 +77,24 @@ export function UpcomingAppointments({ limit, showTechnicianName, showReschedule
                     <span className="upcoming__address">{it.address ?? '—'}</span>
                   </span>
                 </div>
-                <Button
-                  variant="secondary"
+                <button
+                  type="button"
+                  className="upcoming__toggle"
+                  aria-expanded={openId === it.id}
+                  aria-label={openId === it.id ? 'Collapse appointment' : 'Expand appointment'}
                   onClick={() => setOpenId(openId === it.id ? null : it.id)}
                 >
-                  {openId === it.id ? 'Close' : 'Open'}
-                </Button>
+                  <svg className="upcoming__chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                    <path
+                      d="M4 6l4 4 4-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
               </div>
               {openId === it.id && (
                 <AppointmentCard
@@ -93,6 +117,15 @@ export function UpcomingAppointments({ limit, showTechnicianName, showReschedule
                     showReschedule
                       ? async (id, text) => {
                           await addDetails(id, text)
+                          await refetch()
+                        }
+                      : undefined
+                  }
+                  onCancel={
+                    showReschedule
+                      ? async (id) => {
+                          await cancel(id)
+                          setOpenId(null)
                           await refetch()
                         }
                       : undefined

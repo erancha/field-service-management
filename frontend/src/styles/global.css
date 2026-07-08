@@ -190,19 +190,20 @@ body {
   color: var(--color-text-muted);
 }
 
-.page__id {
+.page__calendar-status {
+  display: flex;
+  align-items: center;
   font-size: 0.875rem;
-  color: var(--color-text-muted);
   margin-bottom: 1.5rem;
 }
 
 .page__calendar-connected {
-  margin-left: 0.75rem;
   padding: 0.125rem 0.5rem;
   color: var(--color-success-text);
   background: var(--color-success-bg);
   border: 1px solid var(--color-success-border);
   border-radius: var(--radius);
+  text-decoration: none;
 }
 
 .calendar-disconnect {
@@ -379,17 +380,22 @@ body {
   color: var(--color-danger);
 }
 
-.appointment-card__id {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  font-family: monospace;
+.appointment-card__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+  font-size: 0.875rem;
 }
 
-.appointment-card__times {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.875rem;
+.appointment-card__facts dt {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.appointment-card__facts dd {
+  margin: 0;
+  color: var(--color-text);
 }
 
 .appointment-card__details {
@@ -563,9 +569,27 @@ body {
 
 .upcoming__list { list-style: none; margin: 0; padding: 0; }
 .upcoming__item { border-bottom: 1px solid var(--border, #e2e2e2); padding: 0.5rem 0; }
+.upcoming__item--recent { background: var(--color-success-bg); border-left: 3px solid var(--color-success-border); padding-left: 0.5rem; }
 .upcoming__row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .upcoming__summary { min-width: 0; }
 .upcoming__line { display: flex; gap: 0.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .upcoming__meta { color: var(--muted, #666); font-size: 0.9em; }
 .upcoming__problem, .upcoming__address { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
 .upcoming__empty { color: var(--muted, #666); }
+.upcoming__toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted, #666);
+  cursor: pointer;
+}
+.upcoming__toggle:hover { background: var(--color-success-bg); color: inherit; }
+.upcoming__chevron { transition: transform 0.15s ease; }
+.upcoming__toggle[aria-expanded='true'] .upcoming__chevron { transform: rotate(180deg); }

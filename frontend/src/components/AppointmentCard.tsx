@@ -65,21 +65,18 @@ export function AppointmentCard({
   return (
     <div className={`appointment-card appointment-card--${status}`}>
       <div className="appointment-card__header">
-        <span className="appointment-card__status">{status}</span>
-        <span className="appointment-card__id">#{appointment.id.slice(0, 8)}</span>
+        <span className="appointment-card__status" title={`id: #${appointment.id.slice(0, 8)}`}>
+          {status}
+        </span>
       </div>
-      <div className="appointment-card__times">
-        <span>From: {formatDate(appointment.start)}</span>
-        <span>To: {formatDate(appointment.end)}</span>
-      </div>
-      {(problem || technicianName || customerName || address) && (
-        <dl className="appointment-card__facts">
-          {problem && (<><dt>Problem</dt><dd>{problem}</dd></>)}
-          {technicianName && (<><dt>Technician</dt><dd>{technicianName}</dd></>)}
-          {customerName && (<><dt>Customer</dt><dd>{customerName}</dd></>)}
-          {address && (<><dt>Address</dt><dd>{address}</dd></>)}
-        </dl>
-      )}
+      <dl className="appointment-card__facts">
+        <dt>From</dt><dd>{formatDate(appointment.start)}</dd>
+        <dt>To</dt><dd>{formatDate(appointment.end)}</dd>
+        {problem && (<><dt>Problem</dt><dd>{problem}</dd></>)}
+        {technicianName && (<><dt>Technician</dt><dd>{technicianName}</dd></>)}
+        {customerName && (<><dt>Customer</dt><dd>{customerName}</dd></>)}
+        {address && (<><dt>Address</dt><dd>{address}</dd></>)}
+      </dl>
       {appointment.details && (
         <p className="appointment-card__details">{appointment.details}</p>
       )}

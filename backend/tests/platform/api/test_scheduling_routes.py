@@ -729,6 +729,7 @@ class TestUpcomingEndpoint:
         assert items[0]["technician_name"] == "Test User"
         assert items[0]["customer_name"] == "Test User"
         assert items[0]["address"] == "12 Main St"
+        assert items[0]["created_at"].startswith("2024-01-01")
 
     def test_scope_is_per_role(self, client, auth, pg_session_factory):
         tech = uuid.uuid4()

@@ -218,7 +218,9 @@ to several replicas requires. Per-key configuration lives inline in
 
 PostgreSQL is the source of truth; Google Calendar is a downstream projection. The entity-relationship
 diagram and the integrity guarantees (database-enforced no-double-booking, the transactional
-calendar outbox, the append-only appointment audit) are in [docs/data.md](docs/data.md).
+calendar outbox, the append-only appointment audit) are in [docs/data.md](docs/data.md), which also
+traces the two-way [calendar sync](docs/data.md#calendar-sync) — outbound projection and inbound
+reconciliation — end to end.
 
 ## License
 

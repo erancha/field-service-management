@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import type { ServiceCall, PooledSlot } from '../../api/types.ts'
 import { usePooledAvailability } from '../../hooks/useAvailability.ts'
 import { useSlotSelection } from '../../hooks/useSlotSelection.ts'
@@ -6,21 +6,19 @@ import { useAppointments } from '../../hooks/useAppointments.ts'
 import { PooledSlotPicker } from '../../components/PooledSlotPicker.tsx'
 import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
-import { AppointmentCard } from '../../components/AppointmentCard.tsx'
 import { AddressNudge } from '../profile/AddressNudge.tsx'
 import { searchWindow } from '../../utils/slots.ts'
 
 interface BookFlowProps {
   serviceCall: ServiceCall
+  onBooked: () => void
 }
 
 // The customer is offered the soonest slots across the whole technician pool, so the
 // only choices are which of those slots to take — no technician id or date range to enter.
 const SLOT_COUNT = 5
 
-export function BookFlow({ serviceCall }: BookFlowProps) {
-  const [booked, setBooked] = useState(false)
-
+export function BookFlow({ serviceCall, onBooked }: BookFlowProps) {
   const availability = usePooledAvailability()
   const appts = useAppointments()
   const { selected: selectedSlot, setSelected: setSelectedSlot, firstSlotRef } =
@@ -43,23 +41,9 @@ export function BookFlow({ serviceCall }: BookFlowProps) {
       start: selectedSlot.start,
       end: selectedSlot.end,
     })
-    if (appointment) setBooked(true)
-  }
-
-  if (booked && appts.appointment) {
-    return (
-      <div className="book-flow">
-        <h3>Appointment Booked</h3>
-        <ErrorBanner message={appts.error} onDismiss={appts.clearError} />
-        <AppointmentCard
-          appointment={appts.appointment}
-          onReschedule={(id, start, end) => appts.reschedule(id, { start, end })}
-          onCancel={appts.cancel}
-          onAddDetails={appts.addDetails}
-          loading={appts.loading}
-        />
-      </div>
-    )
+    // The booked appointment surfaces through the dashboard's upcoming list; booking hands control
+    // back to the page, which owns what the customer sees next.
+    if (appointment) onBooked()
   }
 
   return (

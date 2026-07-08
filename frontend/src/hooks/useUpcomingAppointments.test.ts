@@ -10,6 +10,7 @@ const ITEM = {
   id: 'a1', service_call_id: 's1', technician_id: 't1', customer_id: 'c1',
   start: '2099-06-01T09:00:00Z', end: '2099-06-01T11:00:00Z', status: 'SCHEDULED',
   details: null, problem: 'Fix boiler', technician_name: 'Tara', customer_name: 'Cara', address: '12 Main St',
+  created_at: '2099-05-31T09:00:00Z',
 }
 
 describe('useUpcomingAppointments', () => {
@@ -24,6 +25,13 @@ describe('useUpcomingAppointments', () => {
     const { result } = renderHook(() => useUpcomingAppointments(5))
     await waitFor(() => expect(result.current.items).toEqual([ITEM]))
     expect(fetchUpcomingAppointments).toHaveBeenCalledWith({ limit: 5 })
+  })
+
+  it('does not fetch or subscribe while disabled', async () => {
+    renderHook(() => useUpcomingAppointments(5, false))
+    await Promise.resolve()
+    expect(fetchUpcomingAppointments).not.toHaveBeenCalled()
+    expect(FakeEventSource.instances.length).toBe(0)
   })
 
   it('refetches on an appointment.changed event', async () => {

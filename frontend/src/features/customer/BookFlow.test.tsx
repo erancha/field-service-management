@@ -51,13 +51,15 @@ function renderBookFlow() {
     address: '12 Main St',
     phone: '054-1234567',
   }
+  const onBooked = vi.fn()
   render(
     <AuthContext.Provider value={{ auth: { status: 'authenticated', user }, refresh: vi.fn() }}>
       <MemoryRouter>
-        <BookFlow serviceCall={serviceCall} />
+        <BookFlow serviceCall={serviceCall} onBooked={onBooked} />
       </MemoryRouter>
     </AuthContext.Provider>,
   )
+  return { onBooked }
 }
 
 describe('BookFlow', () => {
@@ -65,7 +67,7 @@ describe('BookFlow', () => {
     vi.mocked(fetchPooledAvailability).mockResolvedValue({ slots: [slot] })
     vi.mocked(createAppointment).mockResolvedValue(appointment)
 
-    renderBookFlow()
+    const { onBooked } = renderBookFlow()
 
     const slotButton = await screen.findByRole('button', { name: /dana/i })
     await waitFor(() => expect(slotButton).toHaveClass('slot-picker__slot--selected'))
@@ -75,41 +77,41 @@ describe('BookFlow', () => {
 
     await userEvent.click(bookButton)
 
-    expect(await screen.findByText('Appointment Booked')).toBeInTheDocument()
+    await waitFor(() => expect(onBooked).toHaveBeenCalledOnce())
   })
 
-  it('shows the confirmation screen when booking succeeds', async () => {
+  it('hands control back through onBooked when booking succeeds', async () => {
     vi.mocked(fetchPooledAvailability).mockResolvedValue({ slots: [slot] })
     vi.mocked(createAppointment).mockResolvedValue(appointment)
 
-    renderBookFlow()
+    const { onBooked } = renderBookFlow()
 
     await userEvent.click(await screen.findByRole('button', { name: /dana/i }))
     await userEvent.click(screen.getByRole('button', { name: /book selected slot/i }))
 
-    expect(await screen.findByText('Appointment Booked')).toBeInTheDocument()
+    await waitFor(() => expect(onBooked).toHaveBeenCalledOnce())
   })
 
-  it('stays on the slot screen with an error when booking fails', async () => {
+  it('stays on the slot screen without signalling booked when booking fails', async () => {
     vi.mocked(fetchPooledAvailability).mockResolvedValue({ slots: [slot] })
     vi.mocked(createAppointment).mockRejectedValue(new Error('Slot already taken'))
 
-    renderBookFlow()
+    const { onBooked } = renderBookFlow()
 
     await userEvent.click(await screen.findByRole('button', { name: /dana/i }))
     await userEvent.click(screen.getByRole('button', { name: /book selected slot/i }))
 
     expect(await screen.findByText('Slot already taken')).toBeInTheDocument()
-    expect(screen.queryByText('Appointment Booked')).toBeNull()
+    expect(onBooked).not.toHaveBeenCalled()
   })
 
-  it('shows the confirmation screen when a retry succeeds after a failed attempt', async () => {
+  it('signals booked when a retry succeeds after a failed attempt', async () => {
     vi.mocked(fetchPooledAvailability).mockResolvedValue({ slots: [slot] })
     vi.mocked(createAppointment)
       .mockRejectedValueOnce(new Error('Slot already taken'))
       .mockResolvedValueOnce(appointment)
 
-    renderBookFlow()
+    const { onBooked } = renderBookFlow()
 
     await userEvent.click(await screen.findByRole('button', { name: /dana/i }))
     const bookButton = screen.getByRole('button', { name: /book selected slot/i })
@@ -118,6 +120,6 @@ describe('BookFlow', () => {
 
     await userEvent.click(bookButton)
 
-    expect(await screen.findByText('Appointment Booked')).toBeInTheDocument()
+    await waitFor(() => expect(onBooked).toHaveBeenCalledOnce())
   })
 })

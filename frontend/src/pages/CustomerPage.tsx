@@ -4,6 +4,7 @@ import { OpenServiceCall } from '../features/customer/OpenServiceCall.tsx'
 import { BookFlow } from '../features/customer/BookFlow.tsx'
 import { PageHeader } from '../features/layout/PageHeader.tsx'
 import { UpcomingAppointments } from '../features/appointments/UpcomingAppointments.tsx'
+import { useUpcomingAppointments } from '../hooks/useUpcomingAppointments.ts'
 
 interface CustomerPageProps {
   customerId: string
@@ -12,39 +13,57 @@ interface CustomerPageProps {
 
 type Phase = 'open-sc' | 'book'
 
+const UPCOMING_LIMIT = 3
+
 export function CustomerPage({ customerId, email }: CustomerPageProps) {
   const [phase, setPhase] = useState<Phase>('open-sc')
   const [serviceCall, setServiceCall] = useState<ServiceCall | null>(null)
+  const upcoming = useUpcomingAppointments(UPCOMING_LIMIT)
+
+  // One customer maps to one service address, so a single open service call at a time is the only
+  // meaningful state; a booked appointment blocks opening another until it is done or cancelled.
+  const hasUpcoming = upcoming.items.length > 0
 
   function handleServiceCallCreated(sc: ServiceCall) {
     setServiceCall(sc)
     setPhase('book')
   }
 
+  function handleBooked() {
+    setPhase('open-sc')
+    setServiceCall(null)
+    void upcoming.refetch()
+  }
+
   return (
     <div className="page">
-      <PageHeader title="Customer Dashboard" email={email} />
+      <PageHeader title="Customer Dashboard" email={email} accountId={customerId} />
 
-      <UpcomingAppointments limit={3} showTechnicianName showReschedule />
-      <p className="page__id">Customer ID: <code>{customerId}</code></p>
+      <UpcomingAppointments
+        items={upcoming.items}
+        loading={upcoming.loading}
+        error={upcoming.error}
+        refetch={upcoming.refetch}
+        showTechnicianName
+        showReschedule
+      />
 
-      {phase === 'open-sc' && (
+      {!hasUpcoming && phase === 'open-sc' && (
         <OpenServiceCall onCreated={handleServiceCallCreated} />
       )}
 
-      {phase === 'book' && serviceCall && (
-        <BookFlow serviceCall={serviceCall} />
-      )}
-
-      {phase === 'book' && serviceCall && (
-        <div className="page__nav">
-          <button
-            className="btn btn-secondary"
-            onClick={() => { setPhase('open-sc'); setServiceCall(null) }}
-          >
-            Open another service call
-          </button>
-        </div>
+      {!hasUpcoming && phase === 'book' && serviceCall && (
+        <>
+          <BookFlow serviceCall={serviceCall} onBooked={handleBooked} />
+          <div className="page__nav">
+            <button
+              className="btn btn-secondary"
+              onClick={() => { setPhase('open-sc'); setServiceCall(null) }}
+            >
+              Open another service call
+            </button>
+          </div>
+        </>
       )}
     </div>
   )

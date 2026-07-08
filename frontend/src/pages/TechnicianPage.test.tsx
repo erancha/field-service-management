@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { TechnicianPage } from './TechnicianPage.tsx'
@@ -36,15 +36,24 @@ describe('TechnicianPage', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('folds the connected indication into the Technician ID line and drops the integration card', async () => {
+  it('links the connected indication to Google Calendar and drops the My Appointments section', async () => {
     vi.mocked(fetchCalendarStatus).mockResolvedValue({ connected: true, fsm_calendar_id: 'cal-1' })
     renderPage()
 
-    const idLine = await screen.findByText(/technician id/i)
-    expect(within(idLine).getByText(/google calendar connected/i)).toBeInTheDocument()
+    const calendarLink = await screen.findByRole('link', { name: /google calendar connected/i })
+    expect(calendarLink).toHaveAttribute('href', 'https://calendar.google.com/calendar/')
+    expect(calendarLink).toHaveAttribute('target', '_blank')
     expect(screen.queryByText(/google calendar integration/i)).toBeNull()
-    expect(screen.getByRole('heading', { name: /my appointments/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /my appointments/i })).toBeNull()
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0))
+  })
+
+  it('exposes the technician id as a tooltip on the dashboard heading', async () => {
+    vi.mocked(fetchCalendarStatus).mockResolvedValue({ connected: false, fsm_calendar_id: null })
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { name: /technician dashboard/i })
+    expect(heading).toHaveAttribute('title', TECHNICIAN_ID)
   })
 
   it('lets a connected technician disconnect and returns to the connect card', async () => {
@@ -71,7 +80,6 @@ describe('TechnicianPage', () => {
       await screen.findByRole('link', { name: /connect google calendar/i }),
     ).toBeInTheDocument()
     expect(screen.getByText(/google calendar integration/i)).toBeInTheDocument()
-    const idLine = screen.getByText(/technician id/i)
-    expect(within(idLine).queryByText(/google calendar connected/i)).toBeNull()
+    expect(screen.queryByText(/google calendar connected/i)).toBeNull()
   })
 })

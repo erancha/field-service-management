@@ -133,6 +133,33 @@ link to any other entity.
   `working_hours` and `time_off` use composite keys so a technician has at most one window per
   weekday and one row per day off.
 
+## Calendar sync
+
+Two background workers keep Google Calendar aligned with the database. Each runs on exactly one
+process — the back office — and is gated by its own flag; running either on several replicas would
+drain the outbox and poll Google redundantly. Both directions treat PostgreSQL as the merge
+authority: Google is a projection, so any conflict resolves in the database's favour.
+
+**Outbound projection (database → Google).** A confirmed appointment change (create, reschedule,
+cancel) enqueues a `calendar_outbox` row in the same transaction as the appointment write, so a
+calendar outage can never lose a booking. `CalendarProjectionDispatcher` — run by `dispatcher_runner`
+under `FSM_DISPATCH_ENABLED`, every `FSM_DISPATCH_INTERVAL_SECONDS` (default 5s) — claims one
+`PENDING` entry at a time with `SELECT … FOR UPDATE SKIP LOCKED`, performs the Google operation,
+writes back the `external_event_id`, and commits per entry. Each event carries a deterministic
+iCalUID, so a retry after a crash re-finds the existing event (Google answers a duplicate insert with
+HTTP 409) rather than creating a second one. Transient failures keep the entry `PENDING` until
+`MAX_ATTEMPTS`, then dead-letter it to `FAILED`.
+
+**Inbound reconciliation (Google → database).** `sync_runner`, under `FSM_SYNC_ENABLED` every
+`FSM_SYNC_INTERVAL_SECONDS` (default 30s), polls each technician's calendar using the stored
+`sync_token` for incremental changes. `calendar_bridge/inbound_sync` maps each raw event to an
+`InboundEventChange` and discards events whose iCalUID is not FSM-owned. `reconciliation_service` then
+applies the change under last-write-wins arbitration — the Google event's last-modified time against
+the appointment's `updated_at`: a stale edit is dropped, a customer decline or technician cancel
+updates the row, and an edit that conflicts with the booking policy loses to the database and enqueues
+a re-projection `UPDATE` back onto the outbox. Each committed change publishes an event so the
+affected participants' open views refresh live.
+
 ## Glossary
 
 In the diagram, `PK` marks a primary key and `UK` a unique key.

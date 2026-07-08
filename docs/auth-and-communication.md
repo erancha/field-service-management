@@ -271,7 +271,9 @@ Two infrastructure conditions make a multi-replica role safe:
 One constraint is not about role funnels: the background calendar workers (`FSM_DISPATCH_ENABLED` /
 `FSM_SYNC_ENABLED`) must be owned by exactly one process. When the back office runs as several replicas,
 enable the workers on one and leave them off on the rest, or they will each drain the shared calendar
-outbox and poll Google redundantly. Customer and technician replicas never touch those flags.
+outbox and poll Google redundantly. Customer and technician replicas never touch those flags. What
+these workers do — the outbound projection dispatcher and the inbound reconciliation poller — is
+traced in [docs/data.md](data.md#calendar-sync).
 
 Per-key configuration — what each secret does and how to obtain the Google credentials — lives inline
 in [`backend/.env.example`](../backend/.env.example).

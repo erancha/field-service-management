@@ -3,7 +3,9 @@
 The technician "Connect Google Calendar" flow requests exactly two narrow scopes and never the broad
 `.../auth/calendar` scope, so the system can only ever touch the calendars it creates and read
 free/busy intervals — the technician's private events stay invisible by construction. For the
-end-to-end request/callback flow, see [auth-and-communication.md](auth-and-communication.md).
+end-to-end request/callback flow, see [auth-and-communication.md](auth-and-communication.md); for
+what the connected calendar is then kept in sync with, see
+[calendar sync](data.md#calendar-sync).
 
 Required scopes:
 

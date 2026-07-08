@@ -665,6 +665,7 @@ def list_upcoming_appointments(
                 technician_name=resolve_user(appt.technician_id)[0],
                 customer_name=resolve_user(appt.customer_id)[0],
                 address=resolve_user(appt.customer_id)[1],
+                created_at=appt.created_at,
             )
             for appt in appts
         ]
