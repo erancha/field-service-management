@@ -2,15 +2,22 @@
 #
 # Run all available tests for the Field Service Management repo.
 #
-#   ./scripts/test.sh            # backend + frontend
-#   ./scripts/test.sh backend    # backend only  (alias: be)
-#   ./scripts/test.sh frontend   # frontend only (alias: fe)
+#   ./scripts/test.sh                        # backend + frontend (default)
+#   ./scripts/test.sh all                    # backend + frontend (explicit)
+#   ./scripts/test.sh backend                # backend only  (alias: be)
+#   ./scripts/test.sh frontend               # frontend, full (alias: fe)
+#   ./scripts/test.sh frontend=unit          # frontend fast path only (alias: fe=u)
+#   ./scripts/test.sh backend frontend=unit  # combine targets: full backend + fast frontend
+#
+# Each argument is a target with an optional =mode. Targets combine, so several may be given.
 #
 # Backend: lint (ruff), typecheck (mypy), import-linter boundary contracts, and pytest (unit,
 # integration, API, contract, architecture). Integration tests start ephemeral PostgreSQL via
 # testcontainers, so Docker must be running. Frontend: typecheck (tsc), lint (oxlint),
 # unit/component tests (vitest), and a production build (vite).
-# The test taxonomy is documented in docs/testing.md.
+# The =unit mode is a frontend inner-loop shortcut that keeps the typecheck but skips oxlint and the
+# vite build; run the full frontend target before committing. It applies to the frontend only. The
+# test taxonomy is documented in docs/testing.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,15 +28,46 @@ VENV="$BACKEND/.venv"
 # Print this script's header comment block as --help text (single source of usage docs).
 print_help() { awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "${BASH_SOURCE[0]}"; }
 
-TARGET="all"
+usage() {
+  echo "Usage: ./scripts/test.sh [all|backend|frontend[=unit]] ...   (first letters suffice: be | fe | u)" >&2
+  exit 2
+}
+
+RUN_BACKEND=false
+RUN_FRONTEND=false
+FRONTEND_MODE="full"
+selected=false
+
 for arg in "$@"; do
-  case "$(printf '%s' "$arg" | tr '[:upper:]' '[:lower:]')" in
-    be*|back*)  TARGET="backend" ;;
-    fe*|front*) TARGET="frontend" ;;
+  raw="$(printf '%s' "$arg" | tr '[:upper:]' '[:lower:]')"
+  name="${raw%%=*}"
+  mode="${raw#*=}"
+  [ "$mode" = "$raw" ] && mode=""   # no '=' present → no mode attached
+
+  case "$name" in
     -h|--help)  print_help; exit 0 ;;
-    *) echo "Usage: ./scripts/test.sh [backend|frontend]   (first letters suffice: be | fe)" >&2; exit 2 ;;
+    all)        RUN_BACKEND=true; RUN_FRONTEND=true; fe_arg=true ;;
+    be*|back*)  RUN_BACKEND=true; fe_arg=false ;;
+    fe*|front*) RUN_FRONTEND=true; fe_arg=true ;;
+    *) usage ;;
   esac
+  selected=true
+
+  if [ -n "$mode" ]; then
+    [ "$fe_arg" = true ] || { echo "=$mode applies to the frontend only (got: $arg)" >&2; exit 2; }
+    case "$mode" in
+      u*|unit) FRONTEND_MODE="unit" ;;
+      full)    FRONTEND_MODE="full" ;;
+      *) usage ;;
+    esac
+  fi
 done
+
+# No target arguments runs everything, matching the documented default.
+if [ "$selected" = false ]; then
+  RUN_BACKEND=true
+  RUN_FRONTEND=true
+fi
 
 run_backend() {
   echo "==> Backend"
@@ -61,18 +99,19 @@ run_frontend() {
   [ -d "$FRONTEND/node_modules" ] || ( cd "$FRONTEND" && npm ci --no-audit --no-fund )
   echo "--> typecheck (tsc --noEmit)"
   ( cd "$FRONTEND" && npx tsc --noEmit )
-  echo "--> lint (oxlint)"
-  ( cd "$FRONTEND" && npm run --silent lint )
+  if [ "$FRONTEND_MODE" != unit ]; then
+    echo "--> lint (oxlint)"
+    ( cd "$FRONTEND" && npm run --silent lint )
+  fi
   echo "--> unit/component tests (vitest)"
   ( cd "$FRONTEND" && npm run --silent test )
-  echo "--> build (vite)"
-  ( cd "$FRONTEND" && npm run --silent build )
+  if [ "$FRONTEND_MODE" != unit ]; then
+    echo "--> build (vite)"
+    ( cd "$FRONTEND" && npm run --silent build )
+  fi
 }
 
-case "$TARGET" in
-  backend)  run_backend ;;
-  frontend) run_frontend ;;
-  all)      run_backend; run_frontend ;;
-esac
+if [ "$RUN_BACKEND" = true ]; then run_backend; fi
+if [ "$RUN_FRONTEND" = true ]; then run_frontend; fi
 
 echo "All requested tests passed."

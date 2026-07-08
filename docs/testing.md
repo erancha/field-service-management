@@ -5,10 +5,15 @@ How the test suite is organized and how to run it.
 ## Running
 
 ```bash
-./scripts/test.sh            # everything (backend + frontend)
-./scripts/test.sh backend    # backend only  (alias: be)
-./scripts/test.sh frontend   # frontend only (alias: fe)
+./scripts/test.sh                        # everything (backend + frontend)
+./scripts/test.sh backend                # backend only  (alias: be)
+./scripts/test.sh frontend               # frontend, full (alias: fe)
+./scripts/test.sh frontend=unit          # frontend fast path: typecheck + vitest only (alias: fe=u)
+./scripts/test.sh backend frontend=unit  # combine targets in one run
 ```
+
+Each argument is a target with an optional `=mode`, and targets combine. The `=unit` mode applies to
+the frontend only: it keeps the typecheck but skips oxlint and the vite build for a faster inner loop.
 
 Backend integration tests start ephemeral PostgreSQL containers via testcontainers<sup>(1)</sup>, so
 **Docker must be running**. On first run the script provisions the backend virtualenv and installs frontend
@@ -60,7 +65,8 @@ conventions.
 
 The React app's quality gates are **typecheck** (`tsc --noEmit`), **lint** (`oxlint`),
 **unit/component tests** (`vitest run`), and a production **build** (`vite build`);
-`scripts/test.sh frontend` runs all four.
+`scripts/test.sh frontend` runs all four. `scripts/test.sh frontend=unit` runs just the typecheck and
+vitest — the inner-loop shortcut, not a substitute for the full run before committing.
 
 Tests live next to the code they cover as `*.test.ts(x)` and run under Vitest in a jsdom
 environment with React Testing Library (per-test DOM cleanup is wired in `src/test/setup.ts`).
