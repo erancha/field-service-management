@@ -304,3 +304,57 @@ class TestPollOnce:
         assert published[0].appointment_id == appt_id
         assert published[0].customer_id == cust_id
         assert published[0].technician_id == tech_id
+
+
+class TestRunForever:
+    """Singleton enforcement: only one backoffice process may run the inbound sync poller."""
+
+    def test_refuses_to_start_when_lock_held_by_another_process(
+        self, pg_session_factory, pg_settings
+    ):
+        """A second poller must fail fast rather than double-poll while another process holds
+        the sync-runner lock, so a single technician-side Google edit cannot fire duplicate
+        reschedule/cancel notifications."""
+        import threading
+
+        from sqlalchemy import text
+
+        from fsm.platform.sync_runner import _SYNC_RUNNER_LOCK_KEY, run_forever
+
+        with pg_session_factory() as holder:
+            acquired = holder.execute(
+                text("SELECT pg_try_advisory_lock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
+            ).scalar()
+            holder.commit()
+            assert acquired
+            try:
+                with pytest.raises(RuntimeError, match="only one backoffice"):
+                    run_forever(pg_session_factory, pg_settings, threading.Event())
+            finally:
+                holder.execute(
+                    text("SELECT pg_advisory_unlock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
+                )
+                holder.commit()
+
+    def test_releases_lock_after_returning(self, pg_session_factory, pg_settings):
+        """After run_forever returns, the lock is free so a fresh process can acquire it."""
+        import threading
+
+        from sqlalchemy import text
+
+        from fsm.platform.sync_runner import _SYNC_RUNNER_LOCK_KEY, run_forever
+
+        already_stopped = threading.Event()
+        already_stopped.set()
+        run_forever(pg_session_factory, pg_settings, already_stopped)
+
+        with pg_session_factory() as probe:
+            reacquired = probe.execute(
+                text("SELECT pg_try_advisory_lock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
+            ).scalar()
+            probe.commit()
+            assert reacquired
+            probe.execute(
+                text("SELECT pg_advisory_unlock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
+            )
+            probe.commit()
