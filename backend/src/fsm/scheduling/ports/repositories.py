@@ -69,3 +69,23 @@ class AppointmentRepository(Protocol):
         Excludes CANCELLED appointments.
         """
         ...
+
+    def list_upcoming_for_technician(
+        self, technician_id: UUID, now: datetime, limit: int
+    ) -> list[Appointment]:
+        """Return this technician's soonest not-yet-ended, non-cancelled appointments.
+
+        Ordered by (start, id); at most `limit` rows. An appointment already in progress
+        (start <= now < end) is still upcoming.
+        """
+        ...
+
+    def list_upcoming_for_customer(
+        self, customer_id: UUID, now: datetime, limit: int
+    ) -> list[Appointment]:
+        """Return this customer's soonest not-yet-ended, non-cancelled appointments (see above)."""
+        ...
+
+    def list_upcoming_all(self, now: datetime, limit: int) -> list[Appointment]:
+        """Return the soonest not-yet-ended, non-cancelled appointments across all technicians."""
+        ...

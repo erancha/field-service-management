@@ -13,6 +13,7 @@ DB row is discarded without any mutation.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
@@ -27,6 +28,19 @@ from fsm.scheduling.ports.outbox import OutboxOperation, OutboxRepository
 from fsm.scheduling.ports.repositories import AppointmentRepository
 
 _log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ReconciledChange:
+    """A committed inbound change whose participants' open views should refresh.
+
+    Emitted only when the DB row actually changed (cancel, customer-decline, accepted reschedule);
+    a rejected or stale edit leaves the row untouched and yields no change.
+    """
+
+    appointment_id: UUID
+    customer_id: UUID
+    technician_id: UUID
 
 
 class ReconciliationService:
@@ -58,8 +72,8 @@ class ReconciliationService:
         self._availability_inputs = availability_inputs
         self._clock = clock
 
-    def reconcile(self, change: InboundEventChange) -> None:
-        """Apply a single inbound calendar change to the DB, respecting LWW and DB authority."""
+    def reconcile(self, change: InboundEventChange) -> ReconciledChange | None:
+        """Apply an inbound calendar change to the DB; returns the committed change, or None."""
         try:
             appt = self._appointments.get(change.appointment_id)
         except NotFoundError:
@@ -67,20 +81,20 @@ class ReconciliationService:
                 "inbound change for unknown appointment %s — discarding",
                 change.appointment_id,
             )
-            return
+            return None
 
         # Last-write-wins: ignore an inbound edit that is not strictly newer than the DB row.
         if change.updated_at <= appt.updated_at:
-            return
+            return None
 
         if appt.status is AppointmentStatus.CANCELLED:
-            return
+            return None
 
         if change.cancelled:
             appt.cancel(now=self._clock())
             self._appointments.save(appt)
             self._notifications.appointment_cancelled(appt)
-            return
+            return self._change_for(appt)
 
         if change.customer_declined:
             # The declined event still exists on the technician's calendar (only the RSVP
@@ -91,7 +105,7 @@ class ReconciliationService:
                 OutboxOperation.DELETE, appt.id, external_event_id=appt.external_event_id
             )
             self._notifications.appointment_cancelled(appt)
-            return
+            return self._change_for(appt)
 
         if change.new_time_range is not None and change.new_time_range != appt.time_range:
             if not self._accepts(appt, change.new_time_range):
@@ -99,17 +113,26 @@ class ReconciliationService:
                 # tell both parties why the move did not stick.
                 self._outbox.enqueue(OutboxOperation.UPDATE, appt.id)
                 self._notifications.appointment_reschedule_rejected(appt)
-                return
+                return None
 
             appt.reschedule(change.new_time_range, now=self._clock())
             self._appointments.save(appt)
             self._notifications.appointment_rescheduled(appt)
-            return
+            return self._change_for(appt)
 
         # No time or cancellation change: a description-only edit or a projection echo of our
         # own outbound update. The event description is a rendered composition (problem +
         # details + phone), not the raw details field, so reflecting it back would overwrite
         # appt.details with the whole body and compound on every re-projection. Left as a no-op.
+        return None
+
+    @staticmethod
+    def _change_for(appt) -> ReconciledChange:
+        return ReconciledChange(
+            appointment_id=appt.id,
+            customer_id=appt.customer_id,
+            technician_id=appt.technician_id,
+        )
 
     def _accepts(self, appt, new_time_range: TimeRange) -> bool:
         """True iff the proposed time satisfies the full booking policy for this technician."""

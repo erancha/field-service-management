@@ -67,7 +67,7 @@ def stubbed_worker_runners(monkeypatch):
     import fsm.platform.dispatcher_runner as dispatcher_runner
     import fsm.platform.sync_runner as sync_runner
 
-    def idle_runner(session_factory, settings, stop_event):
+    def idle_runner(session_factory, settings, stop_event, publish=None):
         stop_event.wait()
 
     monkeypatch.setattr(dispatcher_runner, "run_forever", idle_runner)

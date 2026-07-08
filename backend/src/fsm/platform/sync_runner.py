@@ -55,6 +55,7 @@ def poll_once(
     *,
     client_factory=build_calendar_client,
     notifications=None,
+    publish=None,
 ) -> int:
     """Poll every CONNECTED technician's FSM calendar and reconcile inbound changes.
 
@@ -62,6 +63,7 @@ def poll_once(
     GoogleCalendarSyncAdapter, and reconciles each change via ReconciliationService
     inside a SqlAlchemyUnitOfWork. The new sync token is persisted after the
     reconciliation transaction commits. One failed technician does not stall the others.
+    When publish is given, it is invoked once for each committed inbound change, after commit.
 
     Returns the total number of changes reconciled across all technicians.
     """
@@ -80,6 +82,7 @@ def poll_once(
                 settings,
                 client_factory=client_factory,
                 caller_notifications=notification_port,
+                publish=publish,
             )
         except Exception as exc:
             if is_auth_error(exc):
@@ -93,9 +96,12 @@ def poll_once(
 
 
 def _process_connection(
-    connection, session_factory, settings, *, client_factory, caller_notifications
+    connection, session_factory, settings, *, client_factory, caller_notifications, publish=None
 ) -> int:
-    """Sync a single technician: fetch changes, reconcile, persist token. Return change count."""
+    """Sync a single technician: fetch changes, reconcile, persist token. Return change count.
+
+    When publish is given, it is invoked once for each committed inbound change, after commit.
+    """
     with session_factory() as session:
         repo = SqlAlchemyCalendarConnectionRepository(session)
         encrypted_token = repo.get_encrypted_token(connection.technician_id)
@@ -120,10 +126,13 @@ def _process_connection(
             notifications,
             availability_inputs=build_availability_inputs(session_factory, settings),
         )
-        for change in changes:
-            service.reconcile(change)
+        results = [service.reconcile(change) for change in changes]
         uow.commit()
 
+    if publish is not None:
+        for result in results:
+            if result is not None:
+                publish(result)
 
     with session_factory() as session:
         with session.begin():
@@ -133,17 +142,18 @@ def _process_connection(
     return len(changes)
 
 
-def run_forever(session_factory, settings, stop_event: threading.Event) -> None:
+def run_forever(session_factory, settings, stop_event: threading.Event, publish=None) -> None:
     """Poll all connected technicians repeatedly until stop_event is set.
 
     Each iteration calls poll_once, then waits fsm_sync_interval_seconds before
     the next iteration. Exceptions within an iteration are logged and the loop
-    continues. The loop exits cleanly when stop_event is set.
+    continues. The loop exits cleanly when stop_event is set. When publish is given, it is
+    forwarded to poll_once and invoked once for each committed inbound change, after commit.
     """
     _log.info("Sync runner starting (interval=%.1fs)", settings.fsm_sync_interval_seconds)
     while not stop_event.is_set():
         try:
-            poll_once(session_factory, settings)
+            poll_once(session_factory, settings, publish=publish)
         except Exception:
             _log.exception("Unexpected error in sync poll_once; continuing")
         stop_event.wait(settings.fsm_sync_interval_seconds)

@@ -95,6 +95,25 @@ class AppointmentResponse(BaseModel):
     updated_at: datetime
 
 
+class UpcomingAppointmentResponse(BaseModel):
+    id: UUID
+    service_call_id: UUID
+    technician_id: UUID
+    customer_id: UUID
+    start: datetime
+    end: datetime
+    status: str
+    details: str | None
+    problem: str
+    technician_name: str
+    customer_name: str
+    address: str | None
+
+
+class UpcomingAppointmentsResponse(BaseModel):
+    items: list[UpcomingAppointmentResponse]
+
+
 # ---------------------------------------------------------------------------
 # Days off
 # ---------------------------------------------------------------------------

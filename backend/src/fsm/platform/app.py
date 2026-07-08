@@ -1,6 +1,7 @@
 """Application factory and composition root."""
 from __future__ import annotations
 
+import asyncio
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from fsm.platform.api.calendar_routes import router as calendar_router
 from fsm.platform.api.events_routes import router as events_router
 from fsm.platform.api.scheduling_routes import handle_scheduling_error
 from fsm.platform.api.scheduling_routes import router as scheduling_router
-from fsm.platform.events import build_event_bus
+from fsm.platform.events import build_event_bus, publish_appointment_changed
 from fsm.platform.logging import configure_logging
 from fsm.scheduling.domain.errors import SchedulingError
 from fsm.shared.constants import BRAND
@@ -46,7 +47,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        """Signal every started worker thread to stop when the server shuts down."""
+        """Capture the serving event loop for thread-safe publishes; stop workers on shutdown."""
+        app.state.event_loop = asyncio.get_running_loop()
         yield
         for stop_event in worker_stop_events:
             stop_event.set()
@@ -99,13 +101,21 @@ def create_app(
 
         sync_session_factory = _get_session_factory(app)
 
+        def _sync_publish(change) -> None:
+            publish_appointment_changed(
+                app,
+                appointment_id=change.appointment_id,
+                customer_id=change.customer_id,
+                technician_id=change.technician_id,
+            )
+
         sync_stop_event = threading.Event()
         app.state.sync_stop_event = sync_stop_event
         worker_stop_events.append(sync_stop_event)
 
         sync_thread = threading.Thread(
             target=sync_run_forever,
-            args=(sync_session_factory, settings, sync_stop_event),
+            args=(sync_session_factory, settings, sync_stop_event, _sync_publish),
             daemon=True,
             name="fsm-sync",
         )

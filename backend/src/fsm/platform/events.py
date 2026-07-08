@@ -15,12 +15,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Protocol
 
 from fsm.identity.domain.role import Role
 from fsm.identity.domain.role_status import RoleStatus
 from fsm.platform.api.auth_deps import SessionUser
+
+_log = logging.getLogger(__name__)
+
+APPOINTMENT_CHANGED = "appointment.changed"
 
 ADMINS_CHANNEL = "admins"
 
@@ -135,3 +140,32 @@ async def publish_to_app(app, channel: str, event: dict) -> None:
     bus = getattr(app.state, "event_bus", None)
     if bus is not None:
         await bus.publish(channel, event)
+
+
+def _log_publish_failure(future) -> None:
+    """Surface an SSE publish error scheduled on the loop; the cue is best-effort, so only log it."""
+    if future.cancelled():
+        return
+    exc = future.exception()
+    if exc is not None:
+        _log.warning("appointment.changed publish failed: %s", exc)
+
+
+def publish_appointment_changed(app, *, appointment_id, customer_id, technician_id) -> None:
+    """Signal that an appointment changed, to both participants and the back office.
+
+    A live-refresh cue, not a source of truth — the DB is authoritative and every list refetches
+    on receipt. Safe to call from a sync route handler or a background worker thread: the async
+    publish is scheduled onto the server loop captured at startup (app.state.event_loop). When the
+    loop is not yet running the cue is logged and dropped rather than raised, so a publish never
+    breaks the request or the sync sweep; a publish that fails after scheduling is logged via a
+    done-callback rather than raised.
+    """
+    loop = getattr(app.state, "event_loop", None)
+    if loop is None:
+        _log.warning("event loop unavailable; dropping appointment.changed for %s", appointment_id)
+        return
+    event = {"type": APPOINTMENT_CHANGED, "appointment_id": str(appointment_id)}
+    for channel in (user_channel(customer_id), user_channel(technician_id), ADMINS_CHANNEL):
+        future = asyncio.run_coroutine_threadsafe(publish_to_app(app, channel, event), loop)
+        future.add_done_callback(_log_publish_failure)

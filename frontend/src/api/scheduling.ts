@@ -7,6 +7,7 @@ import type {
   CreateAppointmentRequest,
   RescheduleRequest,
   AddDetailsRequest,
+  UpcomingAppointmentsResponse,
 } from './types.ts'
 import { apiPost, apiGet } from './client.ts'
 
@@ -82,4 +83,12 @@ export async function addAppointmentDetails(
   data: AddDetailsRequest,
 ): Promise<Appointment> {
   return apiPost<Appointment>(`/api/appointments/${id}/details`, data)
+}
+
+export async function fetchUpcomingAppointments(
+  params: { limit: number },
+): Promise<UpcomingAppointmentsResponse> {
+  return apiGet<UpcomingAppointmentsResponse>('/api/appointments/upcoming', {
+    limit: String(params.limit),
+  })
 }

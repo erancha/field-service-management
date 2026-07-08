@@ -2,6 +2,7 @@ import { ConnectCalendar } from '../features/technician/ConnectCalendar.tsx'
 import { DisconnectCalendar } from '../features/technician/DisconnectCalendar.tsx'
 import { MyAppointments } from '../features/technician/MyAppointments.tsx'
 import { PageHeader } from '../features/layout/PageHeader.tsx'
+import { UpcomingAppointments } from '../features/appointments/UpcomingAppointments.tsx'
 import { useCalendarStatus } from '../hooks/useCalendarStatus.ts'
 
 interface TechnicianPageProps {
@@ -27,7 +28,10 @@ export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
       </p>
 
       {state.status === 'connected' ? (
-        <MyAppointments />
+        <>
+          <UpcomingAppointments limit={5} showTechnicianName={false} showReschedule={false} />
+          <MyAppointments />
+        </>
       ) : (
         <ConnectCalendar status={state.status} />
       )}

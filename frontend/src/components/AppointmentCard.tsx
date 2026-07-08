@@ -5,6 +5,10 @@ import { ReschedulePicker } from './ReschedulePicker.tsx'
 
 interface AppointmentCardProps {
   appointment: Appointment
+  problem?: string
+  technicianName?: string
+  customerName?: string
+  address?: string | null
   onReschedule?: (id: string, start: string, end: string) => void | Promise<void>
   onCancel?: (id: string) => void
   onAddDetails?: (id: string, text: string) => void
@@ -17,6 +21,10 @@ function formatDate(iso: string): string {
 
 export function AppointmentCard({
   appointment,
+  problem,
+  technicianName,
+  customerName,
+  address,
   onReschedule,
   onCancel,
   onAddDetails,
@@ -64,6 +72,14 @@ export function AppointmentCard({
         <span>From: {formatDate(appointment.start)}</span>
         <span>To: {formatDate(appointment.end)}</span>
       </div>
+      {(problem || technicianName || customerName || address) && (
+        <dl className="appointment-card__facts">
+          {problem && (<><dt>Problem</dt><dd>{problem}</dd></>)}
+          {technicianName && (<><dt>Technician</dt><dd>{technicianName}</dd></>)}
+          {customerName && (<><dt>Customer</dt><dd>{customerName}</dd></>)}
+          {address && (<><dt>Address</dt><dd>{address}</dd></>)}
+        </dl>
+      )}
       {appointment.details && (
         <p className="appointment-card__details">{appointment.details}</p>
       )}

@@ -3,6 +3,7 @@ import type { ServiceCall } from '../api/types.ts'
 import { OpenServiceCall } from '../features/customer/OpenServiceCall.tsx'
 import { BookFlow } from '../features/customer/BookFlow.tsx'
 import { PageHeader } from '../features/layout/PageHeader.tsx'
+import { UpcomingAppointments } from '../features/appointments/UpcomingAppointments.tsx'
 
 interface CustomerPageProps {
   customerId: string
@@ -24,6 +25,7 @@ export function CustomerPage({ customerId, email }: CustomerPageProps) {
     <div className="page">
       <PageHeader title="Customer Dashboard" email={email} />
 
+      <UpcomingAppointments limit={3} showTechnicianName showReschedule />
       <p className="page__id">Customer ID: <code>{customerId}</code></p>
 
       {phase === 'open-sc' && (

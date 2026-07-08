@@ -148,6 +148,24 @@ describe('AppointmentCard details', () => {
   })
 })
 
+describe('AppointmentCard facts', () => {
+  it('renders problem, names, and address when provided', () => {
+    render(
+      <AppointmentCard
+        appointment={makeAppointment()}
+        problem="Fix boiler"
+        technicianName="Tara"
+        customerName="Cara"
+        address="12 Main St"
+      />,
+    )
+    expect(screen.getByText('Fix boiler')).toBeInTheDocument()
+    expect(screen.getByText(/Tara/)).toBeInTheDocument()
+    expect(screen.getByText(/Cara/)).toBeInTheDocument()
+    expect(screen.getByText(/12 Main St/)).toBeInTheDocument()
+  })
+})
+
 describe('AppointmentCard cancelled state', () => {
   it('offers no actions on a cancelled appointment', () => {
     render(

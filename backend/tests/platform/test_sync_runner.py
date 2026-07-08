@@ -254,3 +254,53 @@ class TestPollOnce:
         with pg_session_factory() as read_session:
             appt_row = read_session.get(AppointmentRow, appt_id)
             assert appt_row.status == "CANCELLED"
+
+    def test_poll_publishes_committed_change(self, pg_session_factory, pg_settings):
+        from fsm.google_calendar.adapters.token_cipher import FernetTokenCipher
+
+        appt_id = uuid.uuid4()
+        tech_id = uuid.uuid4()
+        cust_id = uuid.uuid4()
+        cal_id = f"cal-test-{uuid.uuid4()}"
+        encrypted_token = FernetTokenCipher(
+            pg_settings.fsm_token_key.get_secret_value()
+        ).encrypt("fake-refresh-token")
+
+        with pg_session_factory() as seed_session:
+            with seed_session.begin():
+                seed_session.add(CalendarConnectionRow(
+                    technician_id=tech_id, fsm_calendar_id=cal_id,
+                    encrypted_refresh_token=encrypted_token, status="CONNECTED", sync_token=None,
+                ))
+                seed_session.add(AppointmentRow(
+                    id=appt_id, service_call_id=uuid.uuid4(), technician_id=tech_id, customer_id=cust_id,
+                    start_at=_APPT_START, end_at=_APPT_END, status="SCHEDULED", details=None,
+                    external_event_id=None, created_at=_APPT_UPDATED_AT, updated_at=_APPT_UPDATED_AT,
+                ))
+
+        raw_events = [{
+            "iCalUID": f"fsm-{appt_id}@fsm.local", "status": "confirmed",
+            "start": {"dateTime": _NEW_START.isoformat()}, "end": {"dateTime": _NEW_END.isoformat()},
+            "description": None, "updated": _EVENT_UPDATED_AT.isoformat(),
+        }]
+
+        class FakeClient:
+            # list_connected() also returns other CONNECTED technicians left behind by earlier
+            # tests in this module-scoped Postgres fixture; matching only this test's own
+            # calendar_id keeps count and published scoped to the connection seeded above.
+            def list_changes(self, calendar_id, sync_token):
+                if calendar_id != cal_id:
+                    return [], _NEXT_SYNC_TOKEN
+                return raw_events, _NEXT_SYNC_TOKEN
+
+        published = []
+        count = poll_once(
+            pg_session_factory, pg_settings,
+            client_factory=lambda **kwargs: FakeClient(), publish=published.append,
+        )
+
+        assert count == 1
+        assert len(published) == 1
+        assert published[0].appointment_id == appt_id
+        assert published[0].customer_id == cust_id
+        assert published[0].technician_id == tech_id

@@ -472,6 +472,46 @@ class TestCustomerDecline:
         assert notifications.calls == []
 
 
+class TestReconcileReturnValue:
+    def test_cancel_returns_change(self, svc, appt_repo):
+        from fsm.scheduling.application.reconciliation_service import ReconciledChange
+        appt = _make_appointment()
+        appt_repo.add(appt)
+        change = InboundEventChange(
+            appointment_id=appt.id, cancelled=True, new_time_range=None,
+            updated_at=_BASE + timedelta(hours=1),
+        )
+        result = svc.reconcile(change)
+        assert result == ReconciledChange(
+            appointment_id=appt.id, customer_id=appt.customer_id, technician_id=appt.technician_id,
+        )
+
+    def test_accepted_reschedule_returns_change(self, svc, appt_repo):
+        from fsm.scheduling.application.reconciliation_service import ReconciledChange
+        appt = _make_appointment()
+        appt_repo.add(appt)
+        new_range = TimeRange(
+            start=datetime(2024, 6, 10, 13, 0, tzinfo=_TZ),
+            end=datetime(2024, 6, 10, 15, 0, tzinfo=_TZ),
+        )
+        change = InboundEventChange(
+            appointment_id=appt.id, cancelled=False, new_time_range=new_range,
+            updated_at=_BASE + timedelta(hours=1),
+        )
+        result = svc.reconcile(change)
+        assert result == ReconciledChange(
+            appointment_id=appt.id, customer_id=appt.customer_id, technician_id=appt.technician_id,
+        )
+
+    def test_stale_edit_returns_none(self, svc, appt_repo):
+        appt = _make_appointment(updated_at=_BASE)
+        appt_repo.add(appt)
+        change = InboundEventChange(
+            appointment_id=appt.id, cancelled=True, new_time_range=None, updated_at=_BASE,
+        )
+        assert svc.reconcile(change) is None
+
+
 class TestBookingPolicyValidation:
     def _svc_with_hours(self, appt_repo, outbox, notifications, clock_time):
         """Service whose availability inputs are the real default schedule (Sun-Thu 9-17 UTC)."""

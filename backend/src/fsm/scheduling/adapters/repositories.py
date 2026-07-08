@@ -215,3 +215,29 @@ class SqlAlchemyAppointmentRepository:
             .all()
         )
         return [_row_to_appointment(row) for row in rows]
+
+    def _list_upcoming(self, now: datetime, limit: int, *extra_filters) -> list[Appointment]:
+        query = self._session.query(AppointmentRow).filter(
+            AppointmentRow.status != AppointmentStatus.CANCELLED.value,
+            AppointmentRow.end_at > now,
+            *extra_filters,
+        )
+        rows = (
+            query.order_by(AppointmentRow.start_at.asc(), AppointmentRow.id.asc())
+            .limit(limit)
+            .all()
+        )
+        return [_row_to_appointment(row) for row in rows]
+
+    def list_upcoming_for_technician(
+        self, technician_id: uuid.UUID, now: datetime, limit: int
+    ) -> list[Appointment]:
+        return self._list_upcoming(now, limit, AppointmentRow.technician_id == technician_id)
+
+    def list_upcoming_for_customer(
+        self, customer_id: uuid.UUID, now: datetime, limit: int
+    ) -> list[Appointment]:
+        return self._list_upcoming(now, limit, AppointmentRow.customer_id == customer_id)
+
+    def list_upcoming_all(self, now: datetime, limit: int) -> list[Appointment]:
+        return self._list_upcoming(now, limit)

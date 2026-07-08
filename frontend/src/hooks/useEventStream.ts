@@ -9,14 +9,19 @@ export type EventHandlers = Record<string, (data: unknown) => void>
  * each named event to the matching handler. The server only ever sends events for channels the
  * authenticated caller is entitled to, so a handler set is safe to register regardless of role.
  * Handlers are read through a ref so changing them does not tear down and reopen the connection.
+ * `onOpen`, if given, fires on every connect (including reconnects), letting callers resync state
+ * that may have drifted while the stream was down.
  */
-export function useEventStream(handlers: EventHandlers, enabled = true): void {
+export function useEventStream(handlers: EventHandlers, enabled = true, onOpen?: () => void): void {
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
+  const onOpenRef = useRef(onOpen)
+  onOpenRef.current = onOpen
 
   useEffect(() => {
     if (!enabled) return
     const source = new EventSource('/api/events', { withCredentials: true })
+    source.onopen = () => onOpenRef.current?.()
     const types = Object.keys(handlersRef.current)
 
     const listeners = types.map((type) => {

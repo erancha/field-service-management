@@ -678,3 +678,66 @@ class TestOutboxDispatcherIntegration:
         with Session() as sess:
             pending = SqlAlchemyOutboxRepository(sess).list_pending(limit=10)
             assert not any(e.id == entry_id for e in pending), "dead-lettered entry must not appear in pending"
+
+
+# ---------------------------------------------------------------------------
+# Upcoming-appointment queries
+# ---------------------------------------------------------------------------
+
+
+class TestUpcomingQueries:
+    def _persist(self, session, *, technician_id, customer_id, start, end, status=AppointmentStatus.SCHEDULED):
+        sc_repo = SqlAlchemyServiceCallRepository(session)
+        appt_repo = SqlAlchemyAppointmentRepository(session)
+        sc = _make_service_call()
+        sc_repo.add(sc)
+        appt = Appointment(
+            id=uuid.uuid4(),
+            service_call_id=sc.id,
+            technician_id=technician_id,
+            customer_id=customer_id,
+            time_range=TimeRange(start=start, end=end),
+            status=status,
+            details=None,
+            external_event_id=None,
+            created_at=_utc(2024, 1, 1),
+            updated_at=_utc(2024, 1, 1),
+        )
+        appt_repo.add(appt)
+        return appt
+
+    def test_technician_upcoming_orders_filters_and_limits(self, session):
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        now = _utc(2030, 1, 1)
+        later = self._persist(session, technician_id=tech, customer_id=cust, start=_utc(2030, 6, 2, 9), end=_utc(2030, 6, 2, 11))
+        sooner = self._persist(session, technician_id=tech, customer_id=cust, start=_utc(2030, 6, 1, 9), end=_utc(2030, 6, 1, 11))
+        # Excluded: cancelled, already-ended, and another technician's appointment.
+        self._persist(session, technician_id=tech, customer_id=cust, start=_utc(2030, 7, 1, 9), end=_utc(2030, 7, 1, 11), status=AppointmentStatus.CANCELLED)
+        self._persist(session, technician_id=tech, customer_id=cust, start=_utc(2020, 1, 1, 9), end=_utc(2020, 1, 1, 11))
+        self._persist(session, technician_id=uuid.uuid4(), customer_id=cust, start=_utc(2030, 6, 1, 9), end=_utc(2030, 6, 1, 11))
+
+        result = SqlAlchemyAppointmentRepository(session).list_upcoming_for_technician(tech, now, limit=5)
+
+        assert [a.id for a in result] == [sooner.id, later.id]
+
+    def test_upcoming_respects_limit(self, session):
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        now = _utc(2030, 1, 1)
+        for day in range(1, 5):
+            self._persist(session, technician_id=tech, customer_id=cust, start=_utc(2030, 6, day, 9), end=_utc(2030, 6, day, 11))
+        result = SqlAlchemyAppointmentRepository(session).list_upcoming_for_technician(tech, now, limit=2)
+        assert len(result) == 2
+
+    def test_customer_and_all_scopes(self, session):
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        now = _utc(2030, 1, 1)
+        mine = self._persist(session, technician_id=tech, customer_id=cust, start=_utc(2030, 6, 1, 9), end=_utc(2030, 6, 1, 11))
+        self._persist(session, technician_id=tech, customer_id=uuid.uuid4(), start=_utc(2030, 6, 2, 9), end=_utc(2030, 6, 2, 11))
+
+        repo = SqlAlchemyAppointmentRepository(session)
+        customer_view = repo.list_upcoming_for_customer(cust, now, limit=10)
+        assert [a.id for a in customer_view] == [mine.id]
+        assert mine.id in {a.id for a in repo.list_upcoming_all(now, limit=10)}

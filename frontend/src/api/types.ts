@@ -35,6 +35,25 @@ export interface Appointment {
   details?: string
 }
 
+export interface UpcomingAppointment {
+  id: string
+  service_call_id: string
+  technician_id: string
+  customer_id: string
+  start: string
+  end: string
+  status: string
+  details: string | null
+  problem: string
+  technician_name: string
+  customer_name: string
+  address: string | null
+}
+
+export interface UpcomingAppointmentsResponse {
+  items: UpcomingAppointment[]
+}
+
 export type Role = 'CUSTOMER' | 'TECHNICIAN' | 'ADMIN'
 export type RoleStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 

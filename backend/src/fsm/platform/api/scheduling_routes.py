@@ -49,11 +49,14 @@ from fsm.platform.api.schemas import (
     RescheduleRequest,
     ServiceCallResponse,
     SlotResponse,
+    UpcomingAppointmentResponse,
+    UpcomingAppointmentsResponse,
     WorkingHoursRequest,
     WorkingHoursResponse,
 )
 from fsm.platform.calendar_resolver import build_calendar_resolver
 from fsm.platform.dev_adapters import LoggingNotificationPort, NullCalendarPort
+from fsm.platform.events import publish_appointment_changed
 from fsm.platform.identity_lookup import build_contact_resolver
 from fsm.platform.notifications_factory import build_notifications
 from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
@@ -548,6 +551,7 @@ def book_appointment(
         )
         uow.commit()
 
+    _publish_appointment_changed(request.app, appt)
     return _appt_response(appt)
 
 
@@ -569,6 +573,7 @@ def reschedule_appointment(
         )
         uow.commit()
 
+    _publish_appointment_changed(request.app, appt)
     return _appt_response(appt)
 
 
@@ -584,6 +589,7 @@ def cancel_appointment(
         appt = _appointment_service(uow, request).cancel_appointment(appointment_id=appointment_id)
         uow.commit()
 
+    _publish_appointment_changed(request.app, appt)
     return _appt_response(appt)
 
 
@@ -600,12 +606,85 @@ def add_details(
         appt = _appointment_service(uow, request).add_details(appointment_id=appointment_id, text=body.text)
         uow.commit()
 
+    _publish_appointment_changed(request.app, appt)
     return _appt_response(appt)
+
+
+@router.get("/appointments/upcoming", response_model=UpcomingAppointmentsResponse)
+def list_upcoming_appointments(
+    request: Request,
+    limit: Annotated[int, Query(ge=1)],
+    user: SessionUser = Depends(require_user),
+) -> UpcomingAppointmentsResponse:
+    """Return the caller's soonest upcoming appointments, enriched for one-shot rendering.
+
+    Scope follows the session role: a technician sees their own, a customer sees their own, an
+    administrator sees all. Each item carries the problem text and both party names plus the
+    customer address, resolved once per distinct id, so the client renders a row without any
+    follow-up request.
+    """
+    from fsm.identity.adapters.repositories import SqlAlchemyUserRepository
+
+    now = _now_utc()
+    with _build_uow(request) as uow:
+        if user.role is Role.TECHNICIAN:
+            appts = uow.appointments.list_upcoming_for_technician(user.id, now, limit)
+        elif user.role is Role.ADMIN:
+            appts = uow.appointments.list_upcoming_all(now, limit)
+        else:
+            appts = uow.appointments.list_upcoming_for_customer(user.id, now, limit)
+
+        users = SqlAlchemyUserRepository(uow.session)
+        # Key: user id. Value: (preferred display name, address) resolved once per distinct id.
+        user_cache: dict[UUID, tuple[str, str | None]] = {}
+        # Key: service-call id. Value: problem description, resolved once per distinct id.
+        problem_cache: dict[UUID, str] = {}
+
+        def resolve_user(user_id: UUID) -> tuple[str, str | None]:
+            if user_id not in user_cache:
+                u = users.get(user_id)
+                user_cache[user_id] = (u.preferred_name, u.address)
+            return user_cache[user_id]
+
+        def resolve_problem(service_call_id: UUID) -> str:
+            if service_call_id not in problem_cache:
+                problem_cache[service_call_id] = uow.service_calls.get(service_call_id).description
+            return problem_cache[service_call_id]
+
+        items = [
+            UpcomingAppointmentResponse(
+                id=appt.id,
+                service_call_id=appt.service_call_id,
+                technician_id=appt.technician_id,
+                customer_id=appt.customer_id,
+                start=appt.time_range.start,
+                end=appt.time_range.end,
+                status=appt.status.value,
+                details=appt.details,
+                problem=resolve_problem(appt.service_call_id),
+                technician_name=resolve_user(appt.technician_id)[0],
+                customer_name=resolve_user(appt.customer_id)[0],
+                address=resolve_user(appt.customer_id)[1],
+            )
+            for appt in appts
+        ]
+
+    return UpcomingAppointmentsResponse(items=items)
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _publish_appointment_changed(app, appt) -> None:
+    """Fire the live-refresh cue for both participants and the back office after a mutation."""
+    publish_appointment_changed(
+        app,
+        appointment_id=appt.id,
+        customer_id=appt.customer_id,
+        technician_id=appt.technician_id,
+    )
 
 
 def _appt_response(appt) -> AppointmentResponse:

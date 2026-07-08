@@ -84,6 +84,26 @@ class InMemoryAppointmentRepository:
             and appt.time_range.overlaps(window)
         ]
 
+    def _upcoming(self, predicate, now: datetime, limit: int) -> list[Appointment]:
+        matches = [
+            a
+            for a in self._store.values()
+            if predicate(a)
+            and a.status is not AppointmentStatus.CANCELLED
+            and a.time_range.end > now
+        ]
+        matches.sort(key=lambda a: (a.time_range.start, str(a.id)))
+        return matches[:limit]
+
+    def list_upcoming_for_technician(self, technician_id: UUID, now: datetime, limit: int) -> list[Appointment]:
+        return self._upcoming(lambda a: a.technician_id == technician_id, now, limit)
+
+    def list_upcoming_for_customer(self, customer_id: UUID, now: datetime, limit: int) -> list[Appointment]:
+        return self._upcoming(lambda a: a.customer_id == customer_id, now, limit)
+
+    def list_upcoming_all(self, now: datetime, limit: int) -> list[Appointment]:
+        return self._upcoming(lambda a: True, now, limit)
+
 
 class _FakeHttp409(Exception):
     """Duck-types googleapiclient.errors.HttpError's resp.status for a 409 duplicate."""

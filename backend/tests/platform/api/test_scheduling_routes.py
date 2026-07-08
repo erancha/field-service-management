@@ -133,6 +133,24 @@ def _seed_contact(pg_session_factory, cust_id, tech_id, address="12 Main St", ph
     _seed_user(pg_session_factory, tech_id, Role.TECHNICIAN, address=address, phone=phone)
 
 
+def _seed_service_call(pg_session_factory, sc_id, customer_id, description="Fix boiler"):
+    from fsm.scheduling.adapters.orm import ServiceCallRow
+    with pg_session_factory() as s:
+        with s.begin():
+            s.add(ServiceCallRow(id=sc_id, customer_id=customer_id, description=description,
+                                 status="OPEN", created_at=datetime(2024, 1, 1, tzinfo=timezone.utc)))
+
+
+def _seed_appt(pg_session_factory, *, appt_id, sc_id, technician_id, customer_id, start, end, status="SCHEDULED"):
+    from fsm.scheduling.adapters.orm import AppointmentRow
+    ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    with pg_session_factory() as s:
+        with s.begin():
+            s.add(AppointmentRow(id=appt_id, service_call_id=sc_id, technician_id=technician_id,
+                                 customer_id=customer_id, start_at=start, end_at=end, status=status,
+                                 details=None, external_event_id=None, created_at=ts, updated_at=ts))
+
+
 # ---------------------------------------------------------------------------
 # 0. Gating: unauthenticated access is rejected
 # ---------------------------------------------------------------------------
@@ -681,3 +699,78 @@ def test_reschedule_incomplete_contact_info_returns_422(client, auth, pg_session
     )
     assert response.status_code == 422
     assert "customer phone" in response.json()["detail"]
+
+
+class TestUpcomingEndpoint:
+    def _far(self, day, hour=9):
+        return datetime(2099, 6, day, hour, tzinfo=timezone.utc)
+
+    def test_technician_sees_own_upcoming_sorted_and_enriched(self, client, auth, pg_session_factory):
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        _seed_user(pg_session_factory, tech, Role.TECHNICIAN)
+        _seed_user(pg_session_factory, cust, Role.CUSTOMER, address="12 Main St")
+        sc = uuid.uuid4()
+        _seed_service_call(pg_session_factory, sc, cust, description="Fix boiler")
+        later, sooner = uuid.uuid4(), uuid.uuid4()
+        _seed_appt(pg_session_factory, appt_id=later, sc_id=sc, technician_id=tech, customer_id=cust, start=self._far(2), end=self._far(2, 11))
+        _seed_appt(pg_session_factory, appt_id=sooner, sc_id=sc, technician_id=tech, customer_id=cust, start=self._far(1), end=self._far(1, 11))
+        _seed_appt(pg_session_factory, appt_id=uuid.uuid4(), sc_id=sc, technician_id=tech, customer_id=cust, start=self._far(3), end=self._far(3, 11), status="CANCELLED")
+        _seed_appt(pg_session_factory, appt_id=uuid.uuid4(), sc_id=sc, technician_id=tech, customer_id=cust,
+                   start=datetime(2000, 1, 1, 9, tzinfo=timezone.utc), end=datetime(2000, 1, 1, 11, tzinfo=timezone.utc))
+
+        auth(user_id=tech, role=Role.TECHNICIAN)
+        resp = client.get("/api/appointments/upcoming", params={"limit": 5})
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert [i["id"] for i in items] == [str(sooner), str(later)]
+        assert items[0]["problem"] == "Fix boiler"
+        assert items[0]["technician_name"] == "Test User"
+        assert items[0]["customer_name"] == "Test User"
+        assert items[0]["address"] == "12 Main St"
+
+    def test_scope_is_per_role(self, client, auth, pg_session_factory):
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        other_cust = uuid.uuid4()
+        for u, r in [(tech, Role.TECHNICIAN), (cust, Role.CUSTOMER), (other_cust, Role.CUSTOMER)]:
+            _seed_user(pg_session_factory, u, r)
+        sc = uuid.uuid4()
+        _seed_service_call(pg_session_factory, sc, cust)
+        mine, theirs = uuid.uuid4(), uuid.uuid4()
+        _seed_appt(pg_session_factory, appt_id=mine, sc_id=sc, technician_id=tech, customer_id=cust, start=self._far(1), end=self._far(1, 11))
+        _seed_appt(pg_session_factory, appt_id=theirs, sc_id=sc, technician_id=tech, customer_id=other_cust, start=self._far(2), end=self._far(2, 11))
+
+        auth(user_id=cust, role=Role.CUSTOMER)
+        customer_ids = {i["id"] for i in client.get("/api/appointments/upcoming", params={"limit": 3}).json()["items"]}
+        assert str(mine) in customer_ids and str(theirs) not in customer_ids
+
+        auth(user_id=uuid.uuid4(), role=Role.ADMIN)
+        admin_ids = {i["id"] for i in client.get("/api/appointments/upcoming", params={"limit": 10}).json()["items"]}
+        assert {str(mine), str(theirs)} <= admin_ids
+
+
+class TestAppointmentChangePublish:
+    def test_cancel_publishes_change_to_both_participants(self, client, auth, pg_session_factory, monkeypatch):
+        from fsm.platform.api import scheduling_routes
+
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        _seed_user(pg_session_factory, tech, Role.TECHNICIAN)
+        _seed_user(pg_session_factory, cust, Role.CUSTOMER, address="12 Main St")
+        sc = uuid.uuid4()
+        _seed_service_call(pg_session_factory, sc, cust)
+        appt_id = uuid.uuid4()
+        _seed_appt(pg_session_factory, appt_id=appt_id, sc_id=sc, technician_id=tech, customer_id=cust,
+                   start=datetime(2099, 6, 1, 9, tzinfo=timezone.utc), end=datetime(2099, 6, 1, 11, tzinfo=timezone.utc))
+
+        calls = []
+        monkeypatch.setattr(scheduling_routes, "publish_appointment_changed",
+                            lambda app, **kw: calls.append(kw))
+
+        auth(user_id=cust, role=Role.CUSTOMER)
+        resp = client.post(f"/api/appointments/{appt_id}/cancel")
+
+        assert resp.status_code == 200
+        assert calls == [{"appointment_id": appt_id, "customer_id": cust, "technician_id": tech}]
