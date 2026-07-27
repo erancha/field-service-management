@@ -227,3 +227,7 @@ reconciliation — end to end.
 ## License
 
 Released under the MIT License. See [LICENSE](LICENSE).
+
+---
+
+More projects by the author: [github.com/erancha](https://github.com/erancha)

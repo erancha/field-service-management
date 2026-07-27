@@ -14,3 +14,7 @@ build/
 docs/superpowers/*
 docs/senior-code-eval-*
 .superpowers/
+
+# AI-tooling working files stay local, consistent with the sibling portfolio repos
+.claude/
+CLAUDE.md
