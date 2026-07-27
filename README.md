@@ -1,5 +1,7 @@
 # Field Service Management
 
+[![CI](https://github.com/erancha/field-service-management/actions/workflows/ci.yml/badge.svg)](https://github.com/erancha/field-service-management/actions/workflows/ci.yml)
+
 A platform for service agencies (think elevator or appliance maintenance) that runs the whole job
 lifecycle from a single source of truth. It is built **slice by slice**, each module getting its own
 design → plan → implementation cycle.
