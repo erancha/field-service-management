@@ -28,7 +28,9 @@ dev = [
     "httpx>=0.27",
     "import-linter>=2.0",
     "testcontainers[postgres]>=4.5",
-    "ruff>=0.15",
+    # Capped below 0.16, which expanded ruff's default rule set (isort, pylint, ...) beyond the
+    # rules this codebase lints clean against; raising the cap means adopting the new rule set.
+    "ruff>=0.15,<0.16",
     "mypy>=2.0",
 ]
 
