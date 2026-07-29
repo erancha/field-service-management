@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from fsm.identity.domain.role import Role
+from fsm.platform.api.kb_routes import MAX_UPLOAD_BYTES
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
 from tests.assist.fakes import FakeDocumentIndex
@@ -127,7 +128,7 @@ class TestKbRoutes:
         app = _app(pg_session_factory)
         client = TestClient(app, follow_redirects=False)
         authenticate(app, role=Role.ADMIN)
-        big = b"a" * (10 * 1024 * 1024 + 1)
+        big = b"a" * (MAX_UPLOAD_BYTES + 1)
         rejected = _upload(client, name="big.txt", body=big)
         assert rejected.status_code == 413
 

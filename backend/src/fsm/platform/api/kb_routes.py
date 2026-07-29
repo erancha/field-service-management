@@ -16,7 +16,8 @@ from fsm.platform.config import Settings
 
 router = APIRouter(prefix="/api/kb")
 
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_UPLOAD_MB = 20
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 _extractor = build_text_extractor()
 
@@ -98,7 +99,9 @@ async def upload_document(
 ) -> dict:
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Document exceeds the 10 MB limit")
+        raise HTTPException(
+            status_code=413, detail=f"Document exceeds the {MAX_UPLOAD_MB} MB limit"
+        )
 
     # Extraction, embedding, and the commit are synchronous (CPU and blocking HTTP/DB I/O);
     # they run in the threadpool so the event loop stays responsive during the upload.
