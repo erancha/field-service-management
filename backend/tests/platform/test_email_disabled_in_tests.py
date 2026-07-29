@@ -1,8 +1,8 @@
 """Guardrail: the test suite must never deliver real notification email.
 
-``create_app`` loads ``Settings`` from the developer's ``backend/.env``, which may carry live SMTP
-credentials. Booking flows resolve their recipients from seeded ``@example.com`` users and would
-otherwise send mail whose bounces flood the sender's inbox. ``pytest_configure`` empties the SMTP
+`create_app` loads `Settings` from the developer's `backend/.env`, which may carry live SMTP
+credentials. Booking flows resolve their recipients from seeded `@example.com` users and would
+otherwise send mail whose bounces flood the sender's inbox. `pytest_configure` empties the SMTP
 variables for the whole session; these tests fail loudly if that protection ever regresses.
 """
 from __future__ import annotations

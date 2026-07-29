@@ -3,7 +3,7 @@
 A single authenticated stream per browser tab. The server subscribes the connection only to the
 channels the caller is entitled to (their own user channel, plus the admins channel for an approved
 administrator), so a client cannot listen in on back-office events by asking. Events are JSON and
-framed as ``event: <type>`` / ``data: <json>``; periodic comment lines keep the connection alive.
+framed as `event: <type>` / `data: <json>`; periodic comment lines keep the connection alive.
 """
 from __future__ import annotations
 

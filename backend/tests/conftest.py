@@ -1,9 +1,9 @@
 """Shared test configuration.
 
-Keeps the suite hermetic with respect to a developer's local ``backend/.env``. ``Settings``
-auto-loads ``.env`` from the working directory, so a real ``backend/.env`` (for example one created
-by ``scripts/init-env.sh``, which fills in ``FSM_TOKEN_KEY`` and ``SESSION_SECRET``) would otherwise
-bleed configured values into tests that construct ``Settings`` to represent an *unconfigured*
+Keeps the suite hermetic with respect to a developer's local `backend/.env`. `Settings`
+auto-loads `.env` from the working directory, so a real `backend/.env` (for example one created
+by `scripts/init-env.sh`, which fills in `FSM_TOKEN_KEY` and `SESSION_SECRET`) would otherwise
+bleed configured values into tests that construct `Settings` to represent an unconfigured
 environment — making assertions like "calendar login returns 503 when unconfigured" pass or fail
 depending on whether the developer has set up their .env.
 """
@@ -30,13 +30,13 @@ def pytest_configure(config: pytest.Config) -> None:
     """Force SMTP and the AI provider keys unconfigured for the whole session.
 
     The function-scoped fixture below only protects Settings built inside a test; the cached
-    ``get_settings()`` that ``create_app`` uses in the integration suite is populated by a
+    `get_settings()` that `create_app` uses in the integration suite is populated by a
     module-scoped app fixture before any function fixture runs, so it would otherwise read the
-    developer's real SMTP credentials (and AI provider keys) from ``.env``. Setting these
-    variables empty here (env vars take precedence over ``.env``) and clearing the cache
+    developer's real SMTP credentials (and AI provider keys) from `.env`. Setting these
+    variables empty here (env vars take precedence over `.env`) and clearing the cache
     guarantees the logging email sender is used, and the knowledge base stays disabled, instead.
     Booking flows that resolve a real recipient would otherwise send mail — the integration
-    tests seed ``@example.com`` users, whose bounces flood the sender's inbox.
+    tests seed `@example.com` users, whose bounces flood the sender's inbox.
     """
     for var in (*_SMTP_ENV_VARS, *_ASSIST_ENV_VARS):
         os.environ[var] = ""
@@ -45,7 +45,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture(autouse=True)
 def _settings_ignore_dotenv(monkeypatch):
-    """Disable ``.env`` loading for every ``Settings`` constructed during a test."""
+    """Disable `.env` loading for every `Settings` constructed during a test."""
     monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 

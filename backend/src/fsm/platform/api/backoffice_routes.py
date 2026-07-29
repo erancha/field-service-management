@@ -1,7 +1,7 @@
 """FastAPI router for the back-office technician-approval queue (ADMIN only).
 
 Endpoints list pending technician requests and approve or reject them. Each decision resolves the
-target user, records the deciding administrator, and publishes a ``technician_access.decided`` event
+target user, records the deciding administrator, and publishes a `technician_access.decided` event
 to the requester's channel so their waiting screen updates live. The queue is exactly the users in
 TECHNICIAN/PENDING, so no separate request entity is needed.
 """

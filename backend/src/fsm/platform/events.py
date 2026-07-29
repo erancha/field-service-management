@@ -1,7 +1,7 @@
 """Process-local and Redis-backed event bus feeding Server-Sent Events.
 
-An event is a JSON-serialisable dict carrying a ``type`` and is published to a named channel.
-Two channel shapes exist: ``user:{id}`` (delivered only to that user's streams) and ``admins``
+An event is a JSON-serialisable dict carrying a `type` and is published to a named channel.
+Two channel shapes exist: `user:{id}` (delivered only to that user's streams) and `admins`
 (delivered to every connected back-office stream). Channel membership is the entitlement boundary —
 a stream only ever receives events for channels it is allowed to subscribe to (see entitled_channels).
 

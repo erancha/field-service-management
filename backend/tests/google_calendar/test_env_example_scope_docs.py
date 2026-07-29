@@ -1,8 +1,8 @@
 """Guards that backend/.env.example documents the shipped narrow-scope calendar design.
 
 The example file is the repo's designated config reference, so it must not drift back to describing
-the abandoned broad ``.../auth/calendar`` scope. These checks pin its calendar-scope prose to the
-contract enforced by ``fsm.google_calendar.scopes``.
+the abandoned broad `.../auth/calendar` scope. These checks pin its calendar-scope prose to the
+contract enforced by `fsm.google_calendar.scopes`.
 """
 import re
 from pathlib import Path

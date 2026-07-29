@@ -1,7 +1,7 @@
 """Checks that every "Contents:" link in the README jumps to a heading that actually exists.
 
-The README is the public landing page. Each Contents link looks like ``[Testing](#testing)`` and is
-meant to scroll to a matching heading. GitHub builds the ``#testing`` target automatically from the
+The README is the public landing page. Each Contents link looks like `[Testing](#testing)` and is
+meant to scroll to a matching heading. GitHub builds the `#testing` target automatically from the
 heading text: lowercase it, drop punctuation, turn spaces into hyphens. If a link names a target no
 heading produces, clicking it on GitHub goes nowhere. This test reproduces that same rule and fails
 when a Contents link has no matching heading.
@@ -16,7 +16,7 @@ _HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)
 
 
 def _heading_target(heading_text: str) -> str:
-    """Build the ``#`` target GitHub generates for a heading: lowercase, no punctuation, spaces to hyphens."""
+    """Build the `#` target GitHub generates for a heading: lowercase, no punctuation, spaces to hyphens."""
     target = heading_text.strip().lower()
     target = re.sub(r"[^\w\s-]", "", target)
     return target.replace(" ", "-")
