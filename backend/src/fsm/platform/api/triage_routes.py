@@ -53,6 +53,7 @@ def _service(request: Request, session) -> TriageService:
         conversations=SqlAlchemyConversationRepository(session),
         chat_model=_chat_model(request),
         service_calls=build_service_call_opener(session),
+        document_index=getattr(request.app.state, "kb_index", None),
     )
 
 

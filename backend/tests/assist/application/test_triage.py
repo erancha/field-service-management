@@ -7,8 +7,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fsm.assist.application.prompts import CLOSED_MARKER, ESCALATE_MARKER, SOLVED_MARKER
+from fsm.assist.application.prompts import (
+    CLOSED_MARKER,
+    ESCALATE_MARKER,
+    SOLVED_MARKER,
+    TRIAGE_SYSTEM_PROMPT,
+)
 from fsm.assist.application.triage import (
+    GROUNDING_HITS,
     MAX_CUSTOMER_TURNS,
     TURN_CAP_HANDOFF,
     TriageService,
@@ -22,10 +28,18 @@ from fsm.assist.domain.conversation import (
     MessageRole,
 )
 from fsm.assist.domain.errors import ConversationClosed, ConversationNotFound
-from tests.assist.fakes import FakeChatModel, FakeConversationRepository, FakeServiceCallOpener
+from fsm.assist.ports.document_index import SearchHit
+from tests.assist.fakes import (
+    FakeChatModel,
+    FakeConversationRepository,
+    FakeDocumentIndex,
+    FakeServiceCallOpener,
+)
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
 CUSTOMER = uuid.uuid4()
+
+OVEN_DOC = "The oven will not heat. Hold the reset button behind the lower panel for ten seconds."
 
 
 class ExactFragmentChatModel(FakeChatModel):
@@ -50,6 +64,18 @@ class FailsWhenUnscriptedChatModel(FakeChatModel):
         self.stream_calls.append((system, list(messages)))
         yield "Let me check"
         raise RuntimeError("provider connection dropped")
+
+
+class RecordingDocumentIndex(FakeDocumentIndex):
+    """Records every search, so a test can assert what a turn asked the index for."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.searches: list[tuple[str, int]] = []
+
+    def search(self, query: str, limit: int) -> list[SearchHit]:
+        self.searches.append((query, limit))
+        return super().search(query, limit)
 
 
 class LosesTheStartRace(FakeConversationRepository):
@@ -387,6 +413,93 @@ def test_the_forced_escalation_opens_a_service_call_carrying_the_summary() -> No
     assert service.outcome().service_call_description == opened.description
     _, summarized = chat_model.summarize_calls[0]
     assert [m.text for m in summarized[-2:]] == ["Still not fixed.", TURN_CAP_HANDOFF]
+
+
+def make_grounded_service(
+    document_index: FakeDocumentIndex | None,
+) -> tuple[TriageService, FakeChatModel]:
+    chat_model = FakeChatModel()
+    service = TriageService(
+        conversations=FakeConversationRepository(),
+        chat_model=chat_model,
+        service_calls=FakeServiceCallOpener(),
+        document_index=document_index,
+        clock=lambda: NOW,
+    )
+    return service, chat_model
+
+
+def test_a_turn_searches_the_index_with_the_customers_own_words() -> None:
+    index = RecordingDocumentIndex()
+    service, _ = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "The oven will not heat.")
+
+    assert index.searches == [("The oven will not heat.", GROUNDING_HITS)]
+
+
+def test_a_matching_document_reaches_the_model_as_prompt_material() -> None:
+    index = FakeDocumentIndex()
+    index.index_document(uuid.uuid4(), "oven-guide.md", OVEN_DOC)
+    service, chat_model = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "The oven will not heat.")
+
+    system, _ = chat_model.stream_calls[0]
+    assert "oven-guide.md" in system
+    assert OVEN_DOC in system
+
+
+def test_every_turn_searches_again_so_the_topic_can_move_mid_conversation() -> None:
+    index = RecordingDocumentIndex()
+    service, _ = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "The oven will not heat.")
+    drain(service, convo.id, "Now the fridge is making a noise.")
+
+    assert [query for query, _ in index.searches] == [
+        "The oven will not heat.",
+        "Now the fridge is making a noise.",
+    ]
+
+
+def test_a_search_that_matches_nothing_leaves_the_model_on_the_bare_prompt() -> None:
+    index = FakeDocumentIndex()
+    index.index_document(uuid.uuid4(), "oven-guide.md", OVEN_DOC)
+    service, chat_model = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "The washing machine door is jammed.")
+
+    system, _ = chat_model.stream_calls[0]
+    assert system == TRIAGE_SYSTEM_PROMPT
+
+
+def test_triage_runs_unchanged_when_no_index_is_configured() -> None:
+    service, chat_model = make_grounded_service(None)
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "The oven will not heat.")
+
+    system, _ = chat_model.stream_calls[0]
+    assert system == TRIAGE_SYSTEM_PROMPT
+    assert streamed.strip() == "Tell me more about the problem."
+
+
+def test_the_turn_cap_escalates_without_spending_a_search() -> None:
+    index = RecordingDocumentIndex()
+    service, _ = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+    for turn in range(MAX_CUSTOMER_TURNS - 1):
+        drain(service, convo.id, f"Detail {turn}.")
+    searches_before = len(index.searches)
+
+    drain(service, convo.id, "Still not fixed.")
+
+    assert len(index.searches) == searches_before
 
 
 def test_outcome_does_not_carry_the_previous_turns_ending_into_a_failed_turn() -> None:

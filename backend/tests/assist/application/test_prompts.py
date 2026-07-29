@@ -1,13 +1,21 @@
-"""The system prompt carries the safety boundary and the control markers."""
+"""The system prompt carries the safety boundary, the control markers, and retrieved excerpts."""
 from __future__ import annotations
+
+import uuid
 
 from fsm.assist.application.prompts import (
     CLOSED_MARKER,
     ESCALATE_MARKER,
     SOLVED_MARKER,
     TRIAGE_SYSTEM_PROMPT,
+    build_system_prompt,
     strip_markers,
 )
+from fsm.assist.ports.document_index import SearchHit
+
+
+def hit(filename: str, content: str) -> SearchHit:
+    return SearchHit(document_id=uuid.uuid4(), filename=filename, content=content, score=0.8)
 
 
 def test_prompt_forbids_every_unsafe_domain() -> None:
@@ -21,6 +29,34 @@ def test_prompt_documents_every_control_marker() -> None:
     assert SOLVED_MARKER in TRIAGE_SYSTEM_PROMPT
     assert ESCALATE_MARKER in TRIAGE_SYSTEM_PROMPT
     assert CLOSED_MARKER in TRIAGE_SYSTEM_PROMPT
+
+
+def test_a_search_that_found_nothing_leaves_the_prompt_untouched() -> None:
+    assert build_system_prompt([]) == TRIAGE_SYSTEM_PROMPT
+
+
+def test_every_hit_reaches_the_prompt_with_the_document_it_came_from() -> None:
+    grounded = build_system_prompt(
+        [
+            hit("oven-guide.md", "Hold the reset button for ten seconds."),
+            hit("boiler-manual.pdf", "Bleed the upstairs radiator first."),
+        ]
+    )
+
+    assert TRIAGE_SYSTEM_PROMPT in grounded
+    for source, excerpt in (
+        ("oven-guide.md", "Hold the reset button for ten seconds."),
+        ("boiler-manual.pdf", "Bleed the upstairs radiator first."),
+    ):
+        assert source in grounded
+        assert excerpt in grounded
+
+
+def test_grounded_prompt_asks_for_a_citation_and_allows_a_fallback() -> None:
+    grounded = build_system_prompt([hit("oven-guide.md", "Hold the reset button.")]).lower()
+
+    assert "name the document" in grounded
+    assert "your own knowledge" in grounded
 
 
 def test_strip_markers_returns_plain_text_when_no_marker_is_present() -> None:

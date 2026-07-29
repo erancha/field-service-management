@@ -16,7 +16,10 @@ from fsm.platform.app import create_app
 from fsm.platform.config import Settings
 from fsm.scheduling.adapters.orm import ServiceCallRow
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
-from tests.assist.fakes import FakeChatModel
+from tests.assist.fakes import FakeChatModel, FakeDocumentIndex
+
+
+OVEN_DOC = "The oven will not heat. Hold the reset button behind the lower panel for ten seconds."
 
 
 @pytest.fixture(scope="module")
@@ -200,6 +203,27 @@ class TestTriageRoutes:
                 select(ServiceCallRow).where(ServiceCallRow.customer_id == customer_id)
             ).all()
         assert opened == []
+
+    def test_a_turn_is_grounded_in_the_knowledge_base_the_app_holds(
+        self, pg_session_factory, authenticate
+    ):
+        chat_model = FakeChatModel(replies=["Hold the reset button."])
+        app = build_app(pg_session_factory, chat_model)
+        index = FakeDocumentIndex()
+        index.index_document(uuid.uuid4(), "oven-guide.md", OVEN_DOC)
+        app.state.kb_index = index
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat."},
+            )
+
+        system, _ = chat_model.stream_calls[0]
+        assert "oven-guide.md" in system
+        assert OVEN_DOC in system
 
     def test_ending_a_conversation_abandons_it_without_a_service_call(
         self, pg_session_factory, authenticate

@@ -5,6 +5,10 @@ signals an ending, so both live here and are stripped from the text before the c
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from fsm.assist.ports.document_index import SearchHit
+
 SOLVED_MARKER = "[[SOLVED]]"
 ESCALATE_MARKER = "[[ESCALATE]]"
 CLOSED_MARKER = "[[CLOSED]]"
@@ -54,6 +58,29 @@ both of those end with {CLOSED_MARKER}.
 Never write a marker before the ending actually applies. Never write more than one. Never mention \
 the markers to the customer or explain that you are using them.
 """
+
+
+def build_system_prompt(hits: Sequence[SearchHit]) -> str:
+    """The triage prompt, extended with retrieved document excerpts when a search found any.
+
+    A search always returns its nearest matches even when none address the topic, so relevance is
+    left to the model rather than a similarity cutoff: it is told to use the excerpts only when
+    they cover the customer's problem and to fall back to its own knowledge otherwise.
+    """
+    if not hits:
+        return TRIAGE_SYSTEM_PROMPT
+    excerpts = "\n\n".join(f'From "{hit.filename}":\n{hit.content}' for hit in hits)
+    return f"""{TRIAGE_SYSTEM_PROMPT}
+Reference material from the back office's uploaded documents, nearest matches to what the \
+customer just said:
+
+{excerpts}
+
+Follow this material when it covers the customer's problem, and name the document you drew a \
+suggestion from. If none of it addresses the topic, answer from your own knowledge instead and do \
+not mention these excerpts.
+"""
+
 
 SUMMARY_SYSTEM_PROMPT = """\
 Summarize the triage conversation for the technician who will attend the job. Write only what the \
