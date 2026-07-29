@@ -18,3 +18,8 @@ docs/senior-code-eval-*
 # AI-tooling working files stay local, consistent with the sibling portfolio repos
 .claude/
 CLAUDE.md
+
+# Third-party documents fetched to exercise the knowledge base locally. Real equipment manuals are
+# copyrighted, so they are kept out of this public repository rather than redistributed with it; #73
+# tracks fetching them on demand instead.
+/samples/
