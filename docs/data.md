@@ -21,6 +21,8 @@ erDiagram
     APP_USER ||--o{ WORKING_HOURS : "sets (technician_id)"
     APP_USER ||--o| TECHNICIAN_TIMEZONE : "sets (technician_id)"
     APP_USER ||--o{ KB_DOCUMENT : "uploads (uploaded_by)"
+    APP_USER ||--o{ ASSIST_CONVERSATION : "opens (customer_id)"
+    ASSIST_CONVERSATION ||--o{ ASSIST_MESSAGE : "contains"
     SERVICE_CALL ||--o{ APPOINTMENT : "scheduled as (service_call_id)"
     APPOINTMENT ||--o{ APPOINTMENT_AUDIT : "logs (appointment_id)"
     APPOINTMENT ||--o{ CALENDAR_OUTBOX : "projects via (appointment_id)"
@@ -126,6 +128,24 @@ erDiagram
         int chunk_count
         string embedding_model
     }
+
+    ASSIST_CONVERSATION {
+        uuid id PK
+        uuid customer_id
+        text status
+        uuid service_call_id "set on escalation"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    ASSIST_MESSAGE {
+        uuid id PK
+        uuid conversation_id FK
+        int seq
+        text role
+        text text
+        timestamptz created_at
+    }
 ```
 
 `HOLIDAY` stands alone — a per-date cache of public holidays excluded from availability, with no
@@ -135,11 +155,24 @@ link to any other entity.
 rows so re-chunking or embedding-model changes rebuild from stored bytes without re-uploading.
 `uploaded_by` is a plain user id (no cross-context FK, per the file's stated rule).
 
+A triage conversation ends exactly once — solved, escalated, or abandoned — and only an escalated
+one carries a `service_call_id`. That column is a plain id, not a foreign key, because the service
+call belongs to the scheduling context. Messages cascade with their conversation; `seq` is what
+orders them, so replaying a chat does not depend on timestamp resolution.
+
 ## Integrity guarantees worth knowing
 
 - **No double-booking.** A GiST exclusion constraint<sup>(4)</sup> on `appointment` rejects any two non-cancelled
   appointments for the same technician whose `[start_at, end_at)` windows overlap — the
   no-double-booking promise is enforced in the database, not just in application code.
+- **One open triage conversation per customer.** A partial unique index on
+  `assist_conversation (customer_id) WHERE status = 'ACTIVE'` rejects a second open conversation.
+  Starting one is a read-then-insert, so two concurrent requests — a double-submitted button, two
+  tabs — both pass the read; the database rejects the loser, and the assist adapter translates that
+  into a domain error the triage service handles by joining the conversation that won. A customer's
+  history therefore cannot split into two threads.
+- **Turn order is stored, not inferred.** `assist_message (conversation_id, seq)` is unique, so two
+  turns racing for the same position fail loudly instead of leaving replay order to chance.
 - **Calendar projection is transactional.** Confirmed appointment changes enqueue a `calendar_outbox`<sup>(5)</sup>
   row in the same transaction; a background dispatcher drains it onto Google with bounded retries
   (`PENDING → PROCESSED`, or `→ FAILED` after repeated failures), so a calendar outage never loses a

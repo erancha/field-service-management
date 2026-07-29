@@ -2,10 +2,24 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator, Sequence
 
+from fsm.assist.domain.conversation import (
+    OPENING_LINE_CHARS,
+    Conversation,
+    ConversationSummary,
+    Message,
+    MessageRole,
+)
 from fsm.assist.domain.document import KbDocument
-from fsm.assist.domain.errors import DocumentNotFound
+from fsm.assist.domain.errors import (
+    ConversationAlreadyOpen,
+    ConversationNotFound,
+    DocumentNotFound,
+)
+from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.document_index import SearchHit
+from fsm.assist.ports.service_calls import OpenedServiceCall
 
 
 class FakeKbDocumentRepository:
@@ -79,3 +93,94 @@ class FakeTextExtractor:
 
     def extract(self, filename: str, media_type: str, content: bytes) -> str:
         return content.decode("utf-8")
+
+
+class FakeChatModel:
+    """Replays scripted replies; records the prompts it was given.
+
+    Set replies to the assistant turns to emit in order, and summary to what summarize returns.
+    """
+
+    def __init__(
+        self,
+        replies: list[str] | None = None,
+        summary: TriageSummary | None = None,
+    ) -> None:
+        self.replies = list(replies or [])
+        self.summary = summary or TriageSummary(
+            equipment="Oven",
+            problem_category="Not heating",
+            symptoms="Stays cold",
+            steps_tried="Breaker reset — no change",
+            suspected_cause="Heating element",
+        )
+        self.stream_calls: list[tuple[str, list[Message]]] = []
+        self.summarize_calls: list[tuple[str, list[Message]]] = []
+
+    def stream(self, system: str, messages: Sequence[Message]) -> Iterator[str]:
+        self.stream_calls.append((system, list(messages)))
+        reply = self.replies.pop(0) if self.replies else "Tell me more about the problem."
+        for word in reply.split(" "):
+            yield word + " "
+
+    def summarize(self, system: str, messages: Sequence[Message]) -> TriageSummary:
+        self.summarize_calls.append((system, list(messages)))
+        return self.summary
+
+
+class FakeConversationRepository:
+    """Mirrors the store's one-ACTIVE-conversation-per-customer rejection on add."""
+
+    def __init__(self) -> None:
+        self.rows: dict[uuid.UUID, Conversation] = {}
+
+    def add(self, conversation: Conversation) -> None:
+        """Rejects a second open conversation, exactly as the partial unique index does.
+
+        The index covers only ACTIVE rows, so an already-ended conversation can still be inserted
+        alongside an open one.
+        """
+        if conversation.is_open():
+            if self.find_active_for_customer(conversation.customer_id) is not None:
+                raise ConversationAlreadyOpen(str(conversation.customer_id))
+        self.rows[conversation.id] = conversation
+
+    def get(self, conversation_id: uuid.UUID, customer_id: uuid.UUID) -> Conversation:
+        convo = self.rows.get(conversation_id)
+        if convo is None or convo.customer_id != customer_id:
+            raise ConversationNotFound(str(conversation_id))
+        return convo
+
+    def save(self, conversation: Conversation) -> None:
+        self.rows[conversation.id] = conversation
+
+    def find_active_for_customer(self, customer_id: uuid.UUID) -> Conversation | None:
+        for convo in self.rows.values():
+            if convo.customer_id == customer_id and convo.is_open():
+                return convo
+        return None
+
+    def list_ended(self, customer_id: uuid.UUID, limit: int) -> list[ConversationSummary]:
+        ended = [
+            ConversationSummary(
+                id=convo.id,
+                status=convo.status,
+                updated_at=convo.updated_at,
+                opening_line=openings[0].text[:OPENING_LINE_CHARS],
+            )
+            for convo in self.rows.values()
+            if convo.customer_id == customer_id
+            and not convo.is_open()
+            and (openings := [m for m in convo.messages if m.role is MessageRole.CUSTOMER])
+        ]
+        return sorted(ended, key=lambda s: s.updated_at, reverse=True)[:limit]
+
+
+class FakeServiceCallOpener:
+    def __init__(self) -> None:
+        self.opened: list[OpenedServiceCall] = []
+
+    def open(self, customer_id: uuid.UUID, description: str) -> OpenedServiceCall:
+        call = OpenedServiceCall(id=uuid.uuid4(), description=description)
+        self.opened.append(call)
+        return call

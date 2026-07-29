@@ -51,8 +51,9 @@ notification delivery into the in-app feed.
 
 ### Contract tests
 `tests/contracts` runs one shared behavioral suite against **both** the in-memory fake and the real
-adapter for a port — e.g. `CalendarPort` against `FakeCalendarPort` and the Google adapter backed by a
-fake client. This keeps the fakes that unit tests rely on faithful to the real implementations.
+adapter for a port, so the fakes the unit tests rely on cannot drift from the implementations they
+stand in for: `CalendarPort` (`FakeCalendarPort` against the Google adapter backed by a fake client)
+and `ServiceCallOpener` (`FakeServiceCallOpener` against the scheduling bridge).
 
 ### Architecture tests
 `tests/test_architecture.py` runs import-linter's boundary contracts (also runnable directly as

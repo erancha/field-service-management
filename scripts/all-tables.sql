@@ -12,14 +12,16 @@
 -- WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
 -- \gexec
 
--- Full contents of every non-empty user table, each result set preceded by a one-row banner naming
--- the table.
+-- Contents of every non-empty user table, each result set preceded by a one-row banner naming the
+-- table. Knowledge-base payloads are omitted: kb_chunk holds split text plus embedding vectors, and
+-- bytea columns (kb_document.content carries the uploaded file) are dropped from every projection,
+-- since neither renders usefully in a terminal.
 --
 -- A first pass probes each user table with EXISTS and records the non-empty ones in a temp table, so
 -- an empty table produces no banner or output at all. The probe skips session temp tables, so the
 -- nonempty_table scaffolding never lists itself. The second pass then generates, per recorded table,
--- a banner SELECT and a TABLE statement (equivalent to SELECT *), ordered banner-first. \gexec
--- executes every cell of its input as a statement, so each generator projects a single column.
+-- a banner SELECT and a SELECT over its readable columns, ordered banner-first. \gexec executes
+-- every cell of its input as a statement, so each generator projects a single column.
 DROP TABLE IF EXISTS nonempty_table;
 CREATE TEMP TABLE nonempty_table (schemaname text, tablename text);
 
@@ -29,6 +31,7 @@ SELECT format(
 FROM pg_tables
 WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
   AND schemaname NOT LIKE 'pg_temp%'
+  AND tablename <> 'kb_chunk'
 \gexec
 
 SELECT cmd
@@ -37,9 +40,17 @@ FROM (
          format('SELECT %L AS table_name', schemaname || '.' || tablename) AS cmd
   FROM nonempty_table
   UNION ALL
-  SELECT 1 AS ord, schemaname, tablename,
-         format('TABLE %I.%I', schemaname, tablename)
-  FROM nonempty_table
+  SELECT 1 AS ord, t.schemaname, t.tablename,
+         format('SELECT %s FROM %I.%I', readable.cols, t.schemaname, t.tablename)
+  FROM nonempty_table t
+  JOIN LATERAL (
+    SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) AS cols
+    FROM pg_attribute
+    WHERE attrelid = format('%I.%I', t.schemaname, t.tablename)::regclass
+      AND attnum > 0
+      AND NOT attisdropped
+      AND atttypid <> 'bytea'::regtype
+  ) readable ON true
 ) gen
 ORDER BY schemaname, tablename, ord
 \gexec

@@ -23,6 +23,34 @@ path, so its environment variables must be set and every booking and scheduling 
 signed-in session. Email and holiday integrations are driven by environment variables and degrade
 gracefully when unset.
 
+**Customer triage chat — an assistant today, an agent on the way.** The model holds the conversation
+and marks when triage is over; the code around it takes the one action that follows — opening the
+service call. The model calls no tools and answers unaided: the back-office knowledge base is
+searchable by admins, not yet consulted mid-conversation. Grounding replies in that knowledge base,
+then letting the assistant act across the call lifecycle, is what turns it into an agent.
+
+The chat is available when `ASSIST_MODEL` and its provider's API key are set; with them unset, the
+customer sees the plain description form instead. The assistant works the problem with the customer,
+suggesting only steps that are safe for them to try — never anything involving gas, mains wiring,
+refrigerant, or working at height. A conversation ends solved, when the customer confirms the
+problem is fixed; escalated, when the assistant opens a service call carrying a summary — equipment,
+problem category, symptoms, steps tried with their results, and the suspected cause — after which
+the customer books a technician through the same flow as before; or closed, booking nothing. Closing
+is what a conversation that was never an equipment fault ends in, and it is reachable two ways: the
+assistant closes one it cannot help with or is asked to stop, and an End chat button closes one
+without waiting for the assistant to agree. Escalation is reserved for a fault that needs a
+technician, so asking to leave never books a visit. A conversation that runs long escalates on its
+own: each turn re-sends the whole exchange, so an unbounded one would grow costly
+and eventually outrun the model's context window, and a customer still stuck that far in needs a
+visit. One left quiet for 24 hours is retired, and the next visit starts fresh. A customer has at
+most one active conversation at a time, enforced by a partial unique index. Replies stream to the
+browser, and the conversation survives a page reload. Ended conversations stay readable: the chat
+panel lists the customer's recent ones, newest first, and fetches a transcript when one is opened.
+Conversations nobody typed into never appear — opening the chat inserts a row before anything is
+said. Opening a service call never depends on the assistant: a turn the model cannot answer offers
+the plain description form as a way through. Switching between an Anthropic and an OpenAI chat model
+is a change to `ASSIST_MODEL` and its key, with no code change.
+
 ## The full vision
 
 Five pieces, of which Slice 1 above is the scheduling core:
@@ -138,7 +166,7 @@ ports-and-adapters (hexagonal) design:
 
 | Package | Responsibility |
 |---|---|
-| `assist` | knowledge base and AI triage for the customer channel (LangChain/pgvector behind ports) |
+| `assist` | knowledge base and AI triage chat for the customer channel (LangChain/pgvector behind ports) |
 | `identity` | Google OIDC sign-in, users, roles |
 | `scheduling` | service calls, appointments, availability, lifecycle — the core domain (no external I/O) |
 | `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |

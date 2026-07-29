@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Integer, LargeBinary, Text
+from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, Text, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,3 +30,58 @@ class KbDocumentRow(Base):
     uploaded_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False)
     embedding_model: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AssistConversationRow(Base):
+    """One triage exchange. service_call_id is set on escalation only.
+
+    customer_id and service_call_id are plain user and service-call ids, not foreign keys —
+    cross-context references stay by-id.
+
+    A customer has at most one ACTIVE conversation at a time; the partial unique index enforces
+    that in the database, so concurrent start requests cannot each open one.
+    """
+
+    __tablename__ = "assist_conversation"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, nullable=False)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    service_call_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ix_assist_conversation_customer_status", "customer_id", "status"),
+        Index(
+            "uq_assist_conversation_one_active_per_customer",
+            "customer_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+
+class AssistMessageRow(Base):
+    """One turn of a conversation. seq orders the turns within a conversation.
+
+    seq is unique per conversation, so two turns racing to claim the same position fail loudly
+    rather than leaving the replay order to chance.
+    """
+
+    __tablename__ = "assist_message"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, nullable=False)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("assist_conversation.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ix_assist_message_conversation_seq", "conversation_id", "seq", unique=True),
+    )

@@ -42,3 +42,48 @@ def test_blank_env_values_mean_unset():
     assert s.assist_embeddings is None
     assert s.openai_api_key is None
     assert s.anthropic_api_key is None
+
+
+def test_chat_enabled_with_anthropic_model_and_key() -> None:
+    settings = Settings(
+        assist_model="anthropic:claude-sonnet-5",
+        anthropic_api_key="sk-test",
+        database_url="postgresql+psycopg://u:p@localhost/db",
+    )
+    assert settings.assist_chat_enabled is True
+
+
+def test_chat_disabled_without_the_matching_provider_key() -> None:
+    settings = Settings(
+        assist_model="anthropic:claude-sonnet-5",
+        openai_api_key="sk-test",
+        database_url="postgresql+psycopg://u:p@localhost/db",
+    )
+    assert settings.assist_chat_enabled is False
+
+
+def test_chat_disabled_when_no_model_is_configured() -> None:
+    settings = Settings(
+        anthropic_api_key="sk-test",
+        database_url="postgresql+psycopg://u:p@localhost/db",
+    )
+    assert settings.assist_chat_enabled is False
+
+
+def test_chat_disabled_for_an_unknown_provider() -> None:
+    settings = Settings(
+        assist_model="mistral:large",
+        anthropic_api_key="sk-test",
+        database_url="postgresql+psycopg://u:p@localhost/db",
+    )
+    assert settings.assist_chat_enabled is False
+
+
+def test_kb_and_chat_gates_are_independent() -> None:
+    settings = Settings(
+        assist_model="anthropic:claude-sonnet-5",
+        anthropic_api_key="sk-test",
+        database_url="postgresql+psycopg://u:p@localhost/db",
+    )
+    assert settings.assist_chat_enabled is True
+    assert settings.assist_kb_enabled is False

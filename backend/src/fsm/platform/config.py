@@ -131,18 +131,27 @@ class Settings(BaseSettings):
             part.strip().lower() for part in self.admin_emails.split(",") if part.strip()
         )
 
-    @property
-    def assist_kb_enabled(self) -> bool:
-        """The knowledge base needs an embeddings model and the API key of its provider.
+    def _provider_key_present(self, model: str | None) -> bool:
+        """A provider:model string is usable only when its provider's API key is configured.
 
-        An unknown provider yields False here; building the embeddings client fails fast
-        with the unknown-provider error if it is ever attempted.
+        An unknown provider yields False; building the client fails fast with the
+        unknown-provider error if it is ever attempted.
         """
-        if self.assist_embeddings is None:
+        if model is None:
             return False
-        provider = self.assist_embeddings.split(":", 1)[0]
+        provider = model.split(":", 1)[0]
         key = {"openai": self.openai_api_key, "anthropic": self.anthropic_api_key}.get(provider)
         return key is not None
+
+    @property
+    def assist_kb_enabled(self) -> bool:
+        """The knowledge base needs an embeddings model and the API key of its provider."""
+        return self._provider_key_present(self.assist_embeddings)
+
+    @property
+    def assist_chat_enabled(self) -> bool:
+        """The triage chat needs a chat model and the API key of its provider."""
+        return self._provider_key_present(self.assist_model)
 
 
 @lru_cache

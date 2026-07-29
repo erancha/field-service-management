@@ -1,0 +1,408 @@
+"""Triage conversation orchestration: streaming turns and the three endings."""
+from __future__ import annotations
+
+import uuid
+from collections.abc import Iterator, Sequence
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from fsm.assist.application.prompts import CLOSED_MARKER, ESCALATE_MARKER, SOLVED_MARKER
+from fsm.assist.application.triage import (
+    MAX_CUSTOMER_TURNS,
+    TURN_CAP_HANDOFF,
+    TriageService,
+    TurnOutcome,
+)
+from fsm.assist.domain.conversation import (
+    CONVERSATION_TTL,
+    Conversation,
+    ConversationStatus,
+    Message,
+    MessageRole,
+)
+from fsm.assist.domain.errors import ConversationClosed, ConversationNotFound
+from tests.assist.fakes import FakeChatModel, FakeConversationRepository, FakeServiceCallOpener
+
+NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
+CUSTOMER = uuid.uuid4()
+
+
+class ExactFragmentChatModel(FakeChatModel):
+    """Emits the given fragments verbatim, so a test can choose where the chunk boundaries fall."""
+
+    def __init__(self, fragments: list[str]) -> None:
+        super().__init__()
+        self.fragments = fragments
+
+    def stream(self, system: str, messages: Sequence[Message]) -> Iterator[str]:
+        self.stream_calls.append((system, list(messages)))
+        return iter(self.fragments)
+
+
+class FailsWhenUnscriptedChatModel(FakeChatModel):
+    """Streams the scripted replies, then fails partway, the way a dropped connection does."""
+
+    def stream(self, system: str, messages: Sequence[Message]) -> Iterator[str]:
+        if self.replies:
+            yield from super().stream(system, messages)
+            return
+        self.stream_calls.append((system, list(messages)))
+        yield "Let me check"
+        raise RuntimeError("provider connection dropped")
+
+
+class LosesTheStartRace(FakeConversationRepository):
+    """Hides the winning conversation from the first read, the way an uncommitted insert does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def find_active_for_customer(self, customer_id: uuid.UUID) -> Conversation | None:
+        self.reads += 1
+        if self.reads == 1:
+            return None
+        return super().find_active_for_customer(customer_id)
+
+
+def make_service(
+    *,
+    replies: list[str] | None = None,
+    now: datetime = NOW,
+) -> tuple[TriageService, FakeConversationRepository, FakeChatModel, FakeServiceCallOpener]:
+    conversations = FakeConversationRepository()
+    chat_model = FakeChatModel(replies=replies)
+    openers = FakeServiceCallOpener()
+    service = TriageService(
+        conversations=conversations,
+        chat_model=chat_model,
+        service_calls=openers,
+        clock=lambda: now,
+    )
+    return service, conversations, chat_model, openers
+
+
+def drain(service: TriageService, conversation_id: uuid.UUID, text: str) -> str:
+    return "".join(service.reply(conversation_id, CUSTOMER, text))
+
+
+def test_start_creates_an_active_conversation() -> None:
+    service, conversations, _, _ = make_service()
+
+    convo = service.start(CUSTOMER)
+
+    assert convo.status is ConversationStatus.ACTIVE
+    assert convo.customer_id == CUSTOMER
+    assert convo.messages == []
+    assert conversations.rows[convo.id] is convo
+
+
+def test_start_returns_the_existing_active_conversation() -> None:
+    service, _, _, _ = make_service()
+    first = service.start(CUSTOMER)
+
+    assert service.start(CUSTOMER).id == first.id
+
+
+def test_start_abandons_an_expired_conversation_and_opens_a_new_one() -> None:
+    service, conversations, _, _ = make_service()
+    stale = service.start(CUSTOMER)
+
+    later = NOW + CONVERSATION_TTL + timedelta(minutes=1)
+    fresh_service = TriageService(
+        conversations=conversations,
+        chat_model=FakeChatModel(),
+        service_calls=FakeServiceCallOpener(),
+        clock=lambda: later,
+    )
+    fresh = fresh_service.start(CUSTOMER)
+
+    assert fresh.id != stale.id
+    assert conversations.rows[stale.id].status is ConversationStatus.ABANDONED
+
+
+def test_start_does_not_reopen_another_customers_conversation() -> None:
+    service, _, _, _ = make_service()
+    mine = service.start(CUSTOMER)
+
+    assert service.start(uuid.uuid4()).id != mine.id
+
+
+def test_start_joins_the_conversation_that_won_a_concurrent_start() -> None:
+    conversations = LosesTheStartRace()
+    winner = Conversation(
+        id=uuid.uuid4(),
+        customer_id=CUSTOMER,
+        status=ConversationStatus.ACTIVE,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    conversations.rows[winner.id] = winner
+    service = TriageService(
+        conversations=conversations,
+        chat_model=FakeChatModel(),
+        service_calls=FakeServiceCallOpener(),
+        clock=lambda: NOW,
+    )
+
+    joined = service.start(CUSTOMER)
+
+    assert joined.id == winner.id
+    assert len(conversations.rows) == 1
+
+
+def test_reply_streams_text_and_records_both_turns() -> None:
+    service, conversations, _, _ = make_service(replies=["Is the display lit?"])
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "The oven will not heat.")
+
+    assert streamed.strip() == "Is the display lit?"
+    stored = conversations.rows[convo.id]
+    assert [(m.role, m.text) for m in stored.messages] == [
+        (MessageRole.CUSTOMER, "The oven will not heat."),
+        (MessageRole.ASSISTANT, "Is the display lit?"),
+    ]
+
+
+def test_reply_passes_the_full_history_to_the_model() -> None:
+    service, _, chat_model, _ = make_service(replies=["One.", "Two."])
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "First problem.")
+    drain(service, convo.id, "Second detail.")
+
+    _, second_call_messages = chat_model.stream_calls[1]
+    assert [m.text for m in second_call_messages] == [
+        "First problem.",
+        "One.",
+        "Second detail.",
+    ]
+
+
+def test_solved_marker_closes_the_conversation_without_a_service_call() -> None:
+    service, conversations, _, openers = make_service(
+        replies=[f"Glad that fixed it. {SOLVED_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "That worked, thanks.")
+
+    assert SOLVED_MARKER not in streamed
+    assert streamed.strip() == "Glad that fixed it."
+    assert conversations.rows[convo.id].status is ConversationStatus.SOLVED
+    assert openers.opened == []
+    assert service.outcome().status is ConversationStatus.SOLVED
+    assert service.outcome().service_call_id is None
+
+
+def test_escalate_marker_opens_a_service_call_carrying_the_summary() -> None:
+    service, conversations, chat_model, openers = make_service(
+        replies=[f"I will book a technician. {ESCALATE_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "Still cold after all that.")
+
+    assert ESCALATE_MARKER not in streamed
+    stored = conversations.rows[convo.id]
+    assert stored.status is ConversationStatus.ESCALATED
+    assert len(openers.opened) == 1
+    opened = openers.opened[0]
+    assert stored.service_call_id == opened.id
+    assert opened.description == chat_model.summary.render()
+    assert service.outcome().service_call_id == opened.id
+    assert service.outcome().service_call_description == opened.description
+
+
+def test_closed_marker_abandons_the_conversation_without_a_service_call() -> None:
+    service, conversations, chat_model, openers = make_service(
+        replies=[f"That is outside what I can help with. {CLOSED_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "Please close this chat.")
+
+    assert CLOSED_MARKER not in streamed
+    assert streamed.strip() == "That is outside what I can help with."
+    assert conversations.rows[convo.id].status is ConversationStatus.ABANDONED
+    assert conversations.rows[convo.id].service_call_id is None
+    assert openers.opened == []
+    assert chat_model.summarize_calls == []
+    assert service.outcome() == TurnOutcome(status=ConversationStatus.ABANDONED)
+
+
+def test_end_abandons_an_open_conversation() -> None:
+    service, conversations, _, openers = make_service()
+    convo = service.start(CUSTOMER)
+
+    ended = service.end(convo.id, CUSTOMER)
+
+    assert ended.status is ConversationStatus.ABANDONED
+    assert conversations.rows[convo.id].status is ConversationStatus.ABANDONED
+    assert openers.opened == []
+
+
+def test_end_rejects_a_conversation_that_has_already_ended() -> None:
+    service, _, _, _ = make_service(replies=[f"Glad that fixed it. {SOLVED_MARKER}"])
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "That worked, thanks.")
+
+    with pytest.raises(ConversationClosed):
+        service.end(convo.id, CUSTOMER)
+
+
+def test_end_rejects_a_conversation_the_caller_does_not_own() -> None:
+    service, conversations, _, _ = make_service()
+    convo = service.start(CUSTOMER)
+
+    with pytest.raises(ConversationNotFound):
+        service.end(convo.id, uuid.uuid4())
+
+    assert conversations.rows[convo.id].status is ConversationStatus.ACTIVE
+
+
+def test_summarize_sees_the_whole_conversation_including_the_final_turn() -> None:
+    service, _, chat_model, _ = make_service(replies=[f"Booking a visit. {ESCALATE_MARKER}"])
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "Still cold.")
+
+    _, summarized = chat_model.summarize_calls[0]
+    assert [m.text for m in summarized] == ["Still cold.", "Booking a visit."]
+
+
+def test_reply_to_a_closed_conversation_is_rejected_before_the_model_is_called() -> None:
+    service, _, chat_model, _ = make_service(replies=[f"Done. {SOLVED_MARKER}"])
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "Fixed it.")
+    calls_before = len(chat_model.stream_calls)
+
+    with pytest.raises(ConversationClosed):
+        drain(service, convo.id, "One more thing.")
+
+    assert len(chat_model.stream_calls) == calls_before
+
+
+def test_reply_to_another_customers_conversation_is_rejected() -> None:
+    service, _, _, _ = make_service()
+    convo = service.start(CUSTOMER)
+
+    with pytest.raises(ConversationNotFound):
+        "".join(service.reply(convo.id, uuid.uuid4(), "Let me in."))
+
+
+def test_get_returns_the_conversation_for_its_owner() -> None:
+    service, _, _, _ = make_service()
+    convo = service.start(CUSTOMER)
+
+    assert service.get(convo.id, CUSTOMER).id == convo.id
+
+
+def test_get_rejects_a_conversation_the_caller_does_not_own() -> None:
+    service, _, _, _ = make_service()
+    convo = service.start(CUSTOMER)
+
+    with pytest.raises(ConversationNotFound):
+        service.get(convo.id, uuid.uuid4())
+
+
+def test_marker_never_appears_in_the_streamed_fragments() -> None:
+    service, _, _, _ = make_service(replies=[f"All set. {SOLVED_MARKER}"])
+    convo = service.start(CUSTOMER)
+
+    fragments = list(service.reply(convo.id, CUSTOMER, "Fixed."))
+
+    assert all("[[" not in fragment for fragment in fragments)
+    assert "".join(fragments).strip() == "All set."
+
+
+def test_nothing_is_persisted_when_the_stream_is_abandoned() -> None:
+    service, conversations, _, _ = make_service(replies=["Is the display lit?"])
+    convo = service.start(CUSTOMER)
+
+    stream = service.reply(convo.id, CUSTOMER, "It will not heat.")
+    next(stream)
+    stream.close()
+
+    assert conversations.rows[convo.id].messages == []
+
+
+def test_a_held_back_tail_survives_a_reply_that_opens_with_whitespace() -> None:
+    conversations = FakeConversationRepository()
+    service = TriageService(
+        conversations=conversations,
+        chat_model=ExactFragmentChatModel(["  hello", " world["]),
+        service_calls=FakeServiceCallOpener(),
+        clock=lambda: NOW,
+    )
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "Hello?")
+
+    assert streamed == "hello world["
+    assert conversations.rows[convo.id].messages[-1].text == streamed
+
+
+def test_turns_below_the_cap_stay_with_the_model() -> None:
+    service, conversations, chat_model, openers = make_service()
+    convo = service.start(CUSTOMER)
+
+    for turn in range(MAX_CUSTOMER_TURNS - 1):
+        drain(service, convo.id, f"Detail {turn}.")
+
+    assert len(chat_model.stream_calls) == MAX_CUSTOMER_TURNS - 1
+    assert conversations.rows[convo.id].status is ConversationStatus.ACTIVE
+    assert openers.opened == []
+
+
+def test_the_turn_cap_escalates_instead_of_asking_the_model_again() -> None:
+    service, conversations, chat_model, openers = make_service()
+    convo = service.start(CUSTOMER)
+    for turn in range(MAX_CUSTOMER_TURNS - 1):
+        drain(service, convo.id, f"Detail {turn}.")
+    streams_before = len(chat_model.stream_calls)
+
+    streamed = drain(service, convo.id, "Still not fixed.")
+
+    assert streamed == TURN_CAP_HANDOFF
+    assert len(chat_model.stream_calls) == streams_before
+    assert conversations.rows[convo.id].status is ConversationStatus.ESCALATED
+
+
+def test_the_forced_escalation_opens_a_service_call_carrying_the_summary() -> None:
+    service, conversations, chat_model, openers = make_service()
+    convo = service.start(CUSTOMER)
+    for turn in range(MAX_CUSTOMER_TURNS - 1):
+        drain(service, convo.id, f"Detail {turn}.")
+
+    drain(service, convo.id, "Still not fixed.")
+
+    assert len(openers.opened) == 1
+    opened = openers.opened[0]
+    assert opened.description == chat_model.summary.render()
+    assert conversations.rows[convo.id].service_call_id == opened.id
+    assert service.outcome().service_call_id == opened.id
+    assert service.outcome().service_call_description == opened.description
+    _, summarized = chat_model.summarize_calls[0]
+    assert [m.text for m in summarized[-2:]] == ["Still not fixed.", TURN_CAP_HANDOFF]
+
+
+def test_outcome_does_not_carry_the_previous_turns_ending_into_a_failed_turn() -> None:
+    conversations = FakeConversationRepository()
+    service = TriageService(
+        conversations=conversations,
+        chat_model=FailsWhenUnscriptedChatModel(replies=[f"Booking a visit. {ESCALATE_MARKER}"]),
+        service_calls=FakeServiceCallOpener(),
+        clock=lambda: NOW,
+    )
+    first = service.start(CUSTOMER)
+    drain(service, first.id, "Still cold.")
+    assert service.outcome().status is ConversationStatus.ESCALATED
+
+    second = service.start(CUSTOMER)
+    with pytest.raises(RuntimeError):
+        drain(service, second.id, "A different problem.")
+
+    assert service.outcome() == TurnOutcome(status=ConversationStatus.ACTIVE)

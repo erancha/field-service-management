@@ -5,18 +5,10 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from fsm.assist.application.knowledge_base import KnowledgeBaseService
 from fsm.assist.domain.document import KbDocument
-from fsm.assist.domain.errors import (
-    AssistError,
-    DocumentNotFound,
-    EmptyDocumentText,
-    IndexModelMismatch,
-    UnsupportedDocumentType,
-)
 from fsm.identity.domain.role import Role
 from fsm.platform.api.auth_deps import SessionUser, require_role
 from fsm.platform.assist_factory import build_text_extractor
@@ -164,17 +156,3 @@ def reindex(request: Request, admin: SessionUser = Depends(require_role(Role.ADM
         session.commit()
     return {"documents": count}
 
-
-def handle_assist_error(request: Request, exc: AssistError) -> JSONResponse:
-    """Maps assist domain errors to HTTP statuses.
-
-    The mapping is exhaustive on purpose: a new AssistError subtype raises KeyError (a 500)
-    until it is given a status here, rather than silently degrading to a generic response.
-    """
-    status = {
-        UnsupportedDocumentType: 415,
-        EmptyDocumentText: 422,
-        DocumentNotFound: 404,
-        IndexModelMismatch: 409,
-    }[type(exc)]
-    return JSONResponse({"detail": str(exc) or type(exc).__name__}, status_code=status)

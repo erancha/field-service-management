@@ -19,3 +19,15 @@ class DocumentNotFound(AssistError):
 
 class IndexModelMismatch(AssistError):
     """The index was built with a different embedding model than the configured one."""
+
+
+class ConversationNotFound(AssistError):
+    """No triage conversation exists with the given id for this customer."""
+
+
+class ConversationClosed(AssistError):
+    """The conversation has already ended, so it accepts no further messages."""
+
+
+class ConversationAlreadyOpen(AssistError):
+    """The customer already has an open conversation, so a second one cannot be started."""

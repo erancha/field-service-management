@@ -134,3 +134,39 @@ export interface KbSearchHit {
 export interface KbSearchResponse {
   hits: KbSearchHit[]
 }
+
+export interface AssistStatus {
+  enabled: boolean
+}
+
+export type TriageStatus = 'ACTIVE' | 'SOLVED' | 'ESCALATED' | 'ABANDONED'
+
+export interface TriageMessage {
+  id: string
+  role: 'CUSTOMER' | 'ASSISTANT'
+  text: string
+  created_at: string
+}
+
+export interface TriageConversation {
+  id: string
+  status: TriageStatus
+  service_call_id: string | null
+  messages: TriageMessage[]
+}
+
+/** How a conversation finished. Only ended conversations enter the customer's history. */
+export type TriageEndedStatus = Exclude<TriageStatus, 'ACTIVE'>
+
+/** One row of the customer's chat history; the transcript is fetched separately, by id. */
+export interface TriageConversationSummary {
+  id: string
+  status: TriageEndedStatus
+  updated_at: string
+  opening_line: string
+}
+
+export interface TriageTurnResult {
+  status: TriageStatus
+  service_call: { id: string; description: string } | null
+}

@@ -680,3 +680,139 @@ body {
 .kb__disabled {
   color: var(--color-text-muted);
 }
+
+/* Customer triage chat */
+.chat h3 {
+  margin: 0 0 0.5rem;
+}
+
+.chat__log {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.chat__history {
+  margin-top: 0.5rem;
+}
+
+.chat__history-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.chat__history-toggle::before {
+  content: '▸ ';
+}
+
+.chat__history-toggle[aria-expanded='true']::before {
+  content: '▾ ';
+}
+
+.chat__history-list {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+/* Grid so the date and outcome columns line up across rows; the opening line takes the rest. */
+.chat__history-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.25rem 0;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.chat__history-date,
+.chat__history-outcome {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.chat__history-opening {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat__history-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.chat__turn {
+  border-radius: var(--radius);
+  padding: 0.625rem 0.875rem;
+  max-width: 80%;
+  white-space: pre-wrap;
+}
+
+.chat__turn--customer {
+  align-self: flex-end;
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.chat__turn--assistant {
+  align-self: flex-start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.chat__ended,
+.chat__give-up {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  color: var(--color-text-muted);
+}
+
+.chat__ended p,
+.chat__give-up p {
+  margin: 0;
+}
+
+.chat__composer textarea {
+  width: 100%;
+}
+
+.chat__composer-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.chat__init-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius);
+  color: #991b1b;
+  margin-bottom: 1rem;
+}
+
+.chat__init-error p {
+  margin: 0;
+}
