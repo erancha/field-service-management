@@ -2,8 +2,8 @@
 
 PostgreSQL is the system's source of truth; Google Calendar is a downstream projection, never a
 store of record. The schema is owned by the bounded contexts<sup>(1)</sup> — `identity`, `scheduling`,
-`calendar`, and `notifications` — and lives in each context's `adapters/orm.py`, with Alembic<sup>(2)</sup>
-migrations under `backend/alembic/versions`.
+`google_calendar`, `notifications`, and `assist` — and lives in each context's `adapters/orm.py`, with
+Alembic<sup>(2)</sup> migrations under `backend/alembic/versions`.
 
 There is one identity table, `app_user`: technician, customer, and administrator are roles on that
 row, not separate entities. Cross-context references (a technician, a customer) are plain `UUID`<sup>(3)</sup>
@@ -15,11 +15,11 @@ are those logical links.
 erDiagram
     APP_USER ||--o{ SERVICE_CALL : "places (customer_id)"
     APP_USER ||--o{ APPOINTMENT : "assigned (technician_id)"
-    APP_USER ||--o{ NOTIFICATION : "receives (user_id)"
+    APP_USER ||--o{ NOTIFICATION_RECIPIENT : "receives (user_id)"
+    NOTIFICATION_EVENT ||--o{ NOTIFICATION_RECIPIENT : "delivered to"
     APP_USER ||--o| CALENDAR_CONNECTION : "connects (technician_id)"
     APP_USER ||--o{ TIME_OFF : "marks (technician_id)"
     APP_USER ||--o{ WORKING_HOURS : "sets (technician_id)"
-    APP_USER ||--o| TECHNICIAN_TIMEZONE : "sets (technician_id)"
     APP_USER ||--o{ KB_DOCUMENT : "uploads (uploaded_by)"
     APP_USER ||--o{ ASSIST_CONVERSATION : "opens (customer_id)"
     ASSIST_CONVERSATION ||--o{ ASSIST_MESSAGE : "contains"
@@ -65,7 +65,7 @@ erDiagram
 
     APPOINTMENT_AUDIT {
         uuid id PK
-        uuid appointment_id "indexed"
+        uuid appointment_id
         string action
         timestamptz occurred_at
     }
@@ -90,13 +90,18 @@ erDiagram
         text sync_token "nullable"
     }
 
-    NOTIFICATION {
+    NOTIFICATION_EVENT {
         uuid id PK
-        uuid user_id "indexed"
         text kind
         text subject
         text body
         timestamptz created_at
+    }
+
+    NOTIFICATION_RECIPIENT {
+        uuid id PK
+        uuid notification_event_id FK "cascades"
+        uuid user_id
         boolean read
     }
 
@@ -150,6 +155,12 @@ erDiagram
 
 `HOLIDAY` stands alone — a per-date cache of public holidays excluded from availability, with no
 link to any other entity.
+
+One appointment change notifies both parties with the same wording, so the notification feed splits
+content from delivery: `NOTIFICATION_EVENT` holds the subject and body once, and one
+`NOTIFICATION_RECIPIENT` row per user carries that user's own `read` flag. Recipient rows cascade
+with their event, and `(notification_event_id, user_id)` is unique, so one event reaches a given user
+exactly once.
 
 `KB_DOCUMENT` stores uploaded knowledge-base source documents; the vector index is derived from these
 rows so re-chunking or embedding-model changes rebuild from stored bytes without re-uploading.
@@ -216,7 +227,7 @@ In the diagram, `PK` marks a primary key and `UK` a unique key.
 
 | Ref | Term | Meaning |
 | --- | --- | --- |
-| (1) | bounded context | A self-contained slice of the domain (`identity`, `scheduling`, `calendar`, `notifications`) that owns its own tables and is migrated and reasoned about independently of the others. |
+| (1) | bounded context | A self-contained slice of the domain (`identity`, `scheduling`, `google_calendar`, `notifications`, `assist`) that owns its own tables and is migrated and reasoned about independently of the others. |
 | (2) | Alembic | The SQLAlchemy migration tool; each context's schema changes are versioned as migration scripts under `backend/alembic/versions`. |
 | (3) | UUID — Universally Unique Identifier | A 128-bit identifier used as every table's key, so rows can be referenced across contexts without a shared database sequence. |
 | (4) | GiST exclusion constraint | A PostgreSQL constraint backed by a Generalized Search Tree index that rejects rows whose ranges overlap; here it forbids two non-cancelled appointments for one technician from overlapping in time. |

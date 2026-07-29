@@ -292,10 +292,9 @@ class TestEchoDoesNotBlockLaterDrag:
         appt_repo: InMemoryAppointmentRepository,
         notifications: FakeNotificationPort,
     ) -> None:
-        # A projection echo must leave updated_at untouched so it cannot advance the
-        # last-write-wins floor past a subsequent technician drag. Reflecting the echo as a
-        # details edit (the prior bug) bumped updated_at to wall-clock time and could silently
-        # drop the drag, so neither the DB nor the customer notification saw the reschedule.
+        # A projection echo must leave updated_at untouched: advancing it to wall-clock time
+        # would push the last-write-wins floor past a technician drag that follows, silently
+        # dropping that reschedule from both the DB and the customer notification.
         appt = _make_appointment(details="existing note", updated_at=_BASE)
         appt_repo.add(appt)
 

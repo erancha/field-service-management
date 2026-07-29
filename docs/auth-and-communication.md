@@ -91,9 +91,11 @@ the same OAuth client but requests only the two narrow calendar scopes — `cale
 what make the integration private by construction: the system can create and manage its own "Field
 Service Management" calendar and read opaque busy/free intervals, but the broad `calendar` scope is
 never requested, so the technician's other calendars and private event details stay invisible. It is
-gated only on an existing signed-in session — the technician must already be authenticated — and the
-refresh token Google returns is encrypted at rest with `FSM_TOKEN_KEY` before it is stored, so the
-database never holds a usable token in plaintext.
+gated on an **approved** technician session, not on authentication alone: connecting a calendar is
+what puts its owner into customer-facing pooled availability, so a signed-in technician still waiting
+on (or refused by) the back office is rejected with 403. The refresh token Google returns is
+encrypted at rest with `FSM_TOKEN_KEY` before it is stored, so the database never holds a usable
+token in plaintext.
 
 If Google returns a grant without those scopes — the technician skipped the calendar permission on the
 consent screen, or the OAuth client is not configured for them — the first Google API call fails; the
@@ -110,9 +112,9 @@ sequenceDiagram
     participant BE as Technician<br/>backend process
     participant G as Google
 
-    Note over T,BE: Requires an existing signed-in session<br/>(user_id in the session cookie)
+    Note over T,BE: Requires a session whose role is<br/>TECHNICIAN and APPROVED
     T->>BE: GET /calendar/connect/login (click "Connect Google Calendar")
-    Note over BE: 401 if no session — 503 unless calendar is<br/>configured (OAuth client + FSM_TOKEN_KEY)
+    Note over BE: 401 if no session — 403 unless approved technician<br/>— 503 unless calendar is configured<br/>(OAuth client + FSM_TOKEN_KEY)
     Note over BE: Mint state + PKCE code_verifier into the session
     BE-->>T: 307 → Google authorization URL<br/>(scopes: calendar.app.created + calendar.freebusy,<br/>access_type=offline, prompt=consent)
     T->>G: Calendar authorization request + consent

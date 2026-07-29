@@ -1,8 +1,4 @@
-"""SQLAlchemy ORM row class for the calendar bounded context.
-
-technician_id is used as the primary key: each technician may have at most one
-calendar connection. The unique index enforces this at the database level.
-"""
+"""SQLAlchemy ORM row class for the calendar bounded context."""
 from __future__ import annotations
 
 import uuid
@@ -17,9 +13,8 @@ from fsm.shared.db import Base
 class CalendarConnectionRow(Base):
     """Persistent row for a technician's calendar connection.
 
-    technician_id is both the primary key and the uniqueness anchor — the
-    UNIQUE constraint is enforced by the primary key itself, and the index
-    makes point lookups efficient.
+    technician_id is the primary key, so a technician is limited to one calendar connection
+    by the database rather than by application code.
     """
 
     __tablename__ = "calendar_connection"

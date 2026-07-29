@@ -44,7 +44,6 @@ class NullCalendarPort:
         pass
 
 
-# Structural check: NullCalendarPort must satisfy the CalendarPort protocol.
 assert isinstance(NullCalendarPort(), CalendarPort)
 
 
@@ -91,5 +90,4 @@ class LoggingNotificationPort:
         )
 
 
-# Structural check: LoggingNotificationPort must satisfy the NotificationPort protocol.
 assert isinstance(LoggingNotificationPort(), NotificationPort)

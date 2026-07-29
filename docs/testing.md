@@ -27,7 +27,7 @@ analysis cannot follow), and the **import-linter** boundary contracts described 
 [Architecture tests](#architecture-tests).
 
 Tests mirror the source layout — one package per bounded context (`identity`, `scheduling`,
-`calendar`, `notifications`, `platform`) — and fall into five kinds.
+`google_calendar`, `notifications`, `assist`) plus `platform` — and fall into five kinds.
 
 ### Unit tests
 Pure and in-memory, no external I/O. Domain and application layers (and ports, for the contexts that
@@ -71,9 +71,10 @@ vitest — the inner-loop shortcut, not a substitute for the full run before com
 
 Tests live next to the code they cover as `*.test.ts(x)` and run under Vitest in a jsdom
 environment with React Testing Library (per-test DOM cleanup is wired in `src/test/setup.ts`).
-They cover the API client, the pure profile helpers (onboarding completeness, phone validation),
-and component/page behavior: the onboarding gate, profile form, address nudge, appointment card,
-reschedule picker, technician calendar connect, and the technician page.
+They cover the API client modules, the pure helpers (onboarding completeness, phone validation, error
+shaping), the data-fetching and SSE hooks, and component/page behaviour up to whole role pages —
+including the customer triage chat and its streaming decode, the back-office knowledge-base panel, the
+booking flow, and the technician calendar connect/disconnect controls.
 
 ## Glossary
 

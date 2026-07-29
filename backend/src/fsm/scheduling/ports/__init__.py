@@ -2,9 +2,8 @@
 
 Ports define the boundary between the domain and its infrastructure adapters,
 covering persistence, calendar projection, notifications, and the unit of work
-that owns a transaction. The repository, calendar, notification, and outbox
-protocols are @runtime_checkable so adapters can be verified with isinstance at
-startup or in tests.
+that owns a transaction. Every protocol re-exported here is @runtime_checkable so
+adapters can be verified with isinstance at startup or in tests.
 """
 
 from fsm.scheduling.ports.repositories import AppointmentRepository, ServiceCallRepository
