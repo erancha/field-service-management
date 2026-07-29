@@ -1,5 +1,6 @@
 import { PageHeader } from '../features/layout/PageHeader.tsx'
 import { TechnicianRequestQueue } from '../features/backoffice/TechnicianRequestQueue.tsx'
+import { KnowledgeBasePanel } from '../features/backoffice/KnowledgeBasePanel.tsx'
 import { UpcomingAppointments } from '../features/appointments/UpcomingAppointments.tsx'
 import { useUpcomingAppointments } from '../hooks/useUpcomingAppointments.ts'
 
@@ -24,6 +25,7 @@ export function AdminPage({ email }: AdminPageProps) {
         showCancel={false}
       />
       <TechnicianRequestQueue />
+      <KnowledgeBasePanel />
     </div>
   )
 }

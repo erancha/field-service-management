@@ -241,7 +241,7 @@ def pg_engine_audit():
     from testcontainers.postgres import PostgresContainer
     import pathlib
 
-    with PostgresContainer("postgres:16", driver="psycopg") as pg:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as pg:
         url = pg.get_connection_url()
         os.environ["DATABASE_URL"] = url
 

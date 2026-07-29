@@ -28,7 +28,7 @@ def pg_engine():
     from alembic import command as alembic_command
     from alembic.config import Config as AlembicConfig
 
-    with PostgresContainer("postgres:16", driver="psycopg") as pg:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as pg:
         url = pg.get_connection_url()
         os.environ["DATABASE_URL"] = url
 

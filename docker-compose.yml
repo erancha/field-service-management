@@ -35,7 +35,7 @@ x-backend-deploy: &backend-deploy
 
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     deploy:
       resources:
         limits:

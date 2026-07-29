@@ -96,7 +96,7 @@ def test_shutdown_sets_worker_stop_events(stubbed_worker_runners):
 
 @pytest.fixture(scope="module")
 def real_session_factory():
-    with PostgresContainer("postgres:16", driver="psycopg") as postgres:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as postgres:
         settings = Settings(database_url=postgres.get_connection_url(), app_env="test")
         engine = create_engine_from_settings(settings)
         yield session_factory(engine)

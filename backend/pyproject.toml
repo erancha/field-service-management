@@ -20,6 +20,12 @@ dependencies = [
     "cryptography>=42",
     "redis>=5",
     "structlog>=24",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-postgres>=0.0.15",
+    "langchain-text-splitters>=0.3",
+    "pypdf>=5",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -75,7 +81,7 @@ include_external_packages = true
 
 # Import boundaries, checked transitively. Allowed access, top to bottom:
 #   fsm.platform -> every fsm package (composition root; the only package that sees everything)
-#   each context (calendar, identity, notifications, scheduling)
+#   each context (assist, calendar, identity, notifications, scheduling)
 #                -> itself and fsm.shared only; never another context, never fsm.platform
 #   fsm.shared   -> nothing in fsm
 # Within a context, layers import downward only (adapters -> application -> ports -> domain);
@@ -88,14 +94,14 @@ name = "Platform composes independent contexts over the shared kernel"
 type = "layers"
 layers = [
     "fsm.platform",
-    "fsm.google_calendar | fsm.identity | fsm.notifications | fsm.scheduling",
+    "fsm.assist | fsm.google_calendar | fsm.identity | fsm.notifications | fsm.scheduling",
     "fsm.shared",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Contexts follow hexagonal layering (adapters over application over ports over domain)"
 type = "layers"
-containers = ["fsm.google_calendar", "fsm.identity", "fsm.notifications", "fsm.scheduling"]
+containers = ["fsm.assist", "fsm.google_calendar", "fsm.identity", "fsm.notifications", "fsm.scheduling"]
 layers = [
     "adapters",
     "application",
@@ -107,6 +113,9 @@ layers = [
 name = "Inner layers stay pure: own context, abstractions, and the standard library only"
 type = "forbidden"
 source_modules = [
+    "fsm.assist.domain",
+    "fsm.assist.application",
+    "fsm.assist.ports",
     "fsm.google_calendar.domain",
     "fsm.google_calendar.application",
     "fsm.google_calendar.ports",
@@ -128,6 +137,14 @@ forbidden_modules = [
     "googleapiclient",
     "cryptography",
     "smtplib",
+    "langchain",
+    "langchain_core",
+    "langchain_openai",
+    "langchain_postgres",
+    "langchain_text_splitters",
+    "pypdf",
+    "anthropic",
+    "openai",
 ]
 # fsm.shared is forbidden wholesale so any future shared submodule is denied to inner layers by
 # default; fsm.shared.constants (the product brand) is the single explicit exception.
@@ -139,6 +156,7 @@ ignore_imports = [
 name = "Neither contexts nor the shared kernel import the web framework"
 type = "forbidden"
 source_modules = [
+    "fsm.assist",
     "fsm.google_calendar",
     "fsm.identity",
     "fsm.notifications",

@@ -109,3 +109,28 @@ export interface RescheduleRequest {
 export interface AddDetailsRequest {
   text: string
 }
+
+export interface KbStatus {
+  enabled: boolean
+  embedding_model: string | null
+  needs_reindex: boolean
+}
+
+export interface KbDocument {
+  id: string
+  filename: string
+  size_bytes: number
+  uploaded_at: string
+  chunk_count: number
+}
+
+export interface KbSearchHit {
+  document_id: string
+  filename: string
+  content: string
+  score: number
+}
+
+export interface KbSearchResponse {
+  hits: KbSearchHit[]
+}

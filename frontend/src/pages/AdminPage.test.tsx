@@ -11,6 +11,18 @@ vi.mock('../api/scheduling.ts', () => ({ fetchUpcomingAppointments: vi.fn() }))
 vi.mock('../api/backoffice.ts', () => ({
   fetchTechnicianRequests: vi.fn(), approveTechnicianRequest: vi.fn(), rejectTechnicianRequest: vi.fn(),
 }))
+vi.mock('../api/kb.ts', () => ({
+  fetchKbStatus: vi.fn().mockResolvedValue({
+    enabled: false,
+    embedding_model: null,
+    needs_reindex: false,
+  }),
+  fetchKbDocuments: vi.fn().mockResolvedValue([]),
+  uploadKbDocument: vi.fn(),
+  deleteKbDocument: vi.fn(),
+  searchKb: vi.fn(),
+  reindexKb: vi.fn(),
+}))
 
 describe('AdminPage', () => {
   beforeEach(() => {

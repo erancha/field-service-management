@@ -33,7 +33,7 @@ def _make_connection(*, technician_id: uuid.UUID | None = None) -> CalendarConne
 @pytest.fixture(scope="module")
 def pg_engine():
     """Start a Postgres 16 container, run all migrations, yield an engine."""
-    with PostgresContainer("postgres:16", driver="psycopg") as pg:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as pg:
         url = pg.get_connection_url()
         os.environ["DATABASE_URL"] = url
 

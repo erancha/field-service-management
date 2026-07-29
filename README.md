@@ -138,6 +138,7 @@ ports-and-adapters (hexagonal) design:
 
 | Package | Responsibility |
 |---|---|
+| `assist` | knowledge base and AI triage for the customer channel (LangChain/pgvector behind ports) |
 | `identity` | Google OIDC sign-in, users, roles |
 | `scheduling` | service calls, appointments, availability, lifecycle — the core domain (no external I/O) |
 | `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
@@ -153,6 +154,11 @@ none from a context up to `platform`:
 ```mermaid
 flowchart TD
     platform["fsm.platform:<br/>composition root — web wiring, workers, calendar_bridge"]
+
+    subgraph assist["fsm.assist"]
+        direction TB
+        a_adapters[adapters] --> a_application[application] --> a_ports[ports] --> a_domain[domain]
+    end
 
     subgraph notifications["fsm.notifications"]
         direction TB
@@ -176,12 +182,14 @@ flowchart TD
 
     shared["fsm.shared:<br/>ORM Base, Google OAuth endpoint URIs"]
 
+    platform --> assist
     platform --> notifications
     platform --> google_calendar
     platform --> scheduling
     platform --> identity
     platform --> shared
 
+    a_adapters --> shared
     n_adapters --> shared
     c_adapters --> shared
     s_adapters --> shared

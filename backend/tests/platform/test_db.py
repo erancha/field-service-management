@@ -8,7 +8,7 @@ from fsm.platform.db import create_engine_from_settings, session_factory
 
 @pytest.fixture(scope="module")
 def settings():
-    with PostgresContainer("postgres:16", driver="psycopg") as postgres:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as postgres:
         yield Settings(database_url=postgres.get_connection_url(), app_env="test")
 
 

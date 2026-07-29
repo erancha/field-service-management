@@ -63,3 +63,16 @@ export async function apiGet<T>(path: string, params?: Record<string, string>): 
     : path
   return apiFetch<T>(url, { method: 'GET' })
 }
+
+export async function apiDelete<T>(path: string): Promise<T> {
+  return apiFetch<T>(path, { method: 'DELETE' })
+}
+
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  })
+  return handleResponse<T>(res)
+}

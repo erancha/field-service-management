@@ -20,6 +20,7 @@ erDiagram
     APP_USER ||--o{ TIME_OFF : "marks (technician_id)"
     APP_USER ||--o{ WORKING_HOURS : "sets (technician_id)"
     APP_USER ||--o| TECHNICIAN_TIMEZONE : "sets (technician_id)"
+    APP_USER ||--o{ KB_DOCUMENT : "uploads (uploaded_by)"
     SERVICE_CALL ||--o{ APPOINTMENT : "scheduled as (service_call_id)"
     APPOINTMENT ||--o{ APPOINTMENT_AUDIT : "logs (appointment_id)"
     APPOINTMENT ||--o{ CALENDAR_OUTBOX : "projects via (appointment_id)"
@@ -113,10 +114,26 @@ erDiagram
         date holiday_date PK
         text name
     }
+
+    KB_DOCUMENT {
+        uuid id PK
+        string filename
+        string media_type
+        bytea content
+        int size_bytes
+        uuid uploaded_by
+        timestamptz uploaded_at
+        int chunk_count
+        string embedding_model
+    }
 ```
 
 `HOLIDAY` stands alone — a per-date cache of public holidays excluded from availability, with no
 link to any other entity.
+
+`KB_DOCUMENT` stores uploaded knowledge-base source documents; the vector index is derived from these
+rows so re-chunking or embedding-model changes rebuild from stored bytes without re-uploading.
+`uploaded_by` is a plain user id (no cross-context FK, per the file's stated rule).
 
 ## Integrity guarantees worth knowing
 

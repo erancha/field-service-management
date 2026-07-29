@@ -41,7 +41,7 @@ from fsm.identity.domain.role import Role
 @pytest.fixture(scope="module")
 def pg_session_factory():
     """Start a Postgres 16 container, run migrations, yield a session factory."""
-    with PostgresContainer("postgres:16", driver="psycopg") as pg:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as pg:
         url = pg.get_connection_url()
         os.environ["DATABASE_URL"] = url
 

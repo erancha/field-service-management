@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     holiday_calendar_id: str | None = None
     holiday_refresh_years_ahead: int = 1
 
+    # AI triage assistant. provider:model strings with no in-code default — the chosen models
+    # live in .env (.env.example documents them). The KB is enabled only when both an embeddings
+    # model and the key matching its provider are present.
+    assist_model: str | None = None
+    assist_embeddings: str | None = None
+    anthropic_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
+
     # An optional key present but left blank in .env (e.g. `SESSION_SECRET=`) is treated as
     # unset, so an uncommented-but-empty template entry behaves the same as an absent one.
     @field_validator(
@@ -83,6 +91,10 @@ class Settings(BaseSettings):
         "smtp_from",
         "google_api_key",
         "holiday_calendar_id",
+        "assist_model",
+        "assist_embeddings",
+        "anthropic_api_key",
+        "openai_api_key",
         mode="before",
     )
     @classmethod
@@ -118,6 +130,19 @@ class Settings(BaseSettings):
         return frozenset(
             part.strip().lower() for part in self.admin_emails.split(",") if part.strip()
         )
+
+    @property
+    def assist_kb_enabled(self) -> bool:
+        """The knowledge base needs an embeddings model and the API key of its provider.
+
+        An unknown provider yields False here; building the embeddings client fails fast
+        with the unknown-provider error if it is ever attempted.
+        """
+        if self.assist_embeddings is None:
+            return False
+        provider = self.assist_embeddings.split(":", 1)[0]
+        key = {"openai": self.openai_api_key, "anthropic": self.anthropic_api_key}.get(provider)
+        return key is not None
 
 
 @lru_cache

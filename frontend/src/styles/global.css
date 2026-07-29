@@ -609,3 +609,74 @@ body {
 .upcoming__toggle:hover { background: var(--color-success-bg); color: inherit; }
 .upcoming__chevron { transition: transform 0.15s ease; }
 .upcoming__toggle[aria-expanded='true'] .upcoming__chevron { transform: rotate(180deg); }
+
+/* Back-office knowledge base */
+.kb__upload {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.kb__list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.kb__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.5rem 0;
+}
+
+.kb__meta {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.kb__search {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.kb__search label {
+  flex: 1;
+}
+
+.kb__search input {
+  width: 100%;
+}
+
+.kb__hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.kb__hit {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+
+.kb__hit-source {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.kb__empty,
+.kb__disabled {
+  color: var(--color-text-muted);
+}

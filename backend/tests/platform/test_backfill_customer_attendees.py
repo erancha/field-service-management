@@ -26,7 +26,7 @@ def pg_engine():
     """Start a Postgres 16 container, run migrations, yield an engine."""
     from testcontainers.postgres import PostgresContainer
 
-    with PostgresContainer("postgres:16", driver="psycopg") as pg:
+    with PostgresContainer("pgvector/pgvector:pg16", driver="psycopg") as pg:
         url = pg.get_connection_url()
         os.environ["DATABASE_URL"] = url
 
