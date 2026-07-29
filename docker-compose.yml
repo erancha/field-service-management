@@ -56,6 +56,10 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Covers the image's declared VOLUME /data with tmpfs: redis serves this stack purely as a
+    # pub/sub broker, so its state needs no volume at all.
+    tmpfs:
+      - /data
     deploy:
       resources:
         limits:
