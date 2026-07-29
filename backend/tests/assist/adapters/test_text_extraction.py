@@ -36,6 +36,23 @@ def test_pdf_roundtrip_yields_empty_text_for_blank_page():
     assert isinstance(result, str)
 
 
+@pytest.mark.parametrize(
+    ("name", "media_type"),
+    [("a.txt", "text/plain"), ("a.md", "text/markdown"), ("a.pdf", "application/pdf")],
+)
+def test_extracted_text_carries_no_nul_byte(name, media_type):
+    """A NUL survives to the chunk table otherwise, and Postgres text rejects it outright —
+    failing the whole document over one unmappable glyph."""
+    extractor = CompositeTextExtractor()
+    content = _tiny_pdf() if name.endswith(".pdf") else b"before\x00after"
+    assert "\x00" not in extractor.extract(name, media_type, content)
+
+
+def test_nul_becomes_a_separator_rather_than_joining_its_neighbours():
+    extractor = CompositeTextExtractor()
+    assert extractor.extract("a.txt", "text/plain", b"WORD\x00NEXT") == "WORD NEXT"
+
+
 def test_unknown_extension_raises():
     extractor = CompositeTextExtractor()
     with pytest.raises(UnsupportedDocumentType):
