@@ -25,9 +25,13 @@ gracefully when unset.
 
 **Customer triage chat — an assistant today, an agent on the way.** The model holds the conversation
 and marks when triage is over; the code around it takes the one action that follows — opening the
-service call. The model calls no tools and answers unaided: the back-office knowledge base is
-searchable by admins, not yet consulted mid-conversation. Grounding replies in that knowledge base,
-then letting the assistant act across the call lifecycle, is what turns it into an agent.
+service call. Replies are grounded in the back-office knowledge base by retrieval-augmented
+generation (RAG): every customer turn is embedded, the nearest document chunks come back from
+pgvector, and they enter the system prompt as reference material the model follows and cites by
+document name — falling back to its own knowledge when no uploaded document covers the topic.
+Retrieval repeats per turn rather than once per conversation, because the topic can move mid-chat.
+The model still calls no tools; letting the assistant act across the call lifecycle is what would
+turn it into an agent.
 
 The chat is available when `ASSIST_MODEL` and its provider's API key are set; with them unset, the
 customer sees the plain description form instead. The assistant works the problem with the customer,
