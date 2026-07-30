@@ -150,6 +150,7 @@ All live in `scripts/`; run with `-h`/`--help` for full usage.
 | `docker-helper.sh` | Operate the running Docker stack. |
 | `sql-helper.sh` | Open psql against the database. |
 | `test.sh` | Run the test suite — see [Testing](#testing). |
+| `deploy-to-ec2/start.sh` | Serve the stack publicly from an EC2 box over HTTPS — see [its README](scripts/deploy-to-ec2/README.md). |
 
 ## Testing
 

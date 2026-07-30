@@ -1,0 +1,90 @@
+# Public-deployment overlay, applied on top of docker-compose.yml by scripts/deploy-to-ec2/start.sh.
+# The base file remains the local-development definition and is never edited for the remote target,
+# so ./scripts/start.sh and ./scripts/test.sh keep behaving exactly as they do today.
+#
+# The deployment serves each role on its own hostname over TLS — https://tech|app|admin.$FSM_DOMAIN —
+# because Google accepts an https redirect URI for a public host but rejects a plain-http one, and
+# every booking and scheduling route needs a completed sign-in. Postgres and Redis keep the base
+# file's loopback-only publishing, so nginx is the single reachable service.
+services:
+  db:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  # migrate runs to completion and exits, so it keeps the default restart policy; a restarting
+  # one-shot migration would loop forever.
+
+  # Each role process sits behind nginx, which terminates TLS and forwards over plain http on the
+  # compose network. uvicorn trusts X-Forwarded-Proto only from forwarded-allow-ips, which defaults
+  # to 127.0.0.1 — and nginx connects from a compose network address, not loopback. Left at the
+  # default the request scheme would stay http, and platform/api/oauth_redirect.py derives the OAuth
+  # callback from it, so Google would be handed an http:// redirect URI and refuse the sign-in. These
+  # containers publish no ports and are reachable only through nginx, so nothing else can present
+  # forged forwarding headers to them.
+  # APP_ENV governs one thing: platform/app.py marks the session cookie https_only outside local and
+  # test. The edge terminates TLS and redirects http to https, so the flag is both correct and
+  # enforceable here — it stops the browser from ever putting a session cookie on the wire in clear,
+  # including on the first request that arrives before the redirect.
+  technician:
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+    command: ["uvicorn", "fsm.platform.app:create_app", "--factory",
+              "--host", "0.0.0.0", "--port", "8001", "--forwarded-allow-ips", "*"]
+
+  customer:
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+    command: ["uvicorn", "fsm.platform.app:create_app", "--factory",
+              "--host", "0.0.0.0", "--port", "8002", "--forwarded-allow-ips", "*"]
+
+  backoffice:
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+    command: ["uvicorn", "fsm.platform.app:create_app", "--factory",
+              "--host", "0.0.0.0", "--port", "8003", "--forwarded-allow-ips", "*"]
+
+  nginx:
+    restart: unless-stopped
+    environment:
+      # Presence of this variable is what switches the image to its public per-hostname TLS edge;
+      # the entrypoint script renders public.conf.template over the shipped localhost config.
+      FSM_DOMAIN: ${FSM_DOMAIN:?FSM_DOMAIN must be set — scripts/deploy-to-ec2/start.sh exports it}
+    # Replaces (rather than extends) the base port list: compose concatenates `ports` across files,
+    # so without !override the box would also try to publish 8001-8003, which the public edge does
+    # not listen on.
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      - fsm_certs:/etc/letsencrypt
+      - fsm_acme_challenge:/var/www/certbot
+    # Certificates are replaced on disk by the certbot container, which cannot signal this one, and a
+    # running nginx serves its certificate from memory until reloaded. The periodic reload is what
+    # makes renewal take effect; six hours is well inside certbot's 30-day pre-expiry renewal window.
+    command: ["/bin/sh", "-c",
+              "while :; do sleep 6h; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+
+  # Renews in the background for the life of the deployment. First issuance is not done here — it is
+  # driven once by scripts/deploy-to-ec2/start.sh, which can wait for DNS and report a failure to the
+  # operator instead of retrying silently. `certbot renew` is a no-op until a certificate is inside
+  # its renewal window, so this loop is cheap and safe to run every twelve hours.
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - fsm_certs:/etc/letsencrypt
+      - fsm_acme_challenge:/var/www/certbot
+    entrypoint: ["/bin/sh", "-c",
+                 "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+
+volumes:
+  # Certificate lineage and account key. Kept in a volume rather than rebuilt per deploy so a
+  # redeploy never re-requests certificates and burns Let's Encrypt rate limits.
+  fsm_certs:
+  # Shared webroot: nginx serves the ACME challenge files that certbot writes here.
+  fsm_acme_challenge:

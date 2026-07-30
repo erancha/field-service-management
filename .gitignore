@@ -23,3 +23,6 @@ CLAUDE.md
 # copyrighted, so they are kept out of this public repository rather than redistributed with it; #73
 # tracks fetching them on demand instead.
 /samples/
+
+/scripts/aws-config.sh
+/scripts/domain-contact.json

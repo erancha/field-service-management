@@ -1,0 +1,67 @@
+# Public edge: one hostname per role over TLS, rendered from this template into conf.d/default.conf
+# at container start when FSM_DOMAIN is set (docker-entrypoint.d/18-fsm-edge-mode.sh). Only
+# ${FSM_DOMAIN} is substituted, so nginx's own $variables below survive rendering untouched.
+#
+# Roles are separated by hostname rather than by port because Google requires an https redirect URI
+# for anything that is not loopback, and a browser reaching https://tech.<domain> makes each role its
+# own origin — the same isolation the localhost edge gets from distinct ports, since host-only
+# session cookies are not shared across subdomains.
+include /etc/nginx/snippets/upstreams.conf;
+
+server {
+    listen 80;
+    server_name tech.${FSM_DOMAIN} app.${FSM_DOMAIN} admin.${FSM_DOMAIN};
+
+    # Certbot proves control of each hostname by fetching a file it drops in this webroot, over plain
+    # http. The path must stay reachable for renewals, not just first issuance, so it is served
+    # ahead of the redirect below rather than behind it.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name tech.${FSM_DOMAIN};
+
+    include /etc/nginx/snippets/tls.conf;
+    include /etc/nginx/snippets/spa.conf;
+
+    location ~ ^/(api|auth|calendar|docs|redoc|openapi\.json|health|ready)(/|$) {
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_pass http://technician_backend;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name app.${FSM_DOMAIN};
+
+    include /etc/nginx/snippets/tls.conf;
+    include /etc/nginx/snippets/spa.conf;
+
+    location ~ ^/(api|auth|calendar|docs|redoc|openapi\.json|health|ready)(/|$) {
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_pass http://customer_backend;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name admin.${FSM_DOMAIN};
+
+    include /etc/nginx/snippets/tls.conf;
+    include /etc/nginx/snippets/spa.conf;
+
+    location ~ ^/(api|auth|calendar|docs|redoc|openapi\.json|health|ready)(/|$) {
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_pass http://backoffice_backend;
+    }
+}

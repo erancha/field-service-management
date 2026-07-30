@@ -18,6 +18,10 @@
 #       customer backoffice nginx db redis).
 #   ./scripts/docker-helper.sh --ps
 #       Show the stack's container status.
+#   --context <name>
+#       Operate the stack on another Docker daemon, given before the command — e.g.
+#       `--context fsm-ec2 --logs -e backoffice` reaches the EC2 deployment (see
+#       scripts/deploy-to-ec2/start.sh). Omitted, every command runs against the local daemon.
 #   -h, --help
 #
 # Scope to specific services by naming them last (narrows --logs; --stop is whole-stack):
@@ -31,16 +35,26 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 
+# Selects the Docker daemon for every call below. Empty means the caller's current context, so a bare
+# invocation reaches the local stack. Passing --context here rather than switching the context
+# globally leaves other shells, projects, and testcontainers pointed at the local daemon.
+DOCKER_CONTEXT_ARGS=()
+if [[ "${1:-}" == "--context" ]]; then
+  DOCKER_CONTEXT_ARGS=(--context "${2:?--context needs a context name}")
+  shift 2
+fi
+
 # Pin compose's project-directory to the repo root so relative build contexts and the default
 # project name resolve the same regardless of the caller's working directory.
-compose() { (cd "$ROOT_DIR" && docker compose -f "$COMPOSE_FILE" "$@"); }
+compose() { (cd "$ROOT_DIR" && docker "${DOCKER_CONTEXT_ARGS[@]}" compose -f "$COMPOSE_FILE" "$@"); }
 
 # Compose's default project name: the repo dir basename, lowercased and stripped to the chars
 # compose keeps. Used to label-scope prune so it only ever touches THIS stack's images/volumes.
 compose_project() { basename "$ROOT_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'; }
 
 require_docker() {
-  docker info >/dev/null 2>&1 || { echo "Docker is not running — start Docker and retry." >&2; exit 1; }
+  docker "${DOCKER_CONTEXT_ARGS[@]}" info >/dev/null 2>&1 \
+    || { echo "Docker is not reachable — start Docker (or the deployment box) and retry." >&2; exit 1; }
 }
 
 # Print this script's header comment block as --help text (single source of usage docs).
@@ -74,10 +88,11 @@ do_stop() {
   fi
 
   local -a scope=(--filter "label=com.docker.compose.project=$(compose_project)")
+  local -a d=(docker "${DOCKER_CONTEXT_ARGS[@]}")
   case "$prune" in
-    images)  docker image  prune -f "${scope[@]}" ;;
-    volumes) docker volume prune -f "${scope[@]}" ;;
-    all)     docker image  prune -f "${scope[@]}"; docker volume prune -f "${scope[@]}" ;;
+    images)  "${d[@]}" image  prune -f "${scope[@]}" ;;
+    volumes) "${d[@]}" volume prune -f "${scope[@]}" ;;
+    all)     "${d[@]}" image  prune -f "${scope[@]}"; "${d[@]}" volume prune -f "${scope[@]}" ;;
   esac
 }
 

@@ -5,22 +5,35 @@
 #   ./scripts/sql-helper.sh                   open an interactive psql shell
 #   ./scripts/sql-helper.sh [psql-args...]    forward args to psql, e.g. -c "SELECT 1"
 #   ./scripts/sql-helper.sh -f <file>         run a host SQL file (streamed in via stdin)
+#   --context <name>                          reach another Docker daemon's stack; must come first,
+#                                             since every later argument is forwarded to psql
 #   -h, --help                                show this help
 #
 # Examples:
 #   ./scripts/sql-helper.sh -tA -c "SELECT count(*) FROM appointment;"
 #   ./scripts/sql-helper.sh -f scripts/all-tables.sql   # row counts for every table
+#   ./scripts/sql-helper.sh --context fsm-ec2 -tA -c "SELECT count(*) FROM users;"
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 
+# Selects the Docker daemon holding the database. Empty means the caller's current context, so a bare
+# invocation reaches the local stack; --context fsm-ec2 opens psql inside the deployed stack's
+# container without publishing Postgres beyond the box's loopback interface.
+DOCKER_CONTEXT_ARGS=()
+if [[ "${1:-}" == "--context" ]]; then
+  DOCKER_CONTEXT_ARGS=(--context "${2:?--context needs a context name}")
+  shift 2
+fi
+
 # Pin compose's project directory to the repo root so the service name and project resolve the same
 # regardless of the caller's working directory.
-compose() { (cd "$ROOT_DIR" && docker compose -f "$COMPOSE_FILE" "$@"); }
+compose() { (cd "$ROOT_DIR" && docker "${DOCKER_CONTEXT_ARGS[@]}" compose -f "$COMPOSE_FILE" "$@"); }
 
 require_docker() {
-  docker info >/dev/null 2>&1 || { echo "Docker is not running — start Docker and retry." >&2; exit 1; }
+  docker "${DOCKER_CONTEXT_ARGS[@]}" info >/dev/null 2>&1 \
+    || { echo "Docker is not reachable — start Docker (or the deployment box) and retry." >&2; exit 1; }
 }
 
 # Print this script's header comment block as --help text (single source of usage docs).

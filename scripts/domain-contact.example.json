@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Registrant details for scripts/deploy-to-ec2/start.sh --register-domain. Copy this file to",
+    "scripts/domain-contact.json (gitignored) and replace every value below with your own.",
+    "ICANN requires these to be genuine, and the registrant email receives a verification link that",
+    "must be clicked within 15 days or the domain is suspended. WHOIS privacy is enabled by the",
+    "script, so the details are not published.",
+    "Remove this _comment key before use — the AWS API rejects unknown fields.",
+    "PhoneNumber format is +[country].[number], e.g. +972.501234567",
+    "CountryCode is the two-letter ISO code, e.g. IL. State may be left empty where it does not apply.",
+    "ContactType is PERSON for an individual, or COMPANY with OrganizationName added."
+  ],
+  "FirstName": "YOUR_FIRST_NAME",
+  "LastName": "YOUR_LAST_NAME",
+  "ContactType": "PERSON",
+  "AddressLine1": "YOUR_STREET_ADDRESS",
+  "City": "YOUR_CITY",
+  "State": "",
+  "CountryCode": "IL",
+  "ZipCode": "YOUR_POSTAL_CODE",
+  "PhoneNumber": "+972.500000000",
+  "Email": "YOUR_EMAIL"
+}
