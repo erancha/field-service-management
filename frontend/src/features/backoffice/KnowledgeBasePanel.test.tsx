@@ -31,6 +31,14 @@ const DOC = {
 // What the upload endpoint returns: the document plus that run's phase timings.
 const UPLOADED = { ...DOC, phase_seconds: { extract: 3.2, index: 8.8 } }
 
+// The document list folds away behind this count toggle; most tests only need the toggle's
+// appearance as the panel-ready signal.
+const findDocumentsToggle = () => screen.findByRole('button', { name: /documents \(\d+\)/i })
+
+async function openDocuments() {
+  await userEvent.click(await findDocumentsToggle())
+}
+
 describe('KnowledgeBasePanel', () => {
   beforeEach(() => {
     FakeEventSource.reset()
@@ -62,7 +70,8 @@ describe('KnowledgeBasePanel', () => {
   it('lists documents and deletes one', async () => {
     vi.mocked(deleteKbDocument).mockResolvedValue({ deleted: true })
     render(<KnowledgeBasePanel />)
-    expect(await screen.findByText('reset-guide.md')).toBeInTheDocument()
+    await openDocuments()
+    expect(screen.getByText('reset-guide.md')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /delete/i }))
     expect(deleteKbDocument).toHaveBeenCalledWith('d1')
   })
@@ -70,7 +79,7 @@ describe('KnowledgeBasePanel', () => {
   it('uploads the chosen file and refreshes the list', async () => {
     vi.mocked(uploadKbDocument).mockResolvedValue(UPLOADED)
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await findDocumentsToggle()
     const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
     expect(uploadKbDocument).toHaveBeenCalledWith(file, expect.any(Function))
@@ -86,7 +95,7 @@ describe('KnowledgeBasePanel', () => {
       })
     })
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await findDocumentsToggle()
     const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
 
@@ -104,7 +113,7 @@ describe('KnowledgeBasePanel', () => {
   it('shows a timing summary once the upload completes, until the next upload starts', async () => {
     vi.mocked(uploadKbDocument).mockResolvedValue(UPLOADED)
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await findDocumentsToggle()
     const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
 
@@ -127,7 +136,7 @@ describe('KnowledgeBasePanel', () => {
     vi.mocked(uploadKbDocument).mockResolvedValue(UPLOADED)
     vi.mocked(deleteKbDocument).mockResolvedValue({ deleted: true })
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await openDocuments()
     const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
     expect(await screen.findByText(/extract 3\.2 s/i)).toBeInTheDocument()
@@ -143,7 +152,7 @@ describe('KnowledgeBasePanel', () => {
       return new Promise(() => {}) // still ingesting when the assertions run
     })
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await findDocumentsToggle()
     const file = new File(['x'], 'manual.pdf', { type: 'application/pdf' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
 
@@ -176,9 +185,9 @@ describe('KnowledgeBasePanel', () => {
       hits: [{ document_id: 'd1', filename: 'reset-guide.md', content: 'Hold the button', score: 0.87 }],
     })
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await findDocumentsToggle()
     await userEvent.type(screen.getByLabelText(/test search/i), 'reset')
-    await userEvent.click(screen.getByRole('button', { name: /search/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }))
     expect(await screen.findByText(/hold the button/i)).toBeInTheDocument()
     expect(screen.getByText(/87% match/i)).toBeInTheDocument()
   })
@@ -189,9 +198,9 @@ describe('KnowledgeBasePanel', () => {
     })
     vi.mocked(deleteKbDocument).mockResolvedValue({ deleted: true })
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await openDocuments()
     await userEvent.type(screen.getByLabelText(/test search/i), 'reset')
-    await userEvent.click(screen.getByRole('button', { name: /search/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }))
     expect(await screen.findByText(/hold the button/i)).toBeInTheDocument()
 
     vi.mocked(fetchKbDocuments).mockResolvedValue([])
@@ -201,10 +210,47 @@ describe('KnowledgeBasePanel', () => {
     expect(screen.queryByText(/hold the button/i)).not.toBeInTheDocument()
   })
 
+  it('folds the document list behind a count toggle, collapsed until asked for', async () => {
+    const docs = Array.from({ length: 7 }, (_, i) => ({
+      ...DOC,
+      id: `d${i + 1}`,
+      filename: `doc-${i + 1}.md`,
+    }))
+    vi.mocked(fetchKbDocuments).mockResolvedValue(docs)
+    render(<KnowledgeBasePanel />)
+    const toggle = await screen.findByRole('button', { name: /documents \(7\)/i })
+    expect(screen.queryByText('doc-1.md')).not.toBeInTheDocument()
+
+    await userEvent.click(toggle)
+    expect(screen.getByText('doc-1.md')).toBeInTheDocument()
+    expect(screen.getByText('doc-7.md')).toBeInTheDocument()
+
+    await userEvent.click(toggle)
+    expect(screen.queryByText('doc-1.md')).not.toBeInTheDocument()
+  })
+
+  it('clears the test-search box and its results with the clear button', async () => {
+    vi.mocked(searchKb).mockResolvedValue({
+      hits: [{ document_id: 'd1', filename: 'reset-guide.md', content: 'Hold the button', score: 0.87 }],
+    })
+    render(<KnowledgeBasePanel />)
+    await findDocumentsToggle()
+    expect(screen.queryByRole('button', { name: /clear search/i })).not.toBeInTheDocument()
+
+    const input = screen.getByLabelText(/test search/i)
+    await userEvent.type(input, 'reset')
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }))
+    expect(await screen.findByText(/hold the button/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /clear search/i }))
+    expect(input).toHaveValue('')
+    expect(screen.queryByText(/hold the button/i)).not.toBeInTheDocument()
+  })
+
   it('surfaces an upload error', async () => {
     vi.mocked(uploadKbDocument).mockRejectedValue(new Error('too large'))
     render(<KnowledgeBasePanel />)
-    await screen.findByText('reset-guide.md')
+    await findDocumentsToggle()
     const file = new File(['x'], 'big.txt', { type: 'text/plain' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
     expect(await screen.findByRole('alert')).toBeInTheDocument()

@@ -661,6 +661,15 @@ body {
   font-size: 0.875rem;
 }
 
+.kb__documents-toggle {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.kb__documents-toggle[aria-expanded='true'] {
+  margin-bottom: 0.25rem;
+}
+
 .kb__search {
   display: flex;
   align-items: flex-end;
@@ -672,8 +681,32 @@ body {
   flex: 1;
 }
 
+.kb__search-box {
+  position: relative;
+  display: block;
+}
+
 .kb__search input {
   width: 100%;
+  padding-right: 2rem;
+}
+
+.kb__search-clear {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+
+.kb__search-clear:hover {
+  color: var(--color-text);
 }
 
 .kb__hits {
@@ -721,7 +754,9 @@ body {
   margin-top: 0.5rem;
 }
 
-.chat__history-toggle {
+/* Chevron fold-toggle shared with the back-office knowledge-base document list. */
+.chat__history-toggle,
+.kb__documents-toggle {
   background: none;
   border: none;
   padding: 0;
@@ -731,11 +766,13 @@ body {
   cursor: pointer;
 }
 
-.chat__history-toggle::before {
+.chat__history-toggle::before,
+.kb__documents-toggle::before {
   content: '▸ ';
 }
 
-.chat__history-toggle[aria-expanded='true']::before {
+.chat__history-toggle[aria-expanded='true']::before,
+.kb__documents-toggle[aria-expanded='true']::before {
   content: '▾ ';
 }
 

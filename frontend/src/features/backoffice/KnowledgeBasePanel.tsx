@@ -36,6 +36,9 @@ export function KnowledgeBasePanel() {
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<KbSearchHit[] | null>(null)
+  // The document list folds away like the customer page's past conversations, so a growing
+  // library cannot crowd the other panels off the shared landing page.
+  const [documentsExpanded, setDocumentsExpanded] = useState(false)
   // Fraction of the upload body delivered, or null when no upload is in flight. At 1 the bytes are
   // sent and the server has taken over, extracting and then indexing.
   const [uploadFraction, setUploadFraction] = useState<number | null>(null)
@@ -193,36 +196,63 @@ export function KnowledgeBasePanel() {
       {documents.length === 0 ? (
         <p className="kb__empty">No documents uploaded yet.</p>
       ) : (
-        <ul className="kb__list">
-          {documents.map((d) => (
-            <li key={d.id} className="kb__item">
-              <span>{d.filename}</span>
-              <span className="kb__meta">
-                {d.chunk_count} passages · {Math.ceil(d.size_bytes / 1024)} KB
-              </span>
-              <button
-                className="btn"
-                disabled={busy}
-                onClick={() => {
-                  setSummary(null)
-                  run(() => deleteKbDocument(d.id), 'Delete failed')
-                }}
-              >
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <button
+            type="button"
+            className="kb__documents-toggle"
+            aria-expanded={documentsExpanded}
+            onClick={() => setDocumentsExpanded((open) => !open)}
+          >
+            Documents ({documents.length})
+          </button>
+          {documentsExpanded && (
+            <ul className="kb__list">
+              {documents.map((d) => (
+                <li key={d.id} className="kb__item">
+                  <span>{d.filename}</span>
+                  <span className="kb__meta">
+                    {d.chunk_count} passages · {Math.ceil(d.size_bytes / 1024)} KB
+                  </span>
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() => {
+                      setSummary(null)
+                      run(() => deleteKbDocument(d.id), 'Delete failed')
+                    }}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       <form className="kb__search" onSubmit={handleSearch}>
         <label>
           Test search
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask like a customer would"
-          />
+          <span className="kb__search-box">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Ask like a customer would"
+            />
+            {query && (
+              <button
+                type="button"
+                className="kb__search-clear"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQuery('')
+                  setHits(null)
+                }}
+              >
+                ×
+              </button>
+            )}
+          </span>
         </label>
         <button className="btn" type="submit" disabled={!query.trim()}>
           Search
