@@ -10,6 +10,7 @@ import {
 } from '../../api/kb.ts'
 import type { KbDocument, KbSearchHit, KbStatus } from '../../api/types.ts'
 import { useEventStream } from '../../hooks/useEventStream.ts'
+import { formatWhen } from '../../utils/datetime.ts'
 import { errorMessage } from '../../utils/errors.ts'
 
 const formatSeconds = (s: number) => `${s.toFixed(1)} s`
@@ -211,7 +212,8 @@ export function KnowledgeBasePanel() {
                 <li key={d.id} className="kb__item">
                   <span>{d.filename}</span>
                   <span className="kb__meta">
-                    {d.chunk_count} passages · {Math.ceil(d.size_bytes / 1024)} KB
+                    {d.chunk_count} passages · {Math.ceil(d.size_bytes / 1024)} KB ·{' '}
+                    {formatWhen(d.uploaded_at)}
                   </span>
                   <button
                     className="btn"

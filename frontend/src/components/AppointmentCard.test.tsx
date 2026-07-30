@@ -201,6 +201,17 @@ describe('AppointmentCard facts', () => {
     expect(screen.getByText(/Cara/)).toBeInTheDocument()
     expect(screen.getByText(/12 Main St/)).toBeInTheDocument()
   })
+
+  it('renders the From and To moments in the shared minute-precision local format', () => {
+    const appointment = makeAppointment()
+    render(<AppointmentCard appointment={appointment} />)
+    // Derived with the same locale call the shared formatter uses, so the expectation holds in
+    // any test-machine timezone.
+    const asShown = (iso: string) =>
+      new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    expect(screen.getByText(asShown(appointment.start))).toBeInTheDocument()
+    expect(screen.getByText(asShown(appointment.end))).toBeInTheDocument()
+  })
 })
 
 describe('AppointmentCard cancelled state', () => {

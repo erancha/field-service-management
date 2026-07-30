@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Appointment } from '../api/types.ts'
 import { Button } from './Button.tsx'
 import { ReschedulePicker } from './ReschedulePicker.tsx'
+import { formatWhen } from '../utils/datetime.ts'
 
 interface AppointmentCardProps {
   appointment: Appointment
@@ -13,10 +14,6 @@ interface AppointmentCardProps {
   onCancel?: (id: string) => void
   onAddDetails?: (id: string, text: string) => void
   loading?: boolean
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString()
 }
 
 export function AppointmentCard({
@@ -77,8 +74,8 @@ export function AppointmentCard({
         </span>
       </div>
       <dl className="appointment-card__facts">
-        <dt>From</dt><dd>{formatDate(appointment.start)}</dd>
-        <dt>To</dt><dd>{formatDate(appointment.end)}</dd>
+        <dt>From</dt><dd>{formatWhen(appointment.start)}</dd>
+        <dt>To</dt><dd>{formatWhen(appointment.end)}</dd>
         {problem && (<><dt>Problem</dt><dd>{problem}</dd></>)}
         {technicianName && (<><dt>Technician</dt><dd>{technicianName}</dd></>)}
         {customerName && (<><dt>Customer</dt><dd>{customerName}</dd></>)}

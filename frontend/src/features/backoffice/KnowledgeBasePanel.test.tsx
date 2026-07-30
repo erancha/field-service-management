@@ -72,6 +72,15 @@ describe('KnowledgeBasePanel', () => {
     render(<KnowledgeBasePanel />)
     await openDocuments()
     expect(screen.getByText('reset-guide.md')).toBeInTheDocument()
+    // The upload moment renders in the viewer's timezone, so the expectation is derived with the
+    // same locale call rather than a hard-coded string.
+    const uploadedAt = new Date(DOC.uploaded_at).toLocaleString([], {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+    expect(
+      screen.getByText(new RegExp(uploadedAt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))),
+    ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /delete/i }))
     expect(deleteKbDocument).toHaveBeenCalledWith('d1')
   })

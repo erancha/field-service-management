@@ -3,6 +3,7 @@ import type { Appointment, UpcomingAppointment } from '../../api/types.ts'
 import { useAppointments } from '../../hooks/useAppointments.ts'
 import { AppointmentCard } from '../../components/AppointmentCard.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
+import { formatWhen } from '../../utils/datetime.ts'
 
 interface Props {
   items: UpcomingAppointment[]
@@ -12,10 +13,6 @@ interface Props {
   showTechnicianName: boolean
   showReschedule: boolean
   showCancel: boolean
-}
-
-function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000
