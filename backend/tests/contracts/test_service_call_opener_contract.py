@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.orm import Session
 
+from fsm.assist.domain.conversation import Photo
 from fsm.assist.ports.service_calls import ServiceCallOpener
 from fsm.platform.service_call_bridge import SchedulingServiceCallOpener
-from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
+from fsm.scheduling.adapters.repositories import (
+    SqlAlchemyServiceCallAttachmentRepository,
+    SqlAlchemyServiceCallRepository,
+)
 from fsm.scheduling.domain import ServiceCallStatus
 from tests.assist.fakes import FakeServiceCallOpener
 
@@ -60,3 +65,34 @@ def test_scheduling_opener_persists_an_open_service_call_for_the_customer(sessio
     assert stored.customer_id == customer_id
     assert stored.description == DESCRIPTION
     assert stored.status is ServiceCallStatus.OPEN
+
+
+def test_open_accepts_photos(opener: ServiceCallOpener) -> None:
+    photo = Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=10,
+        object_key="photos/x",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    opened = opener.open(uuid.uuid4(), DESCRIPTION, photos=[photo])
+
+    assert isinstance(opened.id, uuid.UUID)
+
+
+def test_open_with_photos_persists_attachment_rows(session) -> None:
+    photo = Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=10,
+        object_key="photos/x",
+        created_at=datetime.now(timezone.utc),
+    )
+    opened = SchedulingServiceCallOpener(session).open(uuid.uuid4(), DESCRIPTION, photos=[photo])
+    session.commit()
+
+    stored = SqlAlchemyServiceCallAttachmentRepository(session).list_for_service_call(opened.id)
+    assert [(a.id, a.object_key) for a in stored] == [(photo.id, "photos/x")]

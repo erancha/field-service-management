@@ -23,7 +23,7 @@ from fsm.platform.api.kb_routes import router as kb_router
 from fsm.platform.api.scheduling_routes import handle_scheduling_error
 from fsm.platform.api.scheduling_routes import router as scheduling_router
 from fsm.platform.api.triage_routes import router as triage_router
-from fsm.platform.assist_factory import build_chat_model, build_kb_index
+from fsm.platform.assist_factory import build_chat_model, build_kb_index, build_photo_store
 from fsm.platform.events import build_event_bus, publish_appointment_changed
 from fsm.platform.logging import configure_logging
 from fsm.scheduling.domain.errors import SchedulingError
@@ -75,7 +75,8 @@ def create_app(
     app.state.settings = settings
     app.state.event_bus = build_event_bus(settings)
     app.state.kb_index = build_kb_index(settings)
-    app.state.assist_chat_model = build_chat_model(settings)
+    app.state.photo_store = build_photo_store(settings)
+    app.state.assist_chat_model = build_chat_model(settings, app.state.photo_store)
 
     if settings.session_secret:
         from starlette.middleware.sessions import SessionMiddleware

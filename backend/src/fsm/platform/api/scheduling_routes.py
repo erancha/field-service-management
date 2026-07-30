@@ -16,12 +16,14 @@ from __future__ import annotations
 import logging
 import zoneinfo
 from datetime import date, datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
+from fsm.assist.ports.photo_store import original_key, preview_key
 from fsm.scheduling.application.appointment_service import AppointmentService
 from fsm.scheduling.application.service_call_service import ServiceCallService
 from fsm.scheduling.domain.errors import (
@@ -47,6 +49,7 @@ from fsm.platform.api.schemas import (
     PooledAvailabilityResponse,
     PooledSlotResponse,
     RescheduleRequest,
+    ServiceCallPhotoResponse,
     ServiceCallResponse,
     SlotResponse,
     UpcomingAppointmentResponse,
@@ -235,6 +238,78 @@ def open_service_call(
         description=sc.description,
         status=sc.status.value,
         created_at=sc.created_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Service-call photos
+# ---------------------------------------------------------------------------
+
+
+def _photo_store(request: Request):
+    """Return the app's photo object store, or fail with 503 when the feature is disabled."""
+    store = getattr(request.app.state, "photo_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Photo storage not configured")
+    return store
+
+
+def _content_disposition(disposition: str, filename: str) -> str:
+    """Build a Content-Disposition value from a customer-controlled filename.
+
+    Response headers are Latin-1 encoded by Starlette, so a filename with non-ASCII
+    characters (Hebrew, CJK, emoji, ...) must never be interpolated as-is: doing so raises
+    UnicodeEncodeError and turns the download into an unhandled 500. Per RFC 6266/5987, this
+    emits both a plain-ASCII fallback filename for clients that only understand the legacy
+    form, and a percent-encoded filename* for clients that render the real name.
+    """
+    safe_name = filename.replace('"', "").replace("\r", "").replace("\n", "")
+    # A name with no ASCII at all cannot have an ASCII extension either, so the fallback is fixed.
+    ascii_name = safe_name.encode("ascii", errors="ignore").decode("ascii").strip() or "photo"
+    encoded_name = quote(safe_name)
+    return f'{disposition}; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}'
+
+
+def _assert_call_participant(uow, call, user: SessionUser) -> None:
+    """Authorize the call's customer, a technician appointed to it, or an administrator."""
+    if user.role is Role.ADMIN or user.id == call.customer_id:
+        return
+    if any(
+        appt.technician_id == user.id
+        for appt in uow.appointments.list_for_service_call(call.id)
+    ):
+        return
+    raise HTTPException(status_code=403, detail="Not a participant of this service call")
+
+
+@router.get("/service-calls/{service_call_id}/photos/{photo_id}")
+def download_service_call_photo(
+    service_call_id: UUID,
+    photo_id: UUID,
+    request: Request,
+    variant: Literal["original", "preview"] = "original",
+    user: SessionUser = Depends(require_user),
+) -> Response:
+    """Serve one photo from the call, streaming the stored object through the session check."""
+    with _build_uow(request) as uow:
+        call = uow.service_calls.get(service_call_id)
+        _assert_call_participant(uow, call, user)
+        attachment = uow.attachments.get(photo_id)
+        if attachment.service_call_id != service_call_id:
+            raise HTTPException(status_code=404, detail="No such photo on this service call")
+
+    if variant == "original":
+        key, media_type, disposition = (
+            original_key(attachment.object_key), attachment.media_type, "attachment"
+        )
+    else:
+        key, media_type, disposition = (
+            preview_key(attachment.object_key), "image/jpeg", "inline"
+        )
+    return Response(
+        content=_photo_store(request).get(key),
+        media_type=media_type,
+        headers={"Content-Disposition": _content_disposition(disposition, attachment.filename)},
     )
 
 
@@ -639,6 +714,8 @@ def list_upcoming_appointments(
         user_cache: dict[UUID, tuple[str, str | None]] = {}
         # Key: service-call id. Value: problem description, resolved once per distinct id.
         problem_cache: dict[UUID, str] = {}
+        # Key: service-call id. Value: its photo attachments, resolved once per distinct id.
+        photo_cache: dict[UUID, list[ServiceCallPhotoResponse]] = {}
 
         def resolve_user(user_id: UUID) -> tuple[str, str | None]:
             if user_id not in user_cache:
@@ -650,6 +727,16 @@ def list_upcoming_appointments(
             if service_call_id not in problem_cache:
                 problem_cache[service_call_id] = uow.service_calls.get(service_call_id).description
             return problem_cache[service_call_id]
+
+        def resolve_photos(service_call_id: UUID) -> list[ServiceCallPhotoResponse]:
+            if service_call_id not in photo_cache:
+                photo_cache[service_call_id] = [
+                    ServiceCallPhotoResponse(
+                        id=a.id, filename=a.filename, size_bytes=a.size_bytes
+                    )
+                    for a in uow.attachments.list_for_service_call(service_call_id)
+                ]
+            return photo_cache[service_call_id]
 
         items = [
             UpcomingAppointmentResponse(
@@ -665,6 +752,7 @@ def list_upcoming_appointments(
                 technician_name=resolve_user(appt.technician_id)[0],
                 customer_name=resolve_user(appt.customer_id)[0],
                 address=resolve_user(appt.customer_id)[1],
+                photos=resolve_photos(appt.service_call_id),
                 created_at=appt.created_at,
             )
             for appt in appts

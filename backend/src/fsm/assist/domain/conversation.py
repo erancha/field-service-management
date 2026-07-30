@@ -9,6 +9,8 @@ from enum import Enum
 from fsm.assist.domain.errors import ConversationClosed
 
 CONVERSATION_TTL = timedelta(hours=24)
+MAX_PHOTOS_PER_CONVERSATION = 5
+"""Photos one conversation may carry, bounding storage and per-turn model cost."""
 
 
 class ConversationStatus(str, Enum):
@@ -24,6 +26,20 @@ class MessageRole(str, Enum):
 
 
 @dataclass(frozen=True)
+class Photo:
+    """A customer-attached photo. The bytes live in object storage under object_key (a per-photo
+    prefix holding the full-resolution original and the model-sized preview); this metadata is
+    what the rest of the system passes around."""
+
+    id: uuid.UUID
+    filename: str
+    media_type: str
+    size_bytes: int
+    object_key: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class Message:
     """One turn of the conversation, in the order it was said."""
 
@@ -31,6 +47,7 @@ class Message:
     role: MessageRole
     text: str
     created_at: datetime
+    photos: tuple[Photo, ...] = ()
 
 
 @dataclass

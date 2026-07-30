@@ -6,11 +6,13 @@ implement these without the domain layer depending on them.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from fsm.scheduling.domain.appointment import Appointment
+from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.service_call import ServiceCall
 
 
@@ -31,6 +33,10 @@ class ServiceCallRepository(Protocol):
 
     def save(self, service_call: ServiceCall) -> None:
         """Persist mutations to an already-stored service call."""
+        ...
+
+    def remove(self, service_call_id: UUID) -> None:
+        """Delete the service call. Raises NotFoundError if no such service call exists."""
         ...
 
 
@@ -88,4 +94,28 @@ class AppointmentRepository(Protocol):
 
     def list_upcoming_all(self, now: datetime, limit: int) -> list[Appointment]:
         """Return the soonest not-yet-ended, non-cancelled appointments across all technicians."""
+        ...
+
+    def list_for_service_call(self, service_call_id: UUID) -> list[Appointment]:
+        """Return every appointment booked against this service call."""
+        ...
+
+
+@runtime_checkable
+class ServiceCallAttachmentRepository(Protocol):
+    """Persistence contract for photos a service call inherited from its triage conversation."""
+
+    def add_all(self, attachments: Sequence[ServiceCallAttachment]) -> None:
+        """Persist new attachment rows; caller ensures uniqueness of each id."""
+        ...
+
+    def get(self, attachment_id: UUID) -> ServiceCallAttachment:
+        """Return the attachment with the given id.
+
+        Raises NotFoundError if no such attachment exists.
+        """
+        ...
+
+    def list_for_service_call(self, service_call_id: UUID) -> list[ServiceCallAttachment]:
+        """Return every attachment carried by this service call, oldest first."""
         ...

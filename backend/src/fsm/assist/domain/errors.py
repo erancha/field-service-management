@@ -35,3 +35,15 @@ class ConversationClosed(AssistError):
 
 class ConversationAlreadyOpen(AssistError):
     """The customer already has an open conversation, so a second one cannot be started."""
+
+
+class UnsupportedPhoto(AssistError):
+    """The uploaded file is not a readable JPEG, PNG, or WebP image, or its dimensions are absurd."""
+
+
+class PhotoLimitReached(AssistError):
+    """The conversation already carries MAX_PHOTOS_PER_CONVERSATION photos."""
+
+
+class PhotoNotFound(AssistError):
+    """No unbound photo with this id belongs to the conversation."""

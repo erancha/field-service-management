@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pytest
@@ -29,8 +30,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
+from fsm.assist.ports.photo_store import object_prefix, original_key, preview_key
 from fsm.platform.app import create_app
 from fsm.identity.domain.role import Role
+from tests.assist.fakes import FakePhotoStore
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +152,83 @@ def _seed_appt(pg_session_factory, *, appt_id, sc_id, technician_id, customer_id
             s.add(AppointmentRow(id=appt_id, service_call_id=sc_id, technician_id=technician_id,
                                  customer_id=customer_id, start_at=start, end_at=end, status=status,
                                  details=None, external_event_id=None, created_at=ts, updated_at=ts))
+
+
+def _seed_attachment(pg_session_factory, *, attachment_id, sc_id, object_key,
+                      filename="plate.jpg", media_type="image/jpeg", size_bytes=14):
+    from fsm.scheduling.adapters.orm import ServiceCallAttachmentRow
+    with pg_session_factory() as s:
+        with s.begin():
+            s.add(ServiceCallAttachmentRow(
+                id=attachment_id, service_call_id=sc_id, filename=filename, media_type=media_type,
+                size_bytes=size_bytes, object_key=object_key,
+                created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Photo download fixtures
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PhotoSeed:
+    call_id: uuid.UUID
+    photo_id: uuid.UUID
+    customer_id: uuid.UUID
+    technician_id: uuid.UUID
+    object_key: str
+
+
+def _seed_photo_scenario(pg_session_factory, *, customer_id, technician_id, call_id, photo_id, object_key):
+    """Seed a service call, its photo attachment, and a booked appointment for the technician."""
+    _seed_user(pg_session_factory, customer_id, Role.CUSTOMER)
+    _seed_user(pg_session_factory, technician_id, Role.TECHNICIAN)
+    _seed_service_call(pg_session_factory, call_id, customer_id, description="Fix boiler")
+    _seed_attachment(pg_session_factory, attachment_id=photo_id, sc_id=call_id, object_key=object_key)
+    _seed_appt(
+        pg_session_factory, appt_id=uuid.uuid4(), sc_id=call_id,
+        technician_id=technician_id, customer_id=customer_id,
+        start=datetime(2099, 1, 1, 9, tzinfo=timezone.utc),
+        end=datetime(2099, 1, 1, 10, tzinfo=timezone.utc),
+    )
+
+
+@pytest.fixture
+def photo_store(app):
+    """Stamp a FakePhotoStore on the app's photo_store slot for one test; restore None after.
+
+    The module-scoped app builds photo_store from unconfigured test settings, which resolves to
+    None (see build_photo_store), so tests that need a working store attach one here and every
+    other test keeps observing the disabled-feature default.
+    """
+    store = FakePhotoStore()
+    app.state.photo_store = store
+    yield store
+    app.state.photo_store = None
+
+
+@pytest.fixture
+def seed(pg_session_factory, photo_store) -> PhotoSeed:
+    """A service call with one photo attachment, its bytes in the store, and a booked technician."""
+    customer_id, technician_id, call_id, photo_id = (uuid.uuid4() for _ in range(4))
+    object_key = object_prefix(photo_id)
+    _seed_photo_scenario(
+        pg_session_factory, customer_id=customer_id, technician_id=technician_id,
+        call_id=call_id, photo_id=photo_id, object_key=object_key,
+    )
+    photo_store.put(original_key(object_key), b"original-bytes", "image/jpeg")
+    photo_store.put(preview_key(object_key), b"preview-bytes", "image/jpeg")
+    return PhotoSeed(
+        call_id=call_id, photo_id=photo_id, customer_id=customer_id,
+        technician_id=technician_id, object_key=object_key,
+    )
+
+
+@pytest.fixture
+def client_as_technician(client, auth, seed):
+    auth(user_id=seed.technician_id, role=Role.TECHNICIAN)
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -750,6 +830,136 @@ class TestUpcomingEndpoint:
         auth(user_id=uuid.uuid4(), role=Role.ADMIN)
         admin_ids = {i["id"] for i in client.get("/api/appointments/upcoming", params={"limit": 10}).json()["items"]}
         assert {str(mine), str(theirs)} <= admin_ids
+
+    def test_upcoming_appointments_carry_the_calls_photo_list(self, client_as_technician, seed):
+        items = client_as_technician.get("/api/appointments/upcoming", params={"limit": 5}).json()["items"]
+
+        assert items[0]["photos"] == [
+            {"id": str(seed.photo_id), "filename": "plate.jpg", "size_bytes": 14}
+        ]
+
+    def test_upcoming_appointments_photos_default_to_empty(self, client, auth, pg_session_factory):
+        """A call with no attachment rows renders an empty photo list, not an omitted field."""
+        tech = uuid.uuid4()
+        cust = uuid.uuid4()
+        _seed_user(pg_session_factory, tech, Role.TECHNICIAN)
+        _seed_user(pg_session_factory, cust, Role.CUSTOMER)
+        sc = uuid.uuid4()
+        _seed_service_call(pg_session_factory, sc, cust)
+        _seed_appt(pg_session_factory, appt_id=uuid.uuid4(), sc_id=sc, technician_id=tech, customer_id=cust,
+                   start=self._far(1), end=self._far(1, 11))
+
+        auth(user_id=tech, role=Role.TECHNICIAN)
+        items = client.get("/api/appointments/upcoming", params={"limit": 5}).json()["items"]
+        assert items[0]["photos"] == []
+
+
+# ---------------------------------------------------------------------------
+# 9. Service-call photo download
+# ---------------------------------------------------------------------------
+
+
+class TestServiceCallPhotoDownload:
+    def test_technician_on_the_appointment_downloads_the_original(self, client_as_technician, seed):
+        response = client_as_technician.get(
+            f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}"
+        )
+
+        assert response.status_code == 200
+        assert response.content == b"original-bytes"
+        assert response.headers["content-type"].startswith("image/jpeg")
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="plate.jpg"; filename*=UTF-8\'\'plate.jpg'
+        )
+
+    def test_preview_variant_serves_the_inline_jpeg(self, client_as_technician, seed):
+        response = client_as_technician.get(
+            f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}",
+            params={"variant": "preview"},
+        )
+
+        assert response.status_code == 200
+        assert response.content == b"preview-bytes"
+        assert response.headers["content-disposition"].startswith("inline")
+
+    def test_the_calls_customer_and_an_admin_may_download(self, client, auth, seed):
+        auth(user_id=seed.customer_id, role=Role.CUSTOMER)
+        customer_resp = client.get(f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}")
+        assert customer_resp.status_code == 200
+
+        auth(user_id=uuid.uuid4(), role=Role.ADMIN)
+        admin_resp = client.get(f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}")
+        assert admin_resp.status_code == 200
+
+    def test_an_unrelated_technician_is_403(self, client, auth, seed):
+        auth(user_id=uuid.uuid4(), role=Role.TECHNICIAN)
+        response = client.get(f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}")
+        assert response.status_code == 403
+
+    def test_an_unrelated_customer_is_403(self, client, auth, seed):
+        auth(user_id=uuid.uuid4(), role=Role.CUSTOMER)
+        response = client.get(f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}")
+        assert response.status_code == 403
+
+    def test_unknown_photo_id_returns_404(self, client_as_technician, seed):
+        response = client_as_technician.get(
+            f"/api/service-calls/{seed.call_id}/photos/{uuid.uuid4()}"
+        )
+        assert response.status_code == 404
+
+    def test_photo_belonging_to_another_service_call_returns_404(
+        self, client_as_technician, seed, pg_session_factory, photo_store
+    ):
+        other_customer, other_call, other_photo = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        _seed_service_call(pg_session_factory, other_call, other_customer, description="Other call")
+        _seed_attachment(
+            pg_session_factory, attachment_id=other_photo, sc_id=other_call,
+            object_key=object_prefix(other_photo),
+        )
+
+        response = client_as_technician.get(
+            f"/api/service-calls/{seed.call_id}/photos/{other_photo}"
+        )
+        assert response.status_code == 404
+
+    def test_non_ascii_filename_downloads_with_rfc5987_header(
+        self, client_as_technician, seed, pg_session_factory, photo_store
+    ):
+        """A customer-supplied non-ASCII filename must not crash Content-Disposition encoding:
+        Starlette serializes response headers as latin-1, so the raw filename can never be
+        interpolated as-is."""
+        photo_id = uuid.uuid4()
+        object_key = object_prefix(photo_id)
+        _seed_attachment(
+            pg_session_factory, attachment_id=photo_id, sc_id=seed.call_id,
+            object_key=object_key, filename="צילום-דוד.jpg",
+        )
+        photo_store.put(original_key(object_key), b"original-bytes", "image/jpeg")
+        photo_store.put(preview_key(object_key), b"preview-bytes", "image/jpeg")
+
+        for params in ({}, {"variant": "preview"}):
+            response = client_as_technician.get(
+                f"/api/service-calls/{seed.call_id}/photos/{photo_id}", params=params
+            )
+            assert response.status_code == 200
+            header = response.headers["content-disposition"]
+            header.encode("latin-1")  # raises if a raw non-ASCII byte leaked into the header
+            assert "filename*=UTF-8''%D7%A6%D7%99%D7%9C%D7%95%D7%9D" in header
+            ascii_fallback = header.split('filename="', 1)[1].split('"', 1)[0]
+            assert ascii_fallback.isascii()
+
+    def test_download_without_configured_store_returns_503(self, client, auth, pg_session_factory):
+        customer_id, technician_id, call_id, photo_id = (uuid.uuid4() for _ in range(4))
+        _seed_photo_scenario(
+            pg_session_factory, customer_id=customer_id, technician_id=technician_id,
+            call_id=call_id, photo_id=photo_id, object_key=object_prefix(photo_id),
+        )
+        auth(user_id=customer_id, role=Role.CUSTOMER)
+
+        response = client.get(f"/api/service-calls/{call_id}/photos/{photo_id}")
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Photo storage not configured"
 
 
 class TestAppointmentChangePublish:

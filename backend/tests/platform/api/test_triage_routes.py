@@ -1,25 +1,41 @@
 """Customer triage chat over HTTP, with a fake chat model and a real Postgres schema."""
 from __future__ import annotations
 
+import io
 import json
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from fsm.assist.application.prompts import CLOSED_MARKER, ESCALATE_MARKER, SOLVED_MARKER
+from fsm.assist.domain.conversation import MAX_PHOTOS_PER_CONVERSATION
 from fsm.identity.domain.role import Role
-from fsm.platform.api.triage_routes import MAX_MESSAGE_CHARS
+from fsm.platform.api.triage_routes import MAX_MESSAGE_CHARS, MAX_PHOTO_BYTES
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
 from fsm.scheduling.adapters.orm import ServiceCallRow
 from fsm.scheduling.adapters.repositories import SqlAlchemyServiceCallRepository
-from tests.assist.fakes import FakeChatModel, FakeDocumentIndex
+from tests.assist.fakes import FakeChatModel, FakeDocumentIndex, FakePhotoStore
 
 
 OVEN_DOC = "The oven will not heat. Hold the reset button behind the lower panel for ten seconds."
+
+
+def _jpeg_bytes(size=(64, 48)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", size, color=(200, 10, 10)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def _upload_photo(client, conversation_id, body: bytes, name="plate.jpg"):
+    return client.post(
+        f"/api/assist/conversations/{conversation_id}/photos",
+        files={"file": (name, io.BytesIO(body), "image/jpeg")},
+    )
 
 
 @pytest.fixture(scope="module")
@@ -36,6 +52,7 @@ def build_app(pg_session_factory, chat_model, *, enabled: bool = True):
     )
     app = create_app(session_factory=pg_session_factory, settings=settings)
     app.state.assist_chat_model = chat_model
+    app.state.photo_store = FakePhotoStore() if enabled else None
     return app
 
 
@@ -404,6 +421,44 @@ class TestTriageRoutes:
 
         assert response.status_code == 422
 
+    def test_a_message_with_no_text_and_no_photos_is_rejected(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            response = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages", json={"text": ""}
+            )
+
+        assert response.status_code == 422
+        detail = str(response.json()["detail"])
+        assert "text" in detail.lower() and "photo" in detail.lower()
+
+    def test_a_photo_only_turn_streams_to_done_with_an_empty_text_customer_message(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel(replies=["That looks like a leak."]))
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "", "photo_ids": [photo["id"]]},
+            )
+            reloaded = client.get(f"/api/assist/conversations/{conversation_id}").json()
+
+        assert stream.status_code == 200
+        customer_message = reloaded["messages"][0]
+        assert customer_message["text"] == ""
+        assert customer_message["photos"] == [
+            {"id": photo["id"], "filename": photo["filename"], "size_bytes": photo["size_bytes"]}
+        ]
+
     def test_history_lists_ended_conversations_and_skips_the_live_empty_one(
         self, pg_session_factory, authenticate
     ):
@@ -444,3 +499,220 @@ class TestTriageRoutes:
 
         with TestClient(app) as client:
             assert client.get("/api/assist/conversations").status_code == 403
+
+    def test_upload_stores_metadata_and_both_objects(self, pg_session_factory, authenticate):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+        content = _jpeg_bytes()
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            uploaded = _upload_photo(client, conversation_id, content)
+
+        assert uploaded.status_code == 201
+        body = uploaded.json()
+        assert body["filename"] == "plate.jpg"
+        assert body["media_type"] == "image/jpeg"
+        assert body["size_bytes"] == len(content)
+        assert body.keys() == {"id", "filename", "media_type", "size_bytes"}
+
+        store = app.state.photo_store
+        assert f"photos/{body['id']}/original" in store.objects
+        assert f"photos/{body['id']}/preview" in store.objects
+
+    def test_upload_over_5mb_is_rejected_with_a_clear_message(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            rejected = _upload_photo(client, conversation_id, b"x" * (MAX_PHOTO_BYTES + 1))
+
+        assert rejected.status_code == 413
+        assert "5 MB" in rejected.json()["detail"]
+
+    def test_upload_of_a_non_image_is_rejected(self, pg_session_factory, authenticate):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            rejected = _upload_photo(
+                client, conversation_id, b"this is not an image", name="notes.txt"
+            )
+
+        assert rejected.status_code == 415
+
+    def test_the_sixth_upload_is_rejected(self, pg_session_factory, authenticate):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            for _ in range(MAX_PHOTOS_PER_CONVERSATION):
+                assert _upload_photo(client, conversation_id, _jpeg_bytes()).status_code == 201
+            rejected = _upload_photo(client, conversation_id, _jpeg_bytes())
+
+        assert rejected.status_code == 409
+        assert "5 photos" in rejected.json()["detail"]
+
+    def test_upload_without_the_feature_is_503(self, pg_session_factory, authenticate):
+        app = build_app(pg_session_factory, None, enabled=False)
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            rejected = _upload_photo(client, uuid.uuid4(), _jpeg_bytes())
+
+        assert rejected.status_code == 503
+
+    def test_a_turn_with_photo_ids_binds_them_into_the_transcript(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel(replies=["Is the display lit?"]))
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat.", "photo_ids": [photo["id"]]},
+            )
+            reloaded = client.get(f"/api/assist/conversations/{conversation_id}").json()
+
+        assert stream.status_code == 200
+        customer_message, assistant_message = reloaded["messages"]
+        assert customer_message["role"] == "CUSTOMER"
+        assert customer_message["photos"] == [
+            {"id": photo["id"], "filename": photo["filename"], "size_bytes": photo["size_bytes"]}
+        ]
+        assert assistant_message["photos"] == []
+
+    def test_a_turn_with_a_foreign_photo_id_is_404(self, pg_session_factory, authenticate):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            rejected = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "Here is a photo.", "photo_ids": [str(uuid.uuid4())]},
+            )
+
+        assert rejected.status_code == 404
+
+    def test_start_and_get_carry_an_uploaded_photo_as_pending(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+            reloaded = client.get(f"/api/assist/conversations/{conversation_id}").json()
+
+        assert reloaded["pending_photos"] == [
+            {"id": photo["id"], "filename": photo["filename"], "size_bytes": photo["size_bytes"]}
+        ]
+
+    def test_deleting_a_pending_photo_removes_it_and_its_objects(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+
+            deleted = client.delete(
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}"
+            )
+            reloaded = client.get(f"/api/assist/conversations/{conversation_id}").json()
+
+        assert deleted.status_code == 204
+        assert deleted.content == b""
+        assert reloaded["pending_photos"] == []
+        store = app.state.photo_store
+        assert f"photos/{photo['id']}/original" not in store.objects
+        assert f"photos/{photo['id']}/preview" not in store.objects
+
+    def test_deleting_a_sent_photo_is_404(self, pg_session_factory, authenticate):
+        app = build_app(pg_session_factory, FakeChatModel(replies=["Is the display lit?"]))
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+            client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat.", "photo_ids": [photo["id"]]},
+            )
+
+            rejected = client.delete(
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}"
+            )
+
+        assert rejected.status_code == 404
+
+    def test_preview_returns_the_preview_bytes_for_a_pending_photo(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+
+            preview = client.get(
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}/preview"
+            )
+
+        assert preview.status_code == 200
+        assert preview.headers["content-type"] == "image/jpeg"
+        assert preview.content == app.state.photo_store.objects[
+            f"photos/{photo['id']}/preview"
+        ][0]
+
+    def test_preview_returns_the_preview_bytes_for_a_sent_photo(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel(replies=["Is the display lit?"]))
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+            client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat.", "photo_ids": [photo["id"]]},
+            )
+
+            preview = client.get(
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}/preview"
+            )
+
+        assert preview.status_code == 200
+        assert preview.headers["content-type"] == "image/jpeg"
+
+    def test_preview_of_a_foreign_customers_conversation_is_404(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+
+        authenticate(app, user_id=uuid.uuid4(), role=Role.CUSTOMER)
+        with TestClient(app) as client:
+            rejected = client.get(
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}/preview"
+            )
+
+        assert rejected.status_code == 404

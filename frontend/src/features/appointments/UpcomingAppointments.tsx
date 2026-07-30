@@ -102,6 +102,7 @@ export function UpcomingAppointments({ items, loading, error, refetch, showTechn
                   technicianName={showTechnicianName ? it.technician_name : undefined}
                   customerName={it.customer_name}
                   address={it.address}
+                  photos={it.photos}
                   loading={mutating}
                   onReschedule={
                     showReschedule

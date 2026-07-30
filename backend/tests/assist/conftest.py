@@ -8,6 +8,9 @@ from tests.assist.fakes import (
     FakeConversationRepository,
     FakeDocumentIndex,
     FakeKbDocumentRepository,
+    FakePhotoRepository,
+    FakePhotoStore,
+    FakePreviewMaker,
     FakeServiceCallOpener,
     FakeTextExtractor,
 )
@@ -41,3 +44,18 @@ def fake_conversation_repo() -> FakeConversationRepository:
 @pytest.fixture
 def fake_service_call_opener() -> FakeServiceCallOpener:
     return FakeServiceCallOpener()
+
+
+@pytest.fixture
+def fake_photo_store() -> FakePhotoStore:
+    return FakePhotoStore()
+
+
+@pytest.fixture
+def fake_preview_maker() -> FakePreviewMaker:
+    return FakePreviewMaker()
+
+
+@pytest.fixture
+def fake_photo_repo() -> FakePhotoRepository:
+    return FakePhotoRepository()

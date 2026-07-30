@@ -13,7 +13,10 @@ from fsm.assist.domain.errors import (
     DuplicateDocument,
     EmptyDocumentText,
     IndexModelMismatch,
+    PhotoLimitReached,
+    PhotoNotFound,
     UnsupportedDocumentType,
+    UnsupportedPhoto,
 )
 
 
@@ -32,5 +35,8 @@ def handle_assist_error(request: Request, exc: AssistError) -> JSONResponse:
         ConversationNotFound: 404,
         ConversationClosed: 409,
         ConversationAlreadyOpen: 409,
+        UnsupportedPhoto: 415,
+        PhotoLimitReached: 409,
+        PhotoNotFound: 404,
     }[type(exc)]
     return JSONResponse({"detail": str(exc) or type(exc).__name__}, status_code=status)

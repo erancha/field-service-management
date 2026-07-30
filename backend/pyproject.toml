@@ -27,6 +27,8 @@ dependencies = [
     "langchain-text-splitters>=0.3",
     "pypdf>=5",
     "python-multipart>=0.0.9",
+    "pillow>=11",
+    "minio>=7.2",
 ]
 
 [project.optional-dependencies]
@@ -147,6 +149,8 @@ forbidden_modules = [
     "pypdf",
     "anthropic",
     "openai",
+    "PIL",
+    "minio",
 ]
 # fsm.shared is forbidden wholesale so any future shared submodule is denied to inner layers by
 # default; fsm.shared.constants (the product brand) is the single explicit exception.

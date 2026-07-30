@@ -30,13 +30,17 @@ vi.mock('../api/assist.ts', () => ({
   endConversation: vi.fn(),
   listPastConversations: vi.fn().mockResolvedValue([]),
   fetchConversation: vi.fn(),
+  uploadTriagePhoto: vi.fn(),
+  deleteTriagePhoto: vi.fn(),
+  triagePhotoPreviewUrl: (conversationId: string, photoId: string) =>
+    `/api/assist/conversations/${conversationId}/photos/${photoId}/preview`,
 }))
 
 const APPT = {
   id: 'a1', service_call_id: 's1', technician_id: 't1', customer_id: 'c1',
   start: '2099-06-01T09:00:00Z', end: '2099-06-01T11:00:00Z', status: 'SCHEDULED',
   details: null, problem: 'Broken boiler', technician_name: 'Tara', customer_name: 'Cara',
-  address: '12 Main St', created_at: '2099-05-31T09:00:00Z',
+  address: '12 Main St', created_at: '2099-05-31T09:00:00Z', photos: [],
 }
 
 function renderPage() {
@@ -55,7 +59,7 @@ describe('CustomerPage', () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     vi.mocked(fetchAssistStatus).mockResolvedValue({ enabled: false })
     vi.mocked(startConversation).mockResolvedValue({
-      id: 'c1', status: 'ACTIVE', service_call_id: null, messages: [],
+      id: 'c1', status: 'ACTIVE', service_call_id: null, messages: [], pending_photos: [],
     })
   })
   afterEach(() => vi.unstubAllGlobals())

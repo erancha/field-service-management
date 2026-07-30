@@ -49,6 +49,7 @@ export interface UpcomingAppointment {
   customer_name: string
   address: string | null
   created_at: string
+  photos: PhotoRef[]
 }
 
 export interface UpcomingAppointmentsResponse {
@@ -146,11 +147,19 @@ export interface AssistStatus {
 
 export type TriageStatus = 'ACTIVE' | 'SOLVED' | 'ESCALATED' | 'ABANDONED'
 
+/** Photo metadata shared by chat turns and the appointment gallery; the bytes are fetched by id. */
+export interface PhotoRef {
+  id: string
+  filename: string
+  size_bytes: number
+}
+
 export interface TriageMessage {
   id: string
   role: 'CUSTOMER' | 'ASSISTANT'
   text: string
   created_at: string
+  photos?: PhotoRef[]
 }
 
 export interface TriageConversation {
@@ -158,6 +167,7 @@ export interface TriageConversation {
   status: TriageStatus
   service_call_id: string | null
   messages: TriageMessage[]
+  pending_photos: PhotoRef[]
 }
 
 /** How a conversation finished. Only ended conversations enter the customer's history. */

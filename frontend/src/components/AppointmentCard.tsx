@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import type { Appointment } from '../api/types.ts'
+import type { Appointment, PhotoRef } from '../api/types.ts'
 import { Button } from './Button.tsx'
 import { ReschedulePicker } from './ReschedulePicker.tsx'
 import { formatWhen } from '../utils/datetime.ts'
+import { servicePhotoUrl } from '../api/scheduling.ts'
 
 interface AppointmentCardProps {
   appointment: Appointment
@@ -10,6 +11,7 @@ interface AppointmentCardProps {
   technicianName?: string
   customerName?: string
   address?: string | null
+  photos?: PhotoRef[]
   onReschedule?: (id: string, start: string, end: string) => void | Promise<void>
   onCancel?: (id: string) => void
   onAddDetails?: (id: string, text: string) => void
@@ -22,6 +24,7 @@ export function AppointmentCard({
   technicianName,
   customerName,
   address,
+  photos,
   onReschedule,
   onCancel,
   onAddDetails,
@@ -83,6 +86,24 @@ export function AppointmentCard({
       </dl>
       {appointment.details && (
         <p className="appointment-card__details">{appointment.details}</p>
+      )}
+      {photos && photos.length > 0 && (
+        <ul className="appointment-card__photos">
+          {photos.map((photo) => (
+            <li key={photo.id}>
+              <a
+                href={servicePhotoUrl(appointment.service_call_id, photo.id, 'original')}
+                download={photo.filename}
+              >
+                <img
+                  src={servicePhotoUrl(appointment.service_call_id, photo.id, 'preview')}
+                  alt={photo.filename}
+                  loading="lazy"
+                />
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
       {!isCancelled && editing === 'none' && (
         <div className="appointment-card__actions">

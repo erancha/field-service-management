@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiException } from '../../api/client.ts'
-import { endConversation, startConversation, streamAssistReply } from '../../api/assist.ts'
+import {
+  deleteTriagePhoto,
+  endConversation,
+  startConversation,
+  streamAssistReply,
+  triagePhotoPreviewUrl,
+  uploadTriagePhoto,
+} from '../../api/assist.ts'
 import type {
+  PhotoRef,
   ServiceCall,
   TriageEndedStatus,
   TriageMessage,
@@ -13,6 +21,10 @@ import { ChatTurns } from './ChatTurns.tsx'
 import { PastConversations } from './PastConversations.tsx'
 
 const MAX_MESSAGE_CHARS = 4000
+const MAX_PHOTOS = 5
+const MAX_PHOTO_MB = 5
+const MAX_PHOTO_BYTES = MAX_PHOTO_MB * 1024 * 1024
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 /**
  * How each ending is reported once the composer is gone.
@@ -57,8 +69,12 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   const [attempt, setAttempt] = useState(0)
   const [historyKey, setHistoryKey] = useState(0)
   const [collapseKey, setCollapseKey] = useState(0)
+  const [pendingPhotos, setPendingPhotos] = useState<PhotoRef[]>([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const nextLocalId = useRef(0)
+  const attachedCount =
+    messages.reduce((n, m) => n + (m.photos?.length ?? 0), 0) + pendingPhotos.length
 
   useEffect(() => {
     let cancelled = false
@@ -69,6 +85,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
         setConversationId(conversation.id)
         setMessages(conversation.messages)
         setStatus(conversation.status)
+        setPendingPhotos(conversation.pending_photos)
       })
       .catch((err) => {
         if (!cancelled) setInitError(safeErrorMessage(err, 'Could not reach the assistant'))
@@ -82,6 +99,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     e.preventDefault()
     if (conversationId === null) return
     const text = draft.trim()
+    const sent = pendingPhotos
     setError(null)
     setDraft('')
     setSending(true)
@@ -90,20 +108,26 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     const optimisticId = `local-${nextLocalId.current++}`
     setMessages((prior) => [
       ...prior,
-      { id: optimisticId, role: 'CUSTOMER', text, created_at: '' },
+      { id: optimisticId, role: 'CUSTOMER', text, created_at: '', photos: sent },
     ])
 
     let reply = ''
     try {
-      const result = await streamAssistReply(conversationId, text, (token) => {
-        reply += token
-        setStreaming(reply)
-      })
+      const result = await streamAssistReply(
+        conversationId,
+        text,
+        sent.map((photo) => photo.id),
+        (token) => {
+          reply += token
+          setStreaming(reply)
+        },
+      )
       setMessages((prior) => [
         ...prior,
         { id: `local-${nextLocalId.current++}`, role: 'ASSISTANT', text: reply.trim(), created_at: '' },
       ])
       setStatus(result.status)
+      setPendingPhotos([])
       // An ending moves this exchange into the customer's history.
       if (result.status !== 'ACTIVE') setHistoryKey((n) => n + 1)
       if (result.service_call) {
@@ -120,9 +144,52 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
       setError(safeErrorMessage(err, 'The assistant could not answer just now. Please try again.'))
       setMessages((prior) => prior.filter((m) => m.id !== optimisticId))
       setDraft(text)
+      // The ids stay unbound server-side, so a retried turn can re-send the same photos.
     } finally {
       setStreaming('')
       setSending(false)
+    }
+  }
+
+  async function handleAttach(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (conversationId === null || files.length === 0) return
+    setError(null)
+    if (attachedCount + files.length > MAX_PHOTOS) {
+      setError(`A conversation can carry at most ${MAX_PHOTOS} photos.`)
+      return
+    }
+    for (const file of files) {
+      if (!PHOTO_TYPES.includes(file.type)) {
+        setError('Photos must be JPEG, PNG, or WebP images.')
+        return
+      }
+      if (file.size > MAX_PHOTO_BYTES) {
+        setError(`Each photo must be ${MAX_PHOTO_MB} MB or less.`)
+        return
+      }
+    }
+    setUploadingPhoto(true)
+    try {
+      for (const file of files) {
+        const photo = await uploadTriagePhoto(conversationId, file)
+        setPendingPhotos((prior) => [...prior, photo])
+      }
+    } catch (err) {
+      setError(safeErrorMessage(err, 'The photo could not be uploaded. Please try again.'))
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
+  async function handleRemovePhoto(photoId: string) {
+    if (conversationId === null) return
+    try {
+      await deleteTriagePhoto(conversationId, photoId)
+      setPendingPhotos((prior) => prior.filter((photo) => photo.id !== photoId))
+    } catch (err) {
+      setError(safeErrorMessage(err, 'The photo could not be removed. Please try again.'))
     }
   }
 
@@ -143,6 +210,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
 
   /** Clears the ended exchange and re-runs the mount effect, which opens a fresh conversation. */
   function startOver() {
+    setPendingPhotos([])
     setConversationId(null)
     setMessages([])
     setStreaming('')
@@ -181,7 +249,10 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
 
           {status === 'ACTIVE' ? (
             <>
-              <ChatTurns messages={messages}>
+              <ChatTurns
+                messages={messages}
+                photoPreviewUrl={(photo) => triagePhotoPreviewUrl(conversationId, photo.id)}
+              >
                 {streaming && (
                   <li className="chat__turn chat__turn--assistant" aria-live="polite">{streaming}</li>
                 )}
@@ -195,13 +266,54 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     rows={3}
-                    required
                     maxLength={MAX_MESSAGE_CHARS}
                     placeholder="Describe the problem…"
                   />
                 </label>
+                {(pendingPhotos.length > 0 || uploadingPhoto) && (
+                  <p className="chat__attach-note">
+                    {uploadingPhoto
+                      ? 'Uploading photo…'
+                      : 'Attached — will be sent with your next message.'}
+                  </p>
+                )}
+                {pendingPhotos.length > 0 && (
+                  <ul className="chat__photo-strip">
+                    {pendingPhotos.map((photo) => (
+                      <li key={photo.id}>
+                        <img
+                          src={triagePhotoPreviewUrl(conversationId, photo.id)}
+                          alt={photo.filename}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Remove ${photo.filename}`}
+                          onClick={() => handleRemovePhoto(photo.id)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <label className="chat__attach">
+                  Attach photos
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    onChange={handleAttach}
+                    disabled={sending || uploadingPhoto || attachedCount >= MAX_PHOTOS}
+                  />
+                </label>
                 <div className="chat__composer-actions">
-                  <Button type="submit" loading={sending} disabled={!draft.trim()}>Send</Button>
+                  <Button
+                    type="submit"
+                    loading={sending}
+                    disabled={!draft.trim() && pendingPhotos.length === 0}
+                  >
+                    Send
+                  </Button>
                   <Button
                     type="button"
                     variant="secondary"

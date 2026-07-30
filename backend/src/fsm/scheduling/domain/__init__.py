@@ -9,6 +9,7 @@ Public types re-exported here:
 - DailyHours, WeeklyWorkingHours: technician availability model
 - ServiceCallStatus, ServiceCall: customer request lifecycle
 - AppointmentStatus, Appointment: scheduled visit lifecycle
+- ServiceCallAttachment: a triage photo carried over onto a service call
 - ContactInfo: per-party contact details a booking depends on
 - SchedulingError, InvalidTimeRange, InvalidTransition, NotFoundError,
   SlotUnavailable, IncompleteContactInfo: error hierarchy
@@ -29,6 +30,7 @@ from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.domain.working_hours import DailyHours, WeeklyWorkingHours
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.availability import generate_slots
 from fsm.scheduling.domain.calendar_identity import build_ical_uid, parse_ical_uid
 
@@ -47,6 +49,7 @@ __all__ = [
     "ServiceCallStatus",
     "Appointment",
     "AppointmentStatus",
+    "ServiceCallAttachment",
     "generate_slots",
     "build_ical_uid",
     "parse_ical_uid",

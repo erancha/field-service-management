@@ -8,14 +8,21 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from fsm.scheduling.adapters.orm import AppointmentAuditRow, AppointmentRow, ServiceCallRow
+from fsm.scheduling.adapters.orm import (
+    AppointmentAuditRow,
+    AppointmentRow,
+    ServiceCallAttachmentRow,
+    ServiceCallRow,
+)
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.errors import NotFoundError, SlotUnavailable
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
 from fsm.scheduling.domain.time_range import TimeRange
@@ -95,6 +102,18 @@ def _appointment_to_row(appt: Appointment) -> AppointmentRow:
     )
 
 
+def _row_to_attachment(row: ServiceCallAttachmentRow) -> ServiceCallAttachment:
+    return ServiceCallAttachment(
+        id=row.id,
+        service_call_id=row.service_call_id,
+        filename=row.filename,
+        media_type=row.media_type,
+        size_bytes=row.size_bytes,
+        object_key=row.object_key,
+        created_at=row.created_at,
+    )
+
+
 class SqlAlchemyServiceCallRepository:
     """Session-scoped SQLAlchemy adapter for ServiceCall persistence."""
 
@@ -125,6 +144,14 @@ class SqlAlchemyServiceCallRepository:
         row.description = service_call.description
         row.status = service_call.status.value
         row.created_at = service_call.created_at
+        self._session.flush()
+
+    def remove(self, service_call_id: uuid.UUID) -> None:
+        """Delete the call row; attachment rows die with it via the FK cascade."""
+        row = self._session.get(ServiceCallRow, service_call_id)
+        if row is None:
+            raise NotFoundError(f"ServiceCall {service_call_id!r} not found")
+        self._session.delete(row)
         self._session.flush()
 
 
@@ -241,3 +268,48 @@ class SqlAlchemyAppointmentRepository:
 
     def list_upcoming_all(self, now: datetime, limit: int) -> list[Appointment]:
         return self._list_upcoming(now, limit)
+
+    def list_for_service_call(self, service_call_id: uuid.UUID) -> list[Appointment]:
+        rows = (
+            self._session.query(AppointmentRow)
+            .filter(AppointmentRow.service_call_id == service_call_id)
+            .all()
+        )
+        return [_row_to_appointment(row) for row in rows]
+
+
+class SqlAlchemyServiceCallAttachmentRepository:
+    """Session-scoped SQLAlchemy adapter for service-call photo attachments."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add_all(self, attachments: Sequence[ServiceCallAttachment]) -> None:
+        for attachment in attachments:
+            self._session.add(
+                ServiceCallAttachmentRow(
+                    id=attachment.id,
+                    service_call_id=attachment.service_call_id,
+                    filename=attachment.filename,
+                    media_type=attachment.media_type,
+                    size_bytes=attachment.size_bytes,
+                    object_key=attachment.object_key,
+                    created_at=attachment.created_at,
+                )
+            )
+        self._session.flush()
+
+    def get(self, attachment_id: uuid.UUID) -> ServiceCallAttachment:
+        row = self._session.get(ServiceCallAttachmentRow, attachment_id)
+        if row is None:
+            raise NotFoundError(f"Attachment {attachment_id!r} not found")
+        return _row_to_attachment(row)
+
+    def list_for_service_call(self, service_call_id: uuid.UUID) -> list[ServiceCallAttachment]:
+        rows = (
+            self._session.query(ServiceCallAttachmentRow)
+            .filter(ServiceCallAttachmentRow.service_call_id == service_call_id)
+            .order_by(ServiceCallAttachmentRow.created_at, ServiceCallAttachmentRow.id)
+            .all()
+        )
+        return [_row_to_attachment(row) for row in rows]

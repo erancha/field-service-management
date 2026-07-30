@@ -55,6 +55,26 @@ said. Opening a service call never depends on the assistant: a turn the model ca
 the plain description form as a way through. Switching between an Anthropic and an OpenAI chat model
 is a change to `ASSIST_MODEL` and its key, with no code change.
 
+The customer can attach up to five photos per conversation (JPEG, PNG, or WebP, 5 MB each) — a
+rating plate, a display error code, the state of a part. The assistant never sees the original: it
+gets a downscaled, EXIF-stripped copy (long edge 1280px) as image content alongside the turn, reads
+what it shows, quotes back a model number or error code it can make out, and stops suggesting steps
+and escalates the moment a photo shows a risk signal — scorch marks, exposed wiring, water near
+electrics, gas fittings. Full-resolution originals live in a MinIO service bundled in
+`docker-compose.yml`; Postgres keeps only metadata rows, never photo bytes. Every non-escalated
+ending — solved, closed, or a quiet 24-hour retirement — reclaims the conversation's photos from
+MinIO; for a retirement, that reclamation is lazy, carried out when the customer next opens the
+chat and the stale conversation is found, not by a background job. An escalated ending instead
+carries the sent photos onto the new service call as attachments, where they show as preview
+thumbnails on the technician's appointment card, with the original downloadable by the call's
+customer, any technician with an appointment on the call, or an admin — no one else. Calendar
+events carry only the call's text summary, never a photo. Deleting a service call removes its
+attachment rows through the same foreign-key cascade as its other detail rows and the underlying
+MinIO objects through the platform's deletion path — no product route deletes a service call today,
+so this is mechanism ahead of a surface, not a live feature. Photos ride the same third-party
+posture as the rest of the chat: both the images and the problem-description text are sent to the
+configured chat-model provider (Anthropic or OpenAI).
+
 ## The full vision
 
 Five pieces, of which Slice 1 above is the scheduling core:

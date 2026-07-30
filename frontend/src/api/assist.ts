@@ -1,6 +1,7 @@
-import { ApiException, apiGet, apiPost } from './client.ts'
+import { ApiException, apiDelete, apiGet, apiPost, apiUpload } from './client.ts'
 import type {
   AssistStatus,
+  PhotoRef,
   TriageConversation,
   TriageConversationSummary,
   TriageTurnResult,
@@ -29,6 +30,26 @@ export async function fetchConversation(id: string): Promise<TriageConversation>
 /** Closes the conversation at the customer's request; no service call is opened. */
 export async function endConversation(id: string): Promise<TriageConversation> {
   return apiPost<TriageConversation>(`${BASE}/conversations/${id}/end`, {})
+}
+
+export async function uploadTriagePhoto(
+  conversationId: string,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<PhotoRef> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiUpload<PhotoRef>(`${BASE}/conversations/${conversationId}/photos`, form, onProgress)
+}
+
+/** Detaches a pending photo the customer changed their mind about; sent photos cannot be removed. */
+export async function deleteTriagePhoto(conversationId: string, photoId: string): Promise<void> {
+  return apiDelete<void>(`${BASE}/conversations/${conversationId}/photos/${photoId}`)
+}
+
+/** Where a photo's downscaled preview is served from, for both pending and sent photos. */
+export function triagePhotoPreviewUrl(conversationId: string, photoId: string): string {
+  return `${BASE}/conversations/${conversationId}/photos/${photoId}/preview`
 }
 
 interface SseFrame {
@@ -62,13 +83,14 @@ function parseFrame(frame: string): SseFrame | null {
 export async function streamAssistReply(
   conversationId: string,
   text: string,
+  photoIds: string[],
   onToken: (token: string) => void,
 ): Promise<TriageTurnResult> {
   const response = await fetch(`${BASE}/conversations/${conversationId}/messages`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, photo_ids: photoIds }),
   })
 
   if (!response.ok) {

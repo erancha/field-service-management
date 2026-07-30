@@ -15,9 +15,10 @@ How the test suite is organized and how to run it.
 Each argument is a target with an optional `=mode`, and targets combine. The `=unit` mode applies to
 the frontend only: it keeps the typecheck but skips oxlint and the vite build for a faster inner loop.
 
-Backend integration tests start ephemeral PostgreSQL containers via testcontainers<sup>(1)</sup>, so
-**Docker must be running**. On first run the script provisions the backend virtualenv and installs frontend
-dependencies. The same gates run in CI (`.github/workflows/ci.yml`).
+Backend integration tests start ephemeral PostgreSQL and MinIO containers via
+testcontainers<sup>(1)</sup>, so **Docker must be running**. On first run the script provisions the
+backend virtualenv and installs frontend dependencies. The same gates run in CI
+(`.github/workflows/ci.yml`).
 
 ## Backend (`backend/tests`, pytest)
 
@@ -40,7 +41,9 @@ and each application service's behavior. Fast and deterministic.
 Run against a **real PostgreSQL** instance started per test module via testcontainers
 (`tests/<context>/adapters`). They verify the SQLAlchemy repositories, the Alembic migrations, and the
 database-enforced invariants — most importantly the GiST `EXCLUDE`<sup>(3)</sup> no-double-booking constraint, which
-can only be proven against a real Postgres, not a fake.
+can only be proven against a real Postgres, not a fake. The assist context's `MinioPhotoStore`
+adapter is verified the same way, round-tripping bytes against a real **MinIO** container
+(`tests/assist/adapters/test_photo_store.py`).
 
 ### API tests
 End-to-end HTTP tests (`tests/platform/api`) drive the FastAPI app through Starlette's `TestClient`

@@ -1,20 +1,23 @@
 """The chat adapter maps domain turns onto LangChain messages; no provider is contacted."""
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from fsm.assist.adapters.chat_model import LangChainChatModel
-from fsm.assist.domain.conversation import Message, MessageRole
+from fsm.assist.domain.conversation import Message, MessageRole, Photo
 from fsm.assist.ports.chat_model import ChatModel, TriageSummary
+from fsm.assist.ports.photo_store import preview_key
+from tests.assist.fakes import FakePhotoStore
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
 
 
-def message(role: MessageRole, text: str) -> Message:
-    return Message(id=uuid.uuid4(), role=role, text=text, created_at=NOW)
+def message(role: MessageRole, text: str, photos: tuple[Photo, ...] = ()) -> Message:
+    return Message(id=uuid.uuid4(), role=role, text=text, created_at=NOW, photos=photos)
 
 
 class RecordingModel:
@@ -84,6 +87,72 @@ def test_stream_sends_the_system_prompt_first_then_the_turns_in_role_order() -> 
     ]
 
 
+def test_a_photo_message_becomes_image_blocks_before_its_text() -> None:
+    store = FakePhotoStore()
+    photo = Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=3,
+        object_key="photos/p1",
+        created_at=NOW,
+    )
+    store.put(preview_key(photo.object_key), b"tiny", "image/jpeg")
+    model = RecordingModel()
+    adapter = LangChainChatModel(model, photo_store=store)
+
+    list(adapter.stream("sys", [message(MessageRole.CUSTOMER, "Here it is.", photos=(photo,))]))
+
+    sent = model.streamed[0][1]
+    assert sent.content == [
+        {
+            "type": "image",
+            "source_type": "base64",
+            "mime_type": "image/jpeg",
+            "data": base64.b64encode(b"tiny").decode("ascii"),
+        },
+        {"type": "text", "text": "Here it is."},
+    ]
+
+
+def test_a_photo_only_message_has_no_text_block() -> None:
+    """Anthropic rejects an empty text block, so a photo-only turn omits it entirely."""
+    store = FakePhotoStore()
+    photo = Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=3,
+        object_key="photos/p1",
+        created_at=NOW,
+    )
+    store.put(preview_key(photo.object_key), b"tiny", "image/jpeg")
+    model = RecordingModel()
+    adapter = LangChainChatModel(model, photo_store=store)
+
+    list(adapter.stream("sys", [message(MessageRole.CUSTOMER, "", photos=(photo,))]))
+
+    sent = model.streamed[0][1]
+    assert sent.content == [
+        {
+            "type": "image",
+            "source_type": "base64",
+            "mime_type": "image/jpeg",
+            "data": base64.b64encode(b"tiny").decode("ascii"),
+        },
+    ]
+
+
+def test_a_plain_text_message_stays_a_plain_string() -> None:
+    model = RecordingModel()
+    adapter = LangChainChatModel(model, photo_store=FakePhotoStore())
+
+    list(adapter.stream("sys", [message(MessageRole.CUSTOMER, "Broken.")]))
+
+    sent = model.streamed[0][1]
+    assert sent.content == "Broken."
+
+
 def test_stream_forwards_only_the_text_blocks_of_a_multi_block_chunk() -> None:
     """Providers emit reasoning and tool-call blocks alongside text; only text is the reply."""
     model = RecordingModel(
@@ -132,6 +201,29 @@ def test_summarize_sends_the_system_prompt_then_the_exchange_as_one_labelled_tra
         (SystemMessage, "summarize"),
         (HumanMessage, "Customer: Broken.\n\nAssistant: Since when?"),
     ]
+
+
+def test_summarize_renders_a_photo_only_turn_as_a_placeholder() -> None:
+    photo = Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=3,
+        object_key="photos/p1",
+        created_at=NOW,
+    )
+    model = RecordingModel()
+
+    LangChainChatModel(model).summarize(
+        "summarize",
+        [
+            message(MessageRole.CUSTOMER, "", photos=(photo,)),
+            message(MessageRole.ASSISTANT, "I see the leak."),
+        ],
+    )
+
+    sent = model.structured_input[0]
+    assert sent[1].content == "Customer: [photo]\n\nAssistant: I see the leak."
 
 
 def test_summarize_does_not_end_the_request_on_an_assistant_turn() -> None:

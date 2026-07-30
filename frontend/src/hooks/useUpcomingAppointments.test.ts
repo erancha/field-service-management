@@ -10,7 +10,7 @@ const ITEM = {
   id: 'a1', service_call_id: 's1', technician_id: 't1', customer_id: 'c1',
   start: '2099-06-01T09:00:00Z', end: '2099-06-01T11:00:00Z', status: 'SCHEDULED',
   details: null, problem: 'Fix boiler', technician_name: 'Tara', customer_name: 'Cara', address: '12 Main St',
-  created_at: '2099-05-31T09:00:00Z',
+  created_at: '2099-05-31T09:00:00Z', photos: [],
 }
 
 describe('useUpcomingAppointments', () => {

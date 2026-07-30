@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiGet, apiPatch, apiUpload, ApiException } from './client.ts'
+import { apiDelete, apiGet, apiPatch, apiUpload, ApiException } from './client.ts'
 import { updateProfile } from './auth.ts'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -49,6 +49,14 @@ describe('handleResponse on an empty body', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })))
 
     await expect(apiGet('/auth/me')).rejects.toBeInstanceOf(ApiException)
+  })
+})
+
+describe('apiDelete', () => {
+  it('resolves with no value on a body-less 204 response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    await expect(apiDelete('/api/kb/documents/d1')).resolves.toBeUndefined()
   })
 })
 

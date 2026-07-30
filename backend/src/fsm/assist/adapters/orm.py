@@ -93,3 +93,33 @@ class AssistMessageRow(Base):
     __table_args__ = (
         Index("ix_assist_message_conversation_seq", "conversation_id", "seq", unique=True),
     )
+
+
+class AssistPhotoRow(Base):
+    """Metadata for one customer photo; the bytes live in object storage under object_key.
+
+    message_id is NULL until the customer sends the turn that carries the photo; binding it is
+    what makes the photo part of the transcript and, on escalation, of the service call.
+    """
+
+    __tablename__ = "assist_photo"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, nullable=False)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("assist_conversation.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assist_message.id", ondelete="CASCADE"), nullable=True
+    )
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    media_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ix_assist_photo_conversation", "conversation_id"),
+        Index("ix_assist_photo_message", "message_id"),
+    )

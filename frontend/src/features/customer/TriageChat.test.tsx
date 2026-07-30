@@ -11,16 +11,28 @@ vi.mock('../../api/assist.ts', () => ({
   endConversation: vi.fn(),
   listPastConversations: vi.fn(),
   fetchConversation: vi.fn(),
+  uploadTriagePhoto: vi.fn(),
+  deleteTriagePhoto: vi.fn(),
+  triagePhotoPreviewUrl: (conversationId: string, photoId: string) =>
+    `/api/assist/conversations/${conversationId}/photos/${photoId}/preview`,
 }))
 
-const { startConversation, streamAssistReply, endConversation, listPastConversations, fetchConversation } =
-  await import('../../api/assist.ts')
+const {
+  startConversation,
+  streamAssistReply,
+  endConversation,
+  listPastConversations,
+  fetchConversation,
+  uploadTriagePhoto,
+  deleteTriagePhoto,
+} = await import('../../api/assist.ts')
 
 const EMPTY_CONVERSATION: TriageConversation = {
   id: 'c1',
   status: 'ACTIVE',
   service_call_id: null,
   messages: [],
+  pending_photos: [],
 }
 
 beforeEach(() => {
@@ -30,6 +42,9 @@ beforeEach(() => {
   vi.mocked(fetchConversation).mockReset()
   vi.mocked(listPastConversations).mockReset()
   vi.mocked(listPastConversations).mockResolvedValue([])
+  vi.mocked(uploadTriagePhoto).mockReset()
+  vi.mocked(deleteTriagePhoto).mockReset()
+  vi.mocked(deleteTriagePhoto).mockResolvedValue(undefined)
 })
 
 describe('TriageChat', () => {
@@ -50,7 +65,7 @@ describe('TriageChat', () => {
 
   it('shows the customer turn immediately and the reply as it streams', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, onToken) => {
+    vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
       onToken('Is ')
       onToken('it lit?')
       return { status: 'ACTIVE', service_call: null }
@@ -197,6 +212,7 @@ describe('TriageChat', () => {
       status: 'SOLVED',
       service_call_id: null,
       messages: [{ id: 'm1', role: 'ASSISTANT', text: 'Is the pilot light on?', created_at: '' }],
+      pending_photos: [],
     })
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null })
@@ -279,5 +295,190 @@ describe('TriageChat', () => {
     await userEvent.click(screen.getByRole('button', { name: /try again/i }))
 
     expect(await screen.findByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('uploads a valid photo and sends its id with the next turn', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+    await userEvent.type(screen.getByRole('textbox'), 'Here it is.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    expect(streamAssistReply).toHaveBeenCalledWith('c1', 'Here it is.', ['p1'], expect.any(Function))
+    const sentPhoto = await screen.findByAltText('plate.jpg')
+    expect(sentPhoto).toHaveAttribute('src', '/api/assist/conversations/c1/photos/p1/preview')
+  })
+
+  it('shows an upload note while a photo is uploading and a sent-with-next note once it lands', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    let resolveUpload: (photo: { id: string; filename: string; size_bytes: number }) => void
+    vi.mocked(uploadTriagePhoto).mockReturnValue(
+      new Promise((resolve) => { resolveUpload = resolve }),
+    )
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+
+    expect(await screen.findByText('Uploading photo…')).toBeInTheDocument()
+    resolveUpload!({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
+
+    expect(await screen.findByText('Attached — will be sent with your next message.'))
+      .toBeInTheDocument()
+  })
+
+  it('rejects an oversized photo before any upload', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const oversized = new File(['x'.repeat(5 * 1024 * 1024 + 1)], 'big.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), oversized)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/5 MB or less/i)
+    expect(uploadTriagePhoto).not.toHaveBeenCalled()
+  })
+
+  it('rejects a non-image file before any upload', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    // The composer's own type check is the target here, not the input's browser-level `accept`
+    // filter (which user-event applies by default and would silently drop the file beforehand).
+    const user = userEvent.setup({ applyAccept: false })
+    const notes = new File(['x'], 'notes.txt', { type: 'text/plain' })
+    await user.upload(screen.getByLabelText(/attach photos/i), notes)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/JPEG, PNG, or WebP/i)
+    expect(uploadTriagePhoto).not.toHaveBeenCalled()
+  })
+
+  it('rejects attaching beyond five photos', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const files = Array.from({ length: 6 }, (_, i) =>
+      new File(['x'], `photo${i}.jpg`, { type: 'image/jpeg' }))
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), files)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/5/)
+    expect(uploadTriagePhoto).not.toHaveBeenCalled()
+  })
+
+  it("shows the server's rejection message on upload failure", async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(uploadTriagePhoto).mockRejectedValue(new ApiException(409, 'This conversation already has 5 photos.'))
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This conversation already has 5 photos.')
+  })
+
+  it('clears pending photos after a delivered turn and keeps them on failure', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+    expect(await screen.findByRole('button', { name: /remove plate.jpg/i })).toBeInTheDocument()
+
+    await userEvent.type(screen.getByRole('textbox'), 'Here it is.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /remove plate.jpg/i })).not.toBeInTheDocument())
+
+    vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p2', filename: 'leak.jpg', size_bytes: 3 })
+    vi.mocked(streamAssistReply).mockRejectedValue(new Error('provider down'))
+    const nextPhoto = new File(['x'], 'leak.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(screen.getByLabelText(/attach photos/i), nextPhoto)
+    expect(await screen.findByRole('button', { name: /remove leak.jpg/i })).toBeInTheDocument()
+
+    await userEvent.type(screen.getByRole('textbox'), 'Still leaking.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    await screen.findByRole('alert')
+
+    expect(screen.getByRole('button', { name: /remove leak.jpg/i })).toBeInTheDocument()
+  })
+
+  it('restores pending photos left over from before a reload', async () => {
+    vi.mocked(startConversation).mockResolvedValue({
+      ...EMPTY_CONVERSATION,
+      pending_photos: [{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }],
+    })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+
+    expect(await screen.findByText('Attached — will be sent with your next message.'))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /remove plate.jpg/i })).toBeInTheDocument()
+  })
+
+  it('removes a pending photo on the server when the customer drops it', async () => {
+    vi.mocked(startConversation).mockResolvedValue({
+      ...EMPTY_CONVERSATION,
+      pending_photos: [{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }],
+    })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    const removeButton = await screen.findByRole('button', { name: /remove plate.jpg/i })
+
+    await userEvent.click(removeButton)
+
+    expect(deleteTriagePhoto).toHaveBeenCalledWith('c1', 'p1')
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /remove plate.jpg/i })).not.toBeInTheDocument())
+  })
+
+  it('keeps the pending photo and reports an error when removal fails', async () => {
+    vi.mocked(startConversation).mockResolvedValue({
+      ...EMPTY_CONVERSATION,
+      pending_photos: [{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }],
+    })
+    vi.mocked(deleteTriagePhoto).mockRejectedValue(new Error('offline'))
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    const removeButton = await screen.findByRole('button', { name: /remove plate.jpg/i })
+
+    await userEvent.click(removeButton)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be removed/i)
+    expect(screen.getByRole('button', { name: /remove plate.jpg/i })).toBeInTheDocument()
+  })
+
+  it('lets a photo-only turn be sent with an empty draft', async () => {
+    vi.mocked(startConversation).mockResolvedValue({
+      ...EMPTY_CONVERSATION,
+      pending_photos: [{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }],
+    })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('button', { name: /remove plate.jpg/i })
+
+    const sendButton = screen.getByRole('button', { name: /^send$/i })
+    expect(sendButton).toBeEnabled()
+
+    await userEvent.click(sendButton)
+
+    expect(streamAssistReply).toHaveBeenCalledWith('c1', '', ['p1'], expect.any(Function))
+  })
+
+  it('disables send with neither a draft nor a pending photo', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled()
   })
 })

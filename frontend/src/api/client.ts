@@ -14,6 +14,9 @@ export class ApiException extends Error {
 
 function parseResponseBody<T>(status: number, ok: boolean, body: string): T {
   if (ok) {
+    // 204 No Content is a legal body-less success (e.g. a DELETE with nothing to return);
+    // any other status is expected to carry a JSON body.
+    if (status === 204) return undefined as T
     if (!body) {
       throw new ApiException(status, `HTTP ${status} with an empty response body`)
     }

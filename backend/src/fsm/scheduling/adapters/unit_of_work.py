@@ -15,10 +15,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from fsm.scheduling.adapters.outbox_repository import SqlAlchemyOutboxRepository
 from fsm.scheduling.adapters.repositories import (
     SqlAlchemyAppointmentRepository,
+    SqlAlchemyServiceCallAttachmentRepository,
     SqlAlchemyServiceCallRepository,
 )
 from fsm.scheduling.ports.outbox import OutboxRepository
-from fsm.scheduling.ports.repositories import AppointmentRepository, ServiceCallRepository
+from fsm.scheduling.ports.repositories import (
+    AppointmentRepository,
+    ServiceCallAttachmentRepository,
+    ServiceCallRepository,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -30,6 +35,7 @@ class SqlAlchemyUnitOfWork:
     # plain attributes are invariant. Bound to fresh repositories on every __enter__.
     service_calls: ServiceCallRepository
     appointments: AppointmentRepository
+    attachments: ServiceCallAttachmentRepository
     outbox: OutboxRepository
 
     def __init__(self, session_factory: sessionmaker) -> None:
@@ -42,6 +48,7 @@ class SqlAlchemyUnitOfWork:
         self._committed = False
         self.service_calls = SqlAlchemyServiceCallRepository(self._session)
         self.appointments = SqlAlchemyAppointmentRepository(self._session)
+        self.attachments = SqlAlchemyServiceCallAttachmentRepository(self._session)
         self.outbox = SqlAlchemyOutboxRepository(self._session)
         return self
 

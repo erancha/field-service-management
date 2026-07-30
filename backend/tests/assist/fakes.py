@@ -10,15 +10,18 @@ from fsm.assist.domain.conversation import (
     ConversationSummary,
     Message,
     MessageRole,
+    Photo,
 )
 from fsm.assist.domain.document import KbDocument
 from fsm.assist.domain.errors import (
     ConversationAlreadyOpen,
     ConversationNotFound,
     DocumentNotFound,
+    PhotoNotFound,
 )
 from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.document_index import SearchHit
+from fsm.assist.ports.image_processing import InspectedPhoto
 from fsm.assist.ports.service_calls import OpenedServiceCall
 
 
@@ -195,8 +198,86 @@ class FakeConversationRepository:
 class FakeServiceCallOpener:
     def __init__(self) -> None:
         self.opened: list[OpenedServiceCall] = []
+        self.opened_photos: list[list[Photo]] = []
 
-    def open(self, customer_id: uuid.UUID, description: str) -> OpenedServiceCall:
+    def open(
+        self, customer_id: uuid.UUID, description: str, photos: Sequence[Photo] = ()
+    ) -> OpenedServiceCall:
         call = OpenedServiceCall(id=uuid.uuid4(), description=description)
         self.opened.append(call)
+        self.opened_photos.append(list(photos))
         return call
+
+
+class FakePhotoStore:
+    def __init__(self) -> None:
+        self.objects: dict[str, tuple[bytes, str]] = {}
+        self.removed: list[str] = []
+
+    def put(self, key: str, content: bytes, media_type: str) -> None:
+        self.objects[key] = (content, media_type)
+
+    def get(self, key: str) -> bytes:
+        return self.objects[key][0]
+
+    def remove(self, keys: Sequence[str]) -> None:
+        for key in keys:
+            del self.objects[key]
+            self.removed.append(key)
+
+
+class FakePreviewMaker:
+    def prepare(self, content: bytes) -> InspectedPhoto:
+        return InspectedPhoto(media_type="image/jpeg", preview_jpeg=b"preview:" + content)
+
+
+class FakePhotoRepository:
+    def __init__(self) -> None:
+        self.rows: dict[uuid.UUID, tuple[uuid.UUID, Photo]] = {}  # photo id -> (conversation, photo)
+        self.bound: dict[uuid.UUID, uuid.UUID] = {}  # photo id -> message id
+
+    def add(self, conversation_id: uuid.UUID, photo: Photo) -> None:
+        self.rows[photo.id] = (conversation_id, photo)
+
+    def count_for_conversation(self, conversation_id: uuid.UUID) -> int:
+        return sum(1 for cid, _ in self.rows.values() if cid == conversation_id)
+
+    def get_unbound(
+        self, conversation_id: uuid.UUID, photo_ids: Sequence[uuid.UUID]
+    ) -> list[Photo]:
+        photos = []
+        for photo_id in photo_ids:
+            row = self.rows.get(photo_id)
+            if row is None or row[0] != conversation_id or photo_id in self.bound:
+                raise PhotoNotFound(str(photo_id))
+            photos.append(row[1])
+        return photos
+
+    def bind(self, message_id: uuid.UUID, photo_ids: Sequence[uuid.UUID]) -> None:
+        for photo_id in photo_ids:
+            self.bound[photo_id] = message_id
+
+    def list_unbound(self, conversation_id: uuid.UUID) -> list[Photo]:
+        return [
+            photo
+            for photo_id, (cid, photo) in self.rows.items()
+            if cid == conversation_id and photo_id not in self.bound
+        ]
+
+    def delete_unbound(self, conversation_id: uuid.UUID) -> None:
+        for photo_id in [
+            pid
+            for pid, (cid, _) in self.rows.items()
+            if cid == conversation_id and pid not in self.bound
+        ]:
+            del self.rows[photo_id]
+
+    def get(self, conversation_id: uuid.UUID, photo_id: uuid.UUID) -> Photo:
+        row = self.rows.get(photo_id)
+        if row is None or row[0] != conversation_id:
+            raise PhotoNotFound(str(photo_id))
+        return row[1]
+
+    def delete(self, photo_id: uuid.UUID) -> None:
+        del self.rows[photo_id]
+        self.bound.pop(photo_id, None)

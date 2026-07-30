@@ -92,3 +92,11 @@ export async function fetchUpcomingAppointments(
     limit: String(params.limit),
   })
 }
+
+export function servicePhotoUrl(
+  serviceCallId: string,
+  photoId: string,
+  variant: 'original' | 'preview',
+): string {
+  return `/api/service-calls/${serviceCallId}/photos/${photoId}?variant=${variant}`
+}

@@ -7,7 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from fsm.assist.adapters.orm import AssistConversationRow, AssistMessageRow
+from fsm.assist.adapters.orm import AssistConversationRow, AssistMessageRow, AssistPhotoRow
+from fsm.assist.adapters.photo_repository import _to_photo
 from fsm.assist.domain.conversation import (
     OPENING_LINE_CHARS,
     Conversation,
@@ -15,6 +16,7 @@ from fsm.assist.domain.conversation import (
     ConversationSummary,
     Message,
     MessageRole,
+    Photo,
 )
 from fsm.assist.domain.errors import ConversationAlreadyOpen, ConversationNotFound
 
@@ -158,12 +160,27 @@ class SqlAlchemyConversationRepository:
             .where(AssistMessageRow.conversation_id == row.id)
             .order_by(AssistMessageRow.seq)
         )
+        photo_stmt = (
+            select(AssistPhotoRow)
+            .where(
+                AssistPhotoRow.conversation_id == row.id,
+                AssistPhotoRow.message_id.is_not(None),
+            )
+            .order_by(AssistPhotoRow.created_at, AssistPhotoRow.id)
+        )
+        # Key: message id. Value: that message's photos in upload order.
+        photos_by_message: dict[uuid.UUID, list[Photo]] = {}
+        for photo_row in self._session.execute(photo_stmt).scalars():
+            # photo_stmt's WHERE clause guarantees message_id is set for every row here.
+            assert photo_row.message_id is not None
+            photos_by_message.setdefault(photo_row.message_id, []).append(_to_photo(photo_row))
         messages = [
             Message(
                 id=m.id,
                 role=MessageRole(m.role),
                 text=m.text,
                 created_at=m.created_at,
+                photos=tuple(photos_by_message.get(m.id, ())),
             )
             for m in self._session.execute(stmt).scalars().all()
         ]

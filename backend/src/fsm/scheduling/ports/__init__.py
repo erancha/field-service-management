@@ -6,7 +6,11 @@ that owns a transaction. Every protocol re-exported here is @runtime_checkable s
 adapters can be verified with isinstance at startup or in tests.
 """
 
-from fsm.scheduling.ports.repositories import AppointmentRepository, ServiceCallRepository
+from fsm.scheduling.ports.repositories import (
+    AppointmentRepository,
+    ServiceCallAttachmentRepository,
+    ServiceCallRepository,
+)
 from fsm.scheduling.ports.calendar import CalendarPort
 from fsm.scheduling.ports.notifications import NotificationPort
 from fsm.scheduling.ports.unit_of_work import UnitOfWork
@@ -15,6 +19,7 @@ from fsm.scheduling.ports.outbox import OutboxEntry, OutboxOperation, OutboxRepo
 __all__ = [
     "ServiceCallRepository",
     "AppointmentRepository",
+    "ServiceCallAttachmentRepository",
     "CalendarPort",
     "NotificationPort",
     "UnitOfWork",

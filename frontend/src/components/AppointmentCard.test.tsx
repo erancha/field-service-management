@@ -7,6 +7,8 @@ import type { Appointment } from '../api/types.ts'
 
 vi.mock('../api/scheduling.ts', () => ({
   fetchAvailability: vi.fn(),
+  servicePhotoUrl: (serviceCallId: string, photoId: string, variant: string) =>
+    `/api/service-calls/${serviceCallId}/photos/${photoId}?variant=${variant}`,
 }))
 
 const SLOT = { start: '2026-07-06T09:00:00+03:00', end: '2026-07-06T10:00:00+03:00' }
@@ -211,6 +213,35 @@ describe('AppointmentCard facts', () => {
       new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
     expect(screen.getByText(asShown(appointment.start))).toBeInTheDocument()
     expect(screen.getByText(asShown(appointment.end))).toBeInTheDocument()
+  })
+})
+
+describe('AppointmentCard photos', () => {
+  it('renders each photo as a preview thumbnail linking to the original download', () => {
+    const appointment = makeAppointment()
+    render(
+      <AppointmentCard
+        appointment={appointment}
+        photos={[{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }]}
+      />,
+    )
+
+    const image = screen.getByRole('img', { name: 'plate.jpg' })
+    expect(image).toHaveAttribute(
+      'src',
+      `/api/service-calls/${appointment.service_call_id}/photos/p1?variant=preview`,
+    )
+    const link = image.closest('a')
+    expect(link).toHaveAttribute(
+      'href',
+      `/api/service-calls/${appointment.service_call_id}/photos/p1?variant=original`,
+    )
+    expect(link).toHaveAttribute('download', 'plate.jpg')
+  })
+
+  it('renders no gallery without photos', () => {
+    const { container } = render(<AppointmentCard appointment={makeAppointment()} />)
+    expect(container.querySelector('.appointment-card__photos')).toBeNull()
   })
 })
 

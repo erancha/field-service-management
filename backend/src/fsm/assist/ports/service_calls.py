@@ -6,8 +6,11 @@ by the composition root over the scheduling context.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+from fsm.assist.domain.conversation import Photo
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,9 @@ class OpenedServiceCall:
 
 @runtime_checkable
 class ServiceCallOpener(Protocol):
-    def open(self, customer_id: uuid.UUID, description: str) -> OpenedServiceCall:
-        """Open a service call for the customer; the caller commits the transaction."""
+    def open(
+        self, customer_id: uuid.UUID, description: str, photos: Sequence[Photo] = ()
+    ) -> OpenedServiceCall:
+        """Open a service call for the customer, carrying the chat's sent photos;
+        the caller commits the transaction."""
         ...

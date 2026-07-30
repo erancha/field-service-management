@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -21,11 +21,14 @@ from fsm.assist.domain.conversation import (
     ConversationSummary,
     Message,
     MessageRole,
+    Photo,
 )
 from fsm.assist.domain.errors import ConversationAlreadyOpen
 from fsm.assist.ports.chat_model import ChatModel
 from fsm.assist.ports.conversation_repository import ConversationRepository
 from fsm.assist.ports.document_index import DocumentIndex
+from fsm.assist.ports.photo_repository import PhotoRepository
+from fsm.assist.ports.photo_store import PhotoStore, photo_keys
 from fsm.assist.ports.service_calls import ServiceCallOpener
 
 
@@ -102,6 +105,8 @@ class TriageService:
         document_index: DocumentIndex | None = None,
         clock: Callable[[], datetime] = _utc_now,
         id_factory: Callable[[], uuid.UUID] = uuid.uuid4,
+        photos: PhotoRepository | None = None,
+        photo_store: PhotoStore | None = None,
     ) -> None:
         self._conversations = conversations
         self._chat_model = chat_model
@@ -109,6 +114,8 @@ class TriageService:
         self._document_index = document_index
         self._clock = clock
         self._new_id = id_factory
+        self._photos = photos
+        self._photo_store = photo_store
         self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
 
     def start(self, customer_id: uuid.UUID) -> Conversation:
@@ -125,6 +132,7 @@ class TriageService:
                 return existing
             existing.mark_abandoned(now)
             self._conversations.save(existing)
+            self._discard_photos(existing)
 
         conversation = Conversation(
             id=self._new_id(),
@@ -154,6 +162,7 @@ class TriageService:
         conversation = self._conversations.get(conversation_id, customer_id)
         conversation.mark_abandoned(self._clock())
         self._conversations.save(conversation)
+        self._discard_photos(conversation)
         return conversation
 
     def history(self, customer_id: uuid.UUID) -> list[ConversationSummary]:
@@ -165,7 +174,11 @@ class TriageService:
         return self._outcome
 
     def reply(
-        self, conversation_id: uuid.UUID, customer_id: uuid.UUID, text: str
+        self,
+        conversation_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        text: str,
+        photo_ids: Sequence[uuid.UUID] = (),
     ) -> Iterator[str]:
         """Stream the assistant's answer, then record the turn and apply any ending.
 
@@ -178,11 +191,16 @@ class TriageService:
         conversation = self._conversations.get(conversation_id, customer_id)
         conversation.require_open()
         self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
+        attached: tuple[Photo, ...] = ()
+        if photo_ids:
+            assert self._photos is not None, "photo turn without a photo repository"
+            attached = tuple(self._photos.get_unbound(conversation_id, photo_ids))
         question = Message(
             id=self._new_id(),
             role=MessageRole.CUSTOMER,
             text=text,
             created_at=self._clock(),
+            photos=attached,
         )
 
         if self._customer_turns(conversation) + 1 >= MAX_CUSTOMER_TURNS:
@@ -235,7 +253,9 @@ class TriageService:
         elif marker == ESCALATE_MARKER:
             summary = self._chat_model.summarize(SUMMARY_SYSTEM_PROMPT, conversation.messages)
             description = summary.render()
-            opened = self._service_calls.open(conversation.customer_id, description)
+            opened = self._service_calls.open(
+                conversation.customer_id, description, photos=self._sent_photos(conversation)
+            )
             conversation.mark_escalated(opened.id, now)
             self._outcome = TurnOutcome(
                 status=ConversationStatus.ESCALATED,
@@ -246,3 +266,46 @@ class TriageService:
             self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
 
         self._conversations.save(conversation)
+        if question.photos and self._photos is not None:
+            self._photos.bind(question.id, [photo.id for photo in question.photos])
+        if marker in (SOLVED_MARKER, CLOSED_MARKER):
+            self._discard_photos(conversation)
+        elif marker == ESCALATE_MARKER:
+            self._discard_unbound(conversation.id)
+
+    @staticmethod
+    def _sent_photos(conversation: Conversation) -> tuple[Photo, ...]:
+        return tuple(
+            photo
+            for message in conversation.messages
+            if message.role is MessageRole.CUSTOMER
+            for photo in message.photos
+        )
+
+    def _discard_photos(self, conversation: Conversation) -> None:
+        """A conversation that ended without a technician leaves nothing in object storage.
+
+        Metadata rows of sent photos stay so the transcript still names what was attached;
+        never-sent uploads lose both their objects and their rows."""
+        if self._photos is None or self._photo_store is None:
+            return
+        unbound = self._photos.list_unbound(conversation.id)
+        keys = [
+            key
+            for photo in (*self._sent_photos(conversation), *unbound)
+            for key in photo_keys(photo.object_key)
+        ]
+        if keys:
+            self._photo_store.remove(keys)
+        self._photos.delete_unbound(conversation.id)
+
+    def _discard_unbound(self, conversation_id: uuid.UUID) -> None:
+        """Uploads the customer never sent do not follow the escalation to the service call."""
+        if self._photos is None or self._photo_store is None:
+            return
+        unbound = self._photos.list_unbound(conversation_id)
+        if unbound:
+            self._photo_store.remove(
+                [key for photo in unbound for key in photo_keys(photo.object_key)]
+            )
+            self._photos.delete_unbound(conversation_id)

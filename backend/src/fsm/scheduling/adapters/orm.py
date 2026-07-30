@@ -8,7 +8,17 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time
 
-from sqlalchemy import Date, Index, Integer, PrimaryKeyConstraint, SmallInteger, String, Text, Time
+from sqlalchemy import (
+    Date,
+    ForeignKey,
+    Index,
+    Integer,
+    PrimaryKeyConstraint,
+    SmallInteger,
+    String,
+    Text,
+    Time,
+)
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -137,3 +147,23 @@ class WorkingHoursRow(Base):
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
 
 
+class ServiceCallAttachmentRow(Base):
+    """A customer photo carried from triage onto the call; bytes live in object storage.
+
+    Rows die with the service call via the FK cascade; the objects under object_key must be
+    removed by whichever code path deletes the call, since the database cannot reach them.
+    """
+
+    __tablename__ = "service_call_attachment"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, nullable=False)
+    service_call_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("service_call.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    media_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+    __table_args__ = (Index("ix_service_call_attachment_call", "service_call_id"),)

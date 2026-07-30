@@ -95,6 +95,12 @@ class AppointmentResponse(BaseModel):
     updated_at: datetime
 
 
+class ServiceCallPhotoResponse(BaseModel):
+    id: UUID
+    filename: str
+    size_bytes: int
+
+
 class UpcomingAppointmentResponse(BaseModel):
     id: UUID
     service_call_id: UUID
@@ -108,6 +114,7 @@ class UpcomingAppointmentResponse(BaseModel):
     technician_name: str
     customer_name: str
     address: str | None
+    photos: list[ServiceCallPhotoResponse]
     created_at: datetime
 
 

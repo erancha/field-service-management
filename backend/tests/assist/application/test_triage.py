@@ -26,13 +26,18 @@ from fsm.assist.domain.conversation import (
     ConversationStatus,
     Message,
     MessageRole,
+    Photo,
 )
-from fsm.assist.domain.errors import ConversationClosed, ConversationNotFound
+from fsm.assist.domain.errors import ConversationClosed, ConversationNotFound, PhotoNotFound
 from fsm.assist.ports.document_index import SearchHit
+from fsm.assist.ports.photo_repository import PhotoRepository
+from fsm.assist.ports.photo_store import PhotoStore, photo_keys
 from tests.assist.fakes import (
     FakeChatModel,
     FakeConversationRepository,
     FakeDocumentIndex,
+    FakePhotoRepository,
+    FakePhotoStore,
     FakeServiceCallOpener,
 )
 
@@ -96,6 +101,8 @@ def make_service(
     *,
     replies: list[str] | None = None,
     now: datetime = NOW,
+    photos: PhotoRepository | None = None,
+    photo_store: PhotoStore | None = None,
 ) -> tuple[TriageService, FakeConversationRepository, FakeChatModel, FakeServiceCallOpener]:
     conversations = FakeConversationRepository()
     chat_model = FakeChatModel(replies=replies)
@@ -105,12 +112,35 @@ def make_service(
         chat_model=chat_model,
         service_calls=openers,
         clock=lambda: now,
+        photos=photos,
+        photo_store=photo_store,
     )
     return service, conversations, chat_model, openers
 
 
-def drain(service: TriageService, conversation_id: uuid.UUID, text: str) -> str:
-    return "".join(service.reply(conversation_id, CUSTOMER, text))
+def drain(
+    service: TriageService,
+    conversation_id: uuid.UUID,
+    text: str,
+    photo_ids: Sequence[uuid.UUID] = (),
+) -> str:
+    return "".join(service.reply(conversation_id, CUSTOMER, text, photo_ids=photo_ids))
+
+
+def make_photo(object_key: str = "photos/x") -> Photo:
+    return Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=10,
+        object_key=object_key,
+        created_at=NOW,
+    )
+
+
+def store_photo_objects(photo_store: FakePhotoStore, photo: Photo) -> None:
+    for key in photo_keys(photo.object_key):
+        photo_store.put(key, b"content", photo.media_type)
 
 
 def test_start_creates_an_active_conversation() -> None:
@@ -519,3 +549,126 @@ def test_outcome_does_not_carry_the_previous_turns_ending_into_a_failed_turn() -
         drain(service, second.id, "A different problem.")
 
     assert service.outcome() == TurnOutcome(status=ConversationStatus.ACTIVE)
+
+
+def test_a_photo_turn_reaches_the_model_on_the_customer_message(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    service, _, chat_model, _ = make_service(
+        replies=["Can you tell me more?"], photos=fake_photo_repo, photo_store=fake_photo_store
+    )
+    convo = service.start(CUSTOMER)
+    photo = make_photo()
+    fake_photo_repo.add(convo.id, photo)
+
+    drain(service, convo.id, "Here is a photo.", photo_ids=[photo.id])
+
+    _, history = chat_model.stream_calls[-1]
+    last_customer_message = next(m for m in reversed(history) if m.role is MessageRole.CUSTOMER)
+    assert last_customer_message.photos == (photo,)
+    assert photo.id in fake_photo_repo.bound
+
+
+def test_a_bound_photo_cannot_be_sent_twice(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    service, _, _, _ = make_service(
+        replies=["Can you tell me more?", "Anything else?"],
+        photos=fake_photo_repo,
+        photo_store=fake_photo_store,
+    )
+    convo = service.start(CUSTOMER)
+    photo = make_photo()
+    fake_photo_repo.add(convo.id, photo)
+    drain(service, convo.id, "Here is a photo.", photo_ids=[photo.id])
+
+    with pytest.raises(PhotoNotFound):
+        drain(service, convo.id, "Here it is again.", photo_ids=[photo.id])
+
+
+def test_a_solved_conversation_leaves_no_objects_behind(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    service, _, _, _ = make_service(
+        replies=["Try this.", f"Glad that fixed it. {SOLVED_MARKER}"],
+        photos=fake_photo_repo,
+        photo_store=fake_photo_store,
+    )
+    convo = service.start(CUSTOMER)
+    sent_photo = make_photo("photos/sent")
+    unbound_photo = make_photo("photos/unbound")
+    fake_photo_repo.add(convo.id, sent_photo)
+    fake_photo_repo.add(convo.id, unbound_photo)
+    store_photo_objects(fake_photo_store, sent_photo)
+    store_photo_objects(fake_photo_store, unbound_photo)
+    drain(service, convo.id, "Here is a photo.", photo_ids=[sent_photo.id])
+
+    drain(service, convo.id, "That worked, thanks.")
+
+    assert fake_photo_store.objects == {}
+    assert fake_photo_repo.list_unbound(convo.id) == []
+    assert sent_photo.id in fake_photo_repo.rows
+    assert unbound_photo.id not in fake_photo_repo.rows
+
+
+def test_customer_end_discards_the_conversations_objects(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    service, _, _, _ = make_service(
+        replies=["Try this."], photos=fake_photo_repo, photo_store=fake_photo_store
+    )
+    convo = service.start(CUSTOMER)
+    sent_photo = make_photo("photos/sent")
+    unbound_photo = make_photo("photos/unbound")
+    fake_photo_repo.add(convo.id, sent_photo)
+    fake_photo_repo.add(convo.id, unbound_photo)
+    store_photo_objects(fake_photo_store, sent_photo)
+    store_photo_objects(fake_photo_store, unbound_photo)
+    drain(service, convo.id, "Here is a photo.", photo_ids=[sent_photo.id])
+
+    service.end(convo.id, CUSTOMER)
+
+    assert fake_photo_store.objects == {}
+
+
+def test_escalation_hands_the_sent_photos_to_the_opener_and_keeps_their_objects(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    service, _, _, openers = make_service(
+        replies=["Try this.", f"I will book a technician. {ESCALATE_MARKER}"],
+        photos=fake_photo_repo,
+        photo_store=fake_photo_store,
+    )
+    convo = service.start(CUSTOMER)
+    sent_photo = make_photo("photos/sent")
+    unbound_photo = make_photo("photos/unbound")
+    fake_photo_repo.add(convo.id, sent_photo)
+    fake_photo_repo.add(convo.id, unbound_photo)
+    store_photo_objects(fake_photo_store, sent_photo)
+    store_photo_objects(fake_photo_store, unbound_photo)
+    drain(service, convo.id, "Here is a photo.", photo_ids=[sent_photo.id])
+
+    drain(service, convo.id, "Still cold after all that.")
+
+    assert openers.opened_photos[-1] == [sent_photo]
+    for key in photo_keys(sent_photo.object_key):
+        assert key in fake_photo_store.objects
+    for key in photo_keys(unbound_photo.object_key):
+        assert key not in fake_photo_store.objects
+    assert sent_photo.id in fake_photo_repo.rows
+    assert unbound_photo.id not in fake_photo_repo.rows
+
+
+def test_the_turn_cap_escalation_carries_a_sent_photo_to_the_opener(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    service, _, _, openers = make_service(photos=fake_photo_repo, photo_store=fake_photo_store)
+    convo = service.start(CUSTOMER)
+    for turn in range(MAX_CUSTOMER_TURNS - 1):
+        drain(service, convo.id, f"Detail {turn}.")
+    photo = make_photo()
+    fake_photo_repo.add(convo.id, photo)
+
+    drain(service, convo.id, "Still not fixed.", photo_ids=[photo.id])
+
+    assert openers.opened_photos[-1] == [photo]

@@ -13,9 +13,9 @@
 #
 # The first 3 letters of a role are enough (tec / cus / bac); with no role, all roles run. Docker mode
 # builds the backend image and brings the role(s) up as internal compose services (alongside db,
-# redis, and a one-shot migration) behind an nginx edge that serves the SPA and publishes one localhost
-# port per role. Host mode provisions a virtualenv, starts PostgreSQL + Redis via Docker, applies
-# migrations, builds the frontend, and runs uvicorn per role directly on those ports.
+# redis, minio, and a one-shot migration) behind an nginx edge that serves the SPA and publishes one
+# localhost port per role. Host mode provisions a virtualenv, starts PostgreSQL + Redis + MinIO via
+# Docker, applies migrations, builds the frontend, and runs uvicorn per role directly on those ports.
 #
 # Bring the stack down or tail logs with scripts/docker-helper.sh (--stop / --logs / --ps).
 set -euo pipefail
@@ -99,7 +99,7 @@ set -a; . "$BACKEND/.env"; set +a
 # cannot reach across them. Point every role process at the published Redis unless .env overrides it.
 export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
 
-docker compose -f "$COMPOSE" up -d db redis
+docker compose -f "$COMPOSE" up -d db redis minio
 
 printf 'Waiting for PostgreSQL'
 for _ in $(seq 1 30); do

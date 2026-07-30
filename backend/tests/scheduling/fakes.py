@@ -36,6 +36,10 @@ class InMemoryServiceCallRepository:
     def save(self, service_call: ServiceCall) -> None:
         self._store[service_call.id] = service_call
 
+    def remove(self, service_call_id: UUID) -> None:
+        self.get(service_call_id)
+        del self._store[service_call_id]
+
 
 class InMemoryAppointmentRepository:
     """Dict-backed AppointmentRepository.
@@ -103,6 +107,9 @@ class InMemoryAppointmentRepository:
 
     def list_upcoming_all(self, now: datetime, limit: int) -> list[Appointment]:
         return self._upcoming(lambda a: True, now, limit)
+
+    def list_for_service_call(self, service_call_id: UUID) -> list[Appointment]:
+        return [a for a in self._store.values() if a.service_call_id == service_call_id]
 
 
 class _FakeHttp409(Exception):

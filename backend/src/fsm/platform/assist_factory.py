@@ -6,10 +6,12 @@ from langchain.embeddings import init_embeddings
 from langchain_core.embeddings import Embeddings
 
 from fsm.assist.adapters.chat_model import LangChainChatModel
+from fsm.assist.adapters.photo_store import MinioPhotoStore
 from fsm.assist.adapters.text_extraction import CompositeTextExtractor
 from fsm.assist.adapters.vector_index import PgVectorDocumentIndex
 from fsm.assist.ports.chat_model import ChatModel
 from fsm.assist.ports.document_index import DocumentIndex
+from fsm.assist.ports.photo_store import PhotoStore
 from fsm.assist.ports.text_extractor import TextExtractor
 from fsm.platform.config import Settings
 
@@ -37,7 +39,20 @@ def build_kb_index(settings: Settings) -> DocumentIndex | None:
     )
 
 
-def build_chat_model(settings: Settings) -> ChatModel | None:
+def build_photo_store(settings: Settings) -> PhotoStore | None:
+    """Photos ride the chat feature: no chat, no uploads, so no store."""
+    if not settings.assist_chat_enabled:
+        return None
+    return MinioPhotoStore(
+        endpoint=settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key.get_secret_value(),
+        bucket=settings.minio_bucket,
+        secure=settings.minio_secure,
+    )
+
+
+def build_chat_model(settings: Settings, photo_store: PhotoStore | None) -> ChatModel | None:
     """The triage chat model, or None when the feature is not configured.
 
     The API key is passed explicitly rather than through the environment, so the feature works
@@ -50,7 +65,7 @@ def build_chat_model(settings: Settings) -> ChatModel | None:
     key = {"openai": settings.openai_api_key, "anthropic": settings.anthropic_api_key}[provider]
     assert key is not None  # guaranteed by assist_chat_enabled
     model = init_chat_model(settings.assist_model, api_key=key.get_secret_value())
-    return LangChainChatModel(model)
+    return LangChainChatModel(model, photo_store=photo_store)
 
 
 def build_text_extractor() -> TextExtractor:

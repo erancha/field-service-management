@@ -7,6 +7,10 @@ import type { TriageConversationSummary } from '../../api/types.ts'
 vi.mock('../../api/assist.ts', () => ({
   listPastConversations: vi.fn(),
   fetchConversation: vi.fn(),
+  uploadTriagePhoto: vi.fn(),
+  deleteTriagePhoto: vi.fn(),
+  triagePhotoPreviewUrl: (conversationId: string, photoId: string) =>
+    `/api/assist/conversations/${conversationId}/photos/${photoId}/preview`,
 }))
 
 const { listPastConversations, fetchConversation } = await import('../../api/assist.ts')
@@ -65,6 +69,7 @@ describe('PastConversations', () => {
         { id: 'm1', role: 'CUSTOMER', text: 'No hot water since this morning.', created_at: '' },
         { id: 'm2', role: 'ASSISTANT', text: 'Is the pilot light on?', created_at: '' },
       ],
+      pending_photos: [],
     })
     render(<PastConversations refreshKey={0} collapseKey={0} />)
 
@@ -102,6 +107,7 @@ describe('PastConversations', () => {
       messages: [
         { id: 'm1', role: 'ASSISTANT', text: 'Is the pilot light on?', created_at: '' },
       ],
+      pending_photos: [],
     })
     const { rerender } = render(<PastConversations refreshKey={0} collapseKey={0} />)
     await userEvent.click(await screen.findByRole('button', { name: /past conversations/i }))
@@ -122,6 +128,32 @@ describe('PastConversations', () => {
     render(<PastConversations refreshKey={0} collapseKey={0} />)
 
     expect(await screen.findByText('Could not load your past conversations.')).toBeInTheDocument()
+  })
+
+  it('shows a photo chip rather than a thumbnail in an ended transcript', async () => {
+    vi.mocked(listPastConversations).mockResolvedValue([SOLVED])
+    vi.mocked(fetchConversation).mockResolvedValue({
+      id: 'c1',
+      status: 'SOLVED',
+      service_call_id: null,
+      messages: [
+        {
+          id: 'm1',
+          role: 'CUSTOMER',
+          text: 'No hot water since this morning.',
+          created_at: '',
+          photos: [{ id: 'p1', filename: 'boiler.jpg', size_bytes: 3 }],
+        },
+      ],
+      pending_photos: [],
+    })
+    render(<PastConversations refreshKey={0} collapseKey={0} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /past conversations/i }))
+    await userEvent.click(screen.getByRole('button', { name: /no hot water/i }))
+
+    expect(await screen.findByText('📷 boiler.jpg')).toBeInTheDocument()
+    expect(screen.queryByAltText('boiler.jpg')).not.toBeInTheDocument()
   })
 
   it('reports a transcript that cannot be loaded', async () => {

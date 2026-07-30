@@ -25,6 +25,14 @@ def test_prompt_forbids_every_unsafe_domain() -> None:
         assert hazard in prompt
 
 
+def test_prompt_tells_the_model_to_ask_for_and_read_photos() -> None:
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
+
+    assert "rating plate" in prompt
+    assert "model number" in prompt
+    assert "escalate" in prompt.split("photos:", 1)[1].split("safety boundary", 1)[0]
+
+
 def test_prompt_documents_every_control_marker() -> None:
     assert SOLVED_MARKER in TRIAGE_SYSTEM_PROMPT
     assert ESCALATE_MARKER in TRIAGE_SYSTEM_PROMPT

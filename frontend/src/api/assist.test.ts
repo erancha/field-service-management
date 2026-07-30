@@ -1,5 +1,13 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { listPastConversations, streamAssistReply } from './assist.ts'
+import * as client from './client.ts'
+
+vi.mock('./client.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof client>()
+  return { ...actual, apiUpload: vi.fn() }
+})
+
+const { listPastConversations, streamAssistReply, uploadTriagePhoto, deleteTriagePhoto, triagePhotoPreviewUrl } =
+  await import('./assist.ts')
 
 function sseResponse(frames: string[]): Response {
   const stream = new ReadableStream<Uint8Array>({
@@ -26,7 +34,7 @@ describe('streamAssistReply', () => {
     ])))
     const tokens: string[] = []
 
-    const result = await streamAssistReply('c1', 'It will not heat.', (t) => tokens.push(t))
+    const result = await streamAssistReply('c1', 'It will not heat.', [], (t) => tokens.push(t))
 
     expect(tokens.join('')).toBe('Is it lit?')
     expect(result.status).toBe('ACTIVE')
@@ -39,7 +47,7 @@ describe('streamAssistReply', () => {
       'event: done\ndata: {"status":"ESCALATED","service_call":{"id":"sc-1","description":"Equipment: Oven"}}\n\n',
     ])))
 
-    const result = await streamAssistReply('c1', 'Still cold.', () => {})
+    const result = await streamAssistReply('c1', 'Still cold.', [], () => {})
 
     expect(result.status).toBe('ESCALATED')
     expect(result.service_call?.id).toBe('sc-1')
@@ -53,7 +61,7 @@ describe('streamAssistReply', () => {
     ])))
     const tokens: string[] = []
 
-    await streamAssistReply('c1', 'hi', (t) => tokens.push(t))
+    await streamAssistReply('c1', 'hi', [], (t) => tokens.push(t))
 
     expect(tokens.join('')).toBe('Split')
   })
@@ -63,7 +71,7 @@ describe('streamAssistReply', () => {
       new Response(JSON.stringify({ detail: 'Conversation already ended' }), { status: 409 }),
     ))
 
-    await expect(streamAssistReply('c1', 'hi', () => {}))
+    await expect(streamAssistReply('c1', 'hi', [], () => {}))
       .rejects.toThrow('Conversation already ended')
   })
 
@@ -72,7 +80,56 @@ describe('streamAssistReply', () => {
       'event: token\ndata: {"text":"cut off"}\n\n',
     ])))
 
-    await expect(streamAssistReply('c1', 'hi', () => {})).rejects.toThrow()
+    await expect(streamAssistReply('c1', 'hi', [], () => {})).rejects.toThrow()
+  })
+
+  it('sends the attached photo ids with the turn', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse([
+      'event: done\ndata: {"status":"ACTIVE","service_call":null}\n\n',
+    ]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await streamAssistReply('c1', 'Here', ['p1', 'p2'], () => {})
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      text: 'Here',
+      photo_ids: ['p1', 'p2'],
+    })
+  })
+})
+
+describe('uploadTriagePhoto', () => {
+  it('posts the file as multipart form data to the conversation photos endpoint', async () => {
+    const photo = { id: 'p1', filename: 'plate.jpg', size_bytes: 3 }
+    vi.mocked(client.apiUpload).mockResolvedValue(photo)
+    const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
+
+    const result = await uploadTriagePhoto('c1', file)
+
+    expect(result).toEqual(photo)
+    const [path, form] = vi.mocked(client.apiUpload).mock.calls[0]
+    expect(path).toBe('/api/assist/conversations/c1/photos')
+    expect((form as FormData).get('file')).toBe(file)
+  })
+})
+
+describe('deleteTriagePhoto', () => {
+  it('sends a DELETE to the conversation photo path and tolerates the 204 response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteTriagePhoto('c1', 'p1')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/assist/conversations/c1/photos/p1',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
+})
+
+describe('triagePhotoPreviewUrl', () => {
+  it('builds the preview path for a conversation and photo', () => {
+    expect(triagePhotoPreviewUrl('c1', 'p1')).toBe('/api/assist/conversations/c1/photos/p1/preview')
   })
 })
 

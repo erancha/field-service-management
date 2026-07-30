@@ -100,3 +100,25 @@ def test_a_closed_conversation_is_never_reported_as_expired() -> None:
 
 def test_ttl_is_twenty_four_hours() -> None:
     assert CONVERSATION_TTL == timedelta(hours=24)
+
+
+def test_a_message_defaults_to_no_photos() -> None:
+    message = Message(id=uuid.uuid4(), role=MessageRole.CUSTOMER, text="Hi", created_at=NOW)
+    assert message.photos == ()
+
+
+def test_a_message_carries_its_photos() -> None:
+    from fsm.assist.domain.conversation import Photo
+
+    photo = Photo(
+        id=uuid.uuid4(),
+        filename="plate.jpg",
+        media_type="image/jpeg",
+        size_bytes=1234,
+        object_key="photos/abc",
+        created_at=NOW,
+    )
+    message = Message(
+        id=uuid.uuid4(), role=MessageRole.CUSTOMER, text="Here", created_at=NOW, photos=(photo,)
+    )
+    assert message.photos == (photo,)
