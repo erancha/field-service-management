@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPost, apiUpload } from './client.ts'
-import type { KbDocument, KbSearchResponse, KbStatus } from './types.ts'
+import type { KbDocument, KbSearchResponse, KbStatus, KbUploadResult } from './types.ts'
 
 const BASE = '/api/kb'
 
@@ -11,10 +11,13 @@ export async function fetchKbDocuments(): Promise<KbDocument[]> {
   return apiGet<KbDocument[]>(`${BASE}/documents`)
 }
 
-export async function uploadKbDocument(file: File): Promise<KbDocument> {
+export async function uploadKbDocument(
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<KbUploadResult> {
   const form = new FormData()
   form.append('file', file)
-  return apiUpload<KbDocument>(`${BASE}/documents`, form)
+  return apiUpload<KbUploadResult>(`${BASE}/documents`, form, onProgress)
 }
 
 export async function deleteKbDocument(id: string): Promise<{ deleted: boolean }> {

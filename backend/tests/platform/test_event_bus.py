@@ -104,6 +104,58 @@ class TestPublishAppointmentChanged:
         assert "appointment.changed publish failed" in caplog.text
 
 
+class TestPublishKbIngestProgress:
+    def test_reaches_the_uploading_admin_and_not_the_admins_channel(self):
+        """Progress is addressed to the uploader so a second admin's panel is not driven by it."""
+        from types import SimpleNamespace
+        from fsm.platform.events import (
+            ADMINS_CHANNEL, InMemoryEventBus, publish_kb_ingest_progress, user_channel,
+        )
+
+        async def scenario():
+            bus = InMemoryEventBus()
+            app = SimpleNamespace(
+                state=SimpleNamespace(event_bus=bus, event_loop=asyncio.get_running_loop())
+            )
+            uploader = uuid.uuid4()
+
+            async with bus.subscribe({user_channel(uploader)}) as mine:
+                async with bus.subscribe({ADMINS_CHANNEL}) as others:
+                    # Publishing from a worker thread is the real call path: the ingest runs in
+                    # the threadpool, not on the loop.
+                    await asyncio.to_thread(
+                        publish_kb_ingest_progress,
+                        app,
+                        user_id=uploader,
+                        filename="manual.pdf",
+                        phase="indexing",
+                        done=64,
+                        total=1007,
+                    )
+                    event = await asyncio.wait_for(mine.get(), timeout=0.5)
+                    return event, others.empty()
+
+        event, admins_empty = asyncio.run(scenario())
+        assert event == {
+            "type": "kb.ingest.progress",
+            "filename": "manual.pdf",
+            "phase": "indexing",
+            "done": 64,
+            "total": 1007,
+        }
+        assert admins_empty
+
+    def test_drops_when_loop_absent(self):
+        from types import SimpleNamespace
+        from fsm.platform.events import InMemoryEventBus, publish_kb_ingest_progress
+
+        app = SimpleNamespace(state=SimpleNamespace(event_bus=InMemoryEventBus(), event_loop=None))
+        # No loop captured yet: a progress cue must not break the ingest.
+        publish_kb_ingest_progress(
+            app, user_id=uuid.uuid4(), filename="manual.pdf", phase="indexing", done=1, total=2
+        )
+
+
 class TestEntitledChannels:
     def test_customer_gets_only_their_own_user_channel(self):
         uid = uuid.uuid4()

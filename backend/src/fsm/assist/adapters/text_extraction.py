@@ -8,6 +8,7 @@ from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
 from fsm.assist.domain.errors import UnsupportedDocumentType
+from fsm.assist.ports.progress import ProgressCallback, progress_step
 
 
 def _without_nul(text: str) -> str:
@@ -23,16 +24,35 @@ def _without_nul(text: str) -> str:
 
 
 class CompositeTextExtractor:
-    def extract(self, filename: str, media_type: str, content: bytes) -> str:
-        return _without_nul(self._decode(filename, content))
+    def extract(
+        self,
+        filename: str,
+        media_type: str,
+        content: bytes,
+        on_progress: ProgressCallback | None = None,
+    ) -> str:
+        return _without_nul(self._decode(filename, content, on_progress))
 
-    def _decode(self, filename: str, content: bytes) -> str:
-        """Text as each format yields it, before the normalization extract applies to all of them."""
+    def _decode(self, filename: str, content: bytes, on_progress: ProgressCallback | None) -> str:
+        """Text as each format yields it, before the normalization extract applies to all of them.
+
+        PDF page reads dominate ingest latency for large manuals, so that path reports progress;
+        reports are stepped rather than per page to bound the event volume for long documents.
+        """
         extension = PurePosixPath(filename).suffix.lower()
         if extension == ".pdf":
             try:
                 reader = PdfReader(io.BytesIO(content))
-                return "\n".join(page.extract_text() or "" for page in reader.pages)
+                total = len(reader.pages)
+                step = progress_step(total)
+                if on_progress is not None:
+                    on_progress(0, total)
+                parts = []
+                for number, page in enumerate(reader.pages, start=1):
+                    parts.append(page.extract_text() or "")
+                    if on_progress is not None and (number % step == 0 or number == total):
+                        on_progress(number, total)
+                return "\n".join(parts)
             except PyPdfError as exc:
                 raise UnsupportedDocumentType(
                     f'"{filename}" could not be read as a PDF (corrupt or unsupported format)'

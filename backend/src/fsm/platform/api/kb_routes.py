@@ -13,6 +13,7 @@ from fsm.identity.domain.role import Role
 from fsm.platform.api.auth_deps import SessionUser, require_role
 from fsm.platform.assist_factory import build_text_extractor
 from fsm.platform.config import Settings
+from fsm.platform.events import publish_kb_ingest_progress
 
 router = APIRouter(prefix="/api/kb")
 
@@ -103,18 +104,37 @@ async def upload_document(
             status_code=413, detail=f"Document exceeds the {MAX_UPLOAD_MB} MB limit"
         )
 
+    filename = file.filename or "document"
+
     # Extraction, embedding, and the commit are synchronous (CPU and blocking HTTP/DB I/O);
     # they run in the threadpool so the event loop stays responsive during the upload.
     def _ingest() -> dict:
+        def report(phase: str, done: int, total: int) -> None:
+            publish_kb_ingest_progress(
+                request.app,
+                user_id=admin.id,
+                filename=filename,
+                phase=phase,
+                done=done,
+                total=total,
+            )
+
         with _session_factory(request)() as session:
-            doc = _service(request, session).upload(
-                filename=file.filename or "document",
+            result = _service(request, session).upload(
+                filename=filename,
                 media_type=file.content_type or "application/octet-stream",
                 content=content,
                 uploaded_by=admin.id,
+                on_progress=report,
             )
             session.commit()
-            return _doc_json(doc)
+            return {
+                **_doc_json(result.document),
+                "phase_seconds": {
+                    "extract": result.extract_seconds,
+                    "index": result.index_seconds,
+                },
+            }
 
     return await run_in_threadpool(_ingest)
 

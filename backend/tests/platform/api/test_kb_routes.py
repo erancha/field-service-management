@@ -77,6 +77,10 @@ class TestKbRoutes:
         doc = created.json()
         assert doc["filename"] == "guide.md"
         assert doc["chunk_count"] >= 1
+        assert set(doc["phase_seconds"]) == {"extract", "index"}
+        assert all(
+            isinstance(v, float) and v >= 0.0 for v in doc["phase_seconds"].values()
+        )
 
         listed = client.get("/api/kb/documents")
         assert [d["id"] for d in listed.json()] == [doc["id"]]
@@ -141,13 +145,13 @@ class TestKbRoutes:
                 super().__init__()
                 self.ran_on_event_loop: bool | None = None
 
-            def index_document(self, document_id, filename, text) -> int:
+            def index_document(self, document_id, filename, text, on_progress=None) -> int:
                 try:
                     asyncio.get_running_loop()
                     self.ran_on_event_loop = True
                 except RuntimeError:
                     self.ran_on_event_loop = False
-                return super().index_document(document_id, filename, text)
+                return super().index_document(document_id, filename, text, on_progress)
 
         app = _app(pg_session_factory)
         app.state.kb_index = LoopProbeIndex()

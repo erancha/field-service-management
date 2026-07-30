@@ -124,6 +124,11 @@ export interface KbDocument {
   chunk_count: number
 }
 
+/** Upload response: the stored document plus how long that run's server phases took. */
+export interface KbUploadResult extends KbDocument {
+  phase_seconds: { extract: number; index: number }
+}
+
 export interface KbSearchHit {
   document_id: string
   filename: string

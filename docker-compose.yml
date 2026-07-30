@@ -154,6 +154,13 @@ services:
     deploy:
       <<: *backend-deploy
       replicas: 1
+      # Knowledge-base ingest runs in this role: pypdf's parse of a near-cap (20 MB) manual peaks
+      # tens of MB above the shared ceiling, and a repeat ingest starts from heap the allocator
+      # has not returned to the OS, so consecutive uploads ratchet the resident set upward. The
+      # shared 256M ceiling OOM-kills the process mid-ingest; 512M covers the peak with headroom.
+      resources:
+        limits:
+          memory: 512M
     healthcheck:
       <<: *backend-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]

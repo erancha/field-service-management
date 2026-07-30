@@ -618,6 +618,26 @@ body {
   margin-bottom: 1rem;
 }
 
+.kb__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.kb__progress progress {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.kb__summary {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
 .kb__list {
   list-style: none;
   margin: 0 0 1rem;

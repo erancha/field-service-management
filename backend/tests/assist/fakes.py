@@ -68,8 +68,16 @@ class FakeDocumentIndex:
         self.texts: dict[uuid.UUID, tuple[str, str]] = {}  # id -> (filename, text)
         self.reset_calls = 0
 
-    def index_document(self, document_id: uuid.UUID, filename: str, text: str) -> int:
+    def index_document(
+        self,
+        document_id: uuid.UUID,
+        filename: str,
+        text: str,
+        on_progress=None,
+    ) -> int:
         self.texts[document_id] = (filename, text)
+        if on_progress is not None:
+            on_progress(1, 1)
         return 1
 
     def remove_document(self, document_id: uuid.UUID, chunk_count: int) -> None:
@@ -91,7 +99,9 @@ class FakeDocumentIndex:
 class FakeTextExtractor:
     """Decodes bytes as UTF-8, whatever the claimed type."""
 
-    def extract(self, filename: str, media_type: str, content: bytes) -> str:
+    def extract(self, filename: str, media_type: str, content: bytes, on_progress=None) -> str:
+        if on_progress is not None:
+            on_progress(1, 1)
         return content.decode("utf-8")
 
 

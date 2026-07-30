@@ -72,8 +72,16 @@ fi
 run_backend() {
   echo "==> Backend"
   [ -d "$VENV" ] || python3 -m venv "$VENV"
-  { "$VENV/bin/python" -c "import fsm" 2>/dev/null && [ -x "$VENV/bin/ruff" ] && [ -x "$VENV/bin/mypy" ]; } \
-    || ( cd "$BACKEND" && "$VENV/bin/pip" install --quiet --disable-pip-version-check -e ".[dev]" )
+  # The venv is current only when it was installed from pyproject.toml as it stands now: the stamp
+  # is a copy taken after the last successful install, so editing the dependency list forces a
+  # reinstall instead of leaving the venv without the new package until an import fails mid-suite.
+  # The import/executable probe still catches a venv that is broken with the stamp intact.
+  DEPS_STAMP="$VENV/.pyproject.stamp"
+  if ! cmp -s "$BACKEND/pyproject.toml" "$DEPS_STAMP" \
+     || ! { "$VENV/bin/python" -c "import fsm" 2>/dev/null && [ -x "$VENV/bin/ruff" ] && [ -x "$VENV/bin/mypy" ]; }; then
+    ( cd "$BACKEND" && "$VENV/bin/pip" install --quiet --disable-pip-version-check -e ".[dev]" )
+    cp "$BACKEND/pyproject.toml" "$DEPS_STAMP"
+  fi
   echo "--> lint (ruff)"
   ( cd "$BACKEND" && "$VENV/bin/ruff" check src tests )
   echo "--> typecheck (mypy)"

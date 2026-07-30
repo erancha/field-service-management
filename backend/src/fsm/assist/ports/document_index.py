@@ -5,6 +5,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from fsm.assist.ports.progress import ProgressCallback
+
 
 @dataclass(frozen=True)
 class SearchHit:
@@ -23,8 +25,18 @@ class SearchHit:
 class DocumentIndex(Protocol):
     """Chunk, embed, store, and search document text. Chunking strategy is the adapter's."""
 
-    def index_document(self, document_id: uuid.UUID, filename: str, text: str) -> int:
-        """Split text into chunks and index them; returns the number of chunks written."""
+    def index_document(
+        self,
+        document_id: uuid.UUID,
+        filename: str,
+        text: str,
+        on_progress: ProgressCallback | None = None,
+    ) -> int:
+        """Split text into chunks and index them; returns the number of chunks written.
+
+        on_progress, when given, is called as batches land with (chunks written so far, total).
+        The total is only known once splitting finishes, so no progress is reported before then.
+        """
         ...
 
     def remove_document(self, document_id: uuid.UUID, chunk_count: int) -> None:

@@ -3,6 +3,10 @@
 The store owns its chunk table (created lazily, sized to the injected embedding model).
 Chunk ids are deterministic uuid5 values derived from (document id, chunk index), so a
 document's chunks can be deleted knowing only how many were written.
+
+Indexing writes in batches so a run of any length can report stepwise progress as it advances.
+A batch that raises therefore leaves the earlier batches' chunks in the table; the caller's
+rollback of the document row is what makes them orphans, cleared by a re-index.
 """
 from __future__ import annotations
 
@@ -14,9 +18,15 @@ from langchain_postgres import PGEngine, PGVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import create_engine, inspect
 
-from fsm.assist.ports.document_index import SearchHit
+from fsm.assist.ports.document_index import ProgressCallback, SearchHit
+from fsm.assist.ports.progress import progress_step
 
 _CHUNK_NAMESPACE = uuid.UUID("aeb60731-5f5f-4a91-9e2b-2f4bfd7c2a11")
+
+# Ceiling on chunks per embed-and-write round trip, keeping each embedding request comfortably
+# batched. Below it the batch shrinks with the document (progress_step) so short documents still
+# produce a stepwise-moving progress report rather than one jump to 100%.
+_EMBED_BATCH_CHUNKS = 64
 
 
 def _chunk_id(document_id: uuid.UUID, chunk_index: int) -> str:
@@ -60,7 +70,13 @@ class PgVectorDocumentIndex:
             )
         return self._store
 
-    def index_document(self, document_id: uuid.UUID, filename: str, text: str) -> int:
+    def index_document(
+        self,
+        document_id: uuid.UUID,
+        filename: str,
+        text: str,
+        on_progress: ProgressCallback | None = None,
+    ) -> int:
         chunks = self._splitter.split_text(text)
         documents = [
             Document(
@@ -74,8 +90,17 @@ class PgVectorDocumentIndex:
             for i, chunk in enumerate(chunks)
         ]
         ids = [_chunk_id(document_id, i) for i in range(len(chunks))]
-        self._get_store().add_documents(documents, ids=ids)
-        return len(chunks)
+        store = self._get_store()
+        total = len(chunks)
+        batch = min(_EMBED_BATCH_CHUNKS, progress_step(total))
+        if on_progress is not None:
+            on_progress(0, total)
+        for start in range(0, total, batch):
+            end = min(start + batch, total)
+            store.add_documents(documents[start:end], ids=ids[start:end])
+            if on_progress is not None:
+                on_progress(end, total)
+        return total
 
     def remove_document(self, document_id: uuid.UUID, chunk_count: int) -> None:
         if chunk_count == 0:

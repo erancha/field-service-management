@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../api/kb.ts', () => ({
@@ -17,6 +17,7 @@ import {
   searchKb,
   uploadKbDocument,
 } from '../../api/kb.ts'
+import { FakeEventSource } from '../../test/fakeEventSource.ts'
 import { KnowledgeBasePanel } from './KnowledgeBasePanel.tsx'
 
 const DOC = {
@@ -27,8 +28,13 @@ const DOC = {
   chunk_count: 3,
 }
 
+// What the upload endpoint returns: the document plus that run's phase timings.
+const UPLOADED = { ...DOC, phase_seconds: { extract: 3.2, index: 8.8 } }
+
 describe('KnowledgeBasePanel', () => {
   beforeEach(() => {
+    FakeEventSource.reset()
+    vi.stubGlobal('EventSource', FakeEventSource)
     vi.mocked(fetchKbStatus).mockReset()
     vi.mocked(fetchKbDocuments).mockReset()
     vi.mocked(uploadKbDocument).mockReset()
@@ -62,12 +68,107 @@ describe('KnowledgeBasePanel', () => {
   })
 
   it('uploads the chosen file and refreshes the list', async () => {
-    vi.mocked(uploadKbDocument).mockResolvedValue(DOC)
+    vi.mocked(uploadKbDocument).mockResolvedValue(UPLOADED)
     render(<KnowledgeBasePanel />)
     await screen.findByText('reset-guide.md')
     const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
     await userEvent.upload(screen.getByLabelText(/upload document/i), file)
-    expect(uploadKbDocument).toHaveBeenCalledWith(file)
+    expect(uploadKbDocument).toHaveBeenCalledWith(file, expect.any(Function))
+  })
+
+  it('shows transfer percentage, then an indeterminate indexing phase, then clears', async () => {
+    let reportProgress: ((fraction: number) => void) | undefined
+    let finishUpload: ((doc: typeof UPLOADED) => void) | undefined
+    vi.mocked(uploadKbDocument).mockImplementation((_file, onProgress) => {
+      reportProgress = onProgress
+      return new Promise((resolve) => {
+        finishUpload = resolve
+      })
+    })
+    render(<KnowledgeBasePanel />)
+    await screen.findByText('reset-guide.md')
+    const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
+    await userEvent.upload(screen.getByLabelText(/upload document/i), file)
+
+    act(() => reportProgress!(0.42))
+    expect(screen.getByText(/uploading — 42%/i)).toBeInTheDocument()
+
+    act(() => reportProgress!(1))
+    expect(screen.getByText(/extracting and indexing/i)).toBeInTheDocument()
+
+    await act(async () => finishUpload!(UPLOADED))
+    expect(screen.queryByText(/extracting and indexing/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/uploading —/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a timing summary once the upload completes, until the next upload starts', async () => {
+    vi.mocked(uploadKbDocument).mockResolvedValue(UPLOADED)
+    render(<KnowledgeBasePanel />)
+    await screen.findByText('reset-guide.md')
+    const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
+    await userEvent.upload(screen.getByLabelText(/upload document/i), file)
+
+    const summary = await screen.findByText(/extract 3\.2 s \| index 8\.8 s/i)
+    // Total and network come from the panel's own clock; the mocked request resolves in ~0 ms,
+    // so only their shape is asserted.
+    expect(summary.textContent).toMatch(
+      /^Done in .+ — network .+ \| extract 3\.2 s \| index 8\.8 s$/,
+    )
+
+    vi.mocked(uploadKbDocument).mockImplementation(() => new Promise(() => {}))
+    await userEvent.upload(
+      screen.getByLabelText(/upload document/i),
+      new File(['x'], 'again.md', { type: 'text/markdown' }),
+    )
+    expect(screen.queryByText(/extract 3\.2 s/i)).not.toBeInTheDocument()
+  })
+
+  it('removes the timing summary when a document is deleted', async () => {
+    vi.mocked(uploadKbDocument).mockResolvedValue(UPLOADED)
+    vi.mocked(deleteKbDocument).mockResolvedValue({ deleted: true })
+    render(<KnowledgeBasePanel />)
+    await screen.findByText('reset-guide.md')
+    const file = new File(['# hi'], 'new.md', { type: 'text/markdown' })
+    await userEvent.upload(screen.getByLabelText(/upload document/i), file)
+    expect(await screen.findByText(/extract 3\.2 s/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /delete/i }))
+    expect(screen.queryByText(/extract 3\.2 s/i)).not.toBeInTheDocument()
+  })
+
+  it('replaces the indeterminate phase with per-page extraction, then chunk indexing counts', async () => {
+    let reportProgress: ((fraction: number) => void) | undefined
+    vi.mocked(uploadKbDocument).mockImplementation((_file, onProgress) => {
+      reportProgress = onProgress
+      return new Promise(() => {}) // still ingesting when the assertions run
+    })
+    render(<KnowledgeBasePanel />)
+    await screen.findByText('reset-guide.md')
+    const file = new File(['x'], 'manual.pdf', { type: 'application/pdf' })
+    await userEvent.upload(screen.getByLabelText(/upload document/i), file)
+
+    act(() => reportProgress!(1))
+    expect(screen.getByText(/extracting and indexing/i)).toBeInTheDocument()
+
+    act(() => FakeEventSource.last().emit('kb.ingest.progress', {
+      filename: 'manual.pdf',
+      phase: 'extracting',
+      done: 137,
+      total: 414,
+    }))
+
+    expect(screen.getByText(/extracting — 137 of 414 pages/i)).toBeInTheDocument()
+    expect(screen.queryByText(/extracting and indexing/i)).not.toBeInTheDocument()
+
+    act(() => FakeEventSource.last().emit('kb.ingest.progress', {
+      filename: 'manual.pdf',
+      phase: 'indexing',
+      done: 64,
+      total: 1007,
+    }))
+
+    expect(screen.getByText(/indexing — 64 of 1007 passages/i)).toBeInTheDocument()
+    expect(screen.queryByText(/extracting — 137/i)).not.toBeInTheDocument()
   })
 
   it('runs a test search and shows matching passages', async () => {
