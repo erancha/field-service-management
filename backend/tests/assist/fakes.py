@@ -43,6 +43,12 @@ class FakeKbDocumentRepository:
         except KeyError:
             raise DocumentNotFound(str(document_id)) from None
 
+    def find_by_content(self, content: bytes) -> KbDocument | None:
+        for document_id, stored in self.contents.items():
+            if stored == content:
+                return self.rows[document_id]
+        return None
+
     def list_all(self) -> list[KbDocument]:
         return sorted(self.rows.values(), key=lambda d: d.uploaded_at, reverse=True)
 

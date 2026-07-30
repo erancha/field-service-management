@@ -23,6 +23,10 @@ class KbDocumentRepository(Protocol):
         """Return the raw uploaded bytes; raises DocumentNotFound."""
         ...
 
+    def find_by_content(self, content: bytes) -> KbDocument | None:
+        """Return the document whose stored bytes are identical to content, if any."""
+        ...
+
     def list_all(self) -> list[KbDocument]:
         """All documents, newest first."""
         ...

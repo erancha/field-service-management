@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fsm.assist.adapters.document_repository import SqlAlchemyKbDocumentRepository
@@ -43,6 +44,25 @@ def test_add_get_list_remove(pg_engine):
         repo.remove(doc.id)
         session.commit()
         assert repo.list_all() == []
+
+
+def test_find_by_content_matches_byte_identical_uploads(pg_engine):
+    with Session(pg_engine) as session:
+        repo = SqlAlchemyKbDocumentRepository(session)
+        doc = _doc()
+        repo.add(doc, b"hello")
+
+        assert repo.find_by_content(b"hello") == doc
+        assert repo.find_by_content(b"other bytes") is None
+
+
+def test_storing_byte_identical_content_twice_is_rejected_by_the_database(pg_engine):
+    """The unique hash index is the race backstop when two uploads slip past the service check."""
+    with Session(pg_engine) as session:
+        repo = SqlAlchemyKbDocumentRepository(session)
+        repo.add(_doc(), b"same bytes")
+        with pytest.raises(IntegrityError):
+            repo.add(_doc(), b"same bytes")
 
 
 def test_get_unknown_raises(pg_engine):

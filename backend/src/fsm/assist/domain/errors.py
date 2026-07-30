@@ -17,6 +17,10 @@ class DocumentNotFound(AssistError):
     """No knowledge-base document exists with the given id."""
 
 
+class DuplicateDocument(AssistError):
+    """A document with byte-identical content is already stored in the knowledge base."""
+
+
 class IndexModelMismatch(AssistError):
     """The index was built with a different embedding model than the configured one."""
 

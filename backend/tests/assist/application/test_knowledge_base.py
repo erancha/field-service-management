@@ -8,6 +8,7 @@ from tests.assist.fakes import FakeDocumentIndex, FakeKbDocumentRepository, Fake
 from fsm.assist.application.knowledge_base import KnowledgeBaseService
 from fsm.assist.domain.errors import (
     DocumentNotFound,
+    DuplicateDocument,
     EmptyDocumentText,
     IndexModelMismatch,
     UnsupportedDocumentType,
@@ -76,6 +77,24 @@ def test_upload_without_a_progress_callback_still_indexes():
     svc, repo, _ = make_service()
     doc = svc.upload("reset.md", "text/markdown", b"Hold the reset button", uuid.uuid4()).document
     assert repo.get(doc.id).chunk_count == 1
+
+
+def test_upload_rejects_a_byte_identical_reupload():
+    """The second copy is refused before extraction, so nothing is stored or indexed twice."""
+    svc, repo, index = make_service()
+    svc.upload("reset.md", "text/markdown", b"Hold the reset button", uuid.uuid4())
+    with pytest.raises(DuplicateDocument):
+        svc.upload("reset.md", "text/markdown", b"Hold the reset button", uuid.uuid4())
+    assert len(repo.rows) == 1
+    assert len(index.texts) == 1
+
+
+def test_duplicate_content_is_rejected_whatever_its_filename():
+    """Byte-identical content is the duplicate signal; the error names the stored document."""
+    svc, _, _ = make_service()
+    svc.upload("reset.md", "text/markdown", b"Hold the reset button", uuid.uuid4())
+    with pytest.raises(DuplicateDocument, match="reset.md"):
+        svc.upload("copy.md", "text/markdown", b"Hold the reset button", uuid.uuid4())
 
 
 def test_upload_rejects_unsupported_type():

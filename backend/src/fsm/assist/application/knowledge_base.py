@@ -11,6 +11,7 @@ from typing import Literal
 
 from fsm.assist.domain.document import KbDocument
 from fsm.assist.domain.errors import (
+    DuplicateDocument,
     EmptyDocumentText,
     IndexModelMismatch,
     UnsupportedDocumentType,
@@ -87,6 +88,14 @@ class KnowledgeBaseService:
         if extension not in SUPPORTED_EXTENSIONS:
             raise UnsupportedDocumentType(
                 f'"{filename}" is not a supported document type (pdf, md, txt)'
+            )
+        # Byte-identical content is refused before extraction so a re-upload never pays the
+        # extract-and-embed cost again; the unique content hash in the store backstops races.
+        existing = self._documents.find_by_content(content)
+        if existing is not None:
+            raise DuplicateDocument(
+                f'"{filename}" is already in the knowledge base as "{existing.filename}"'
+                f" (uploaded {existing.uploaded_at:%Y-%m-%d %H:%M} UTC)"
             )
         extract_progress = None if on_progress is None else partial(on_progress, "extracting")
         extract_started = self._clock()

@@ -1,6 +1,7 @@
 """SQLAlchemy implementation of the KbDocumentRepository port."""
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 from sqlalchemy import select
@@ -9,6 +10,10 @@ from sqlalchemy.orm import Session
 from fsm.assist.adapters.orm import KbDocumentRow
 from fsm.assist.domain.document import KbDocument
 from fsm.assist.domain.errors import DocumentNotFound
+
+
+def _sha256_hex(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
 
 
 def _to_document(row: KbDocumentRow) -> KbDocument:
@@ -43,6 +48,7 @@ class SqlAlchemyKbDocumentRepository:
                 filename=document.filename,
                 media_type=document.media_type,
                 content=content,
+                content_sha256=_sha256_hex(content),
                 size_bytes=document.size_bytes,
                 uploaded_by=document.uploaded_by,
                 uploaded_at=document.uploaded_at,
@@ -57,6 +63,12 @@ class SqlAlchemyKbDocumentRepository:
 
     def get_content(self, document_id: uuid.UUID) -> bytes:
         return self._row(document_id).content
+
+    def find_by_content(self, content: bytes) -> KbDocument | None:
+        row = self._session.scalars(
+            select(KbDocumentRow).where(KbDocumentRow.content_sha256 == _sha256_hex(content))
+        ).one_or_none()
+        return None if row is None else _to_document(row)
 
     def list_all(self) -> list[KbDocument]:
         rows = self._session.scalars(

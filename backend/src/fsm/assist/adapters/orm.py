@@ -17,6 +17,9 @@ class KbDocumentRow(Base):
     Holds the raw uploaded bytes so the derived vector index can always be rebuilt.
     chunk_count and embedding_model mirror the current index state for this document.
     uploaded_by is a plain user id, not a foreign key — cross-context references stay by-id.
+
+    content_sha256 is a SHA-256 hash of the raw bytes; its unique index makes byte-identical
+    re-uploads fail in the database even when two uploads race past the service-level check.
     """
 
     __tablename__ = "kb_document"
@@ -25,11 +28,16 @@ class KbDocumentRow(Base):
     filename: Mapped[str] = mapped_column(Text, nullable=False)
     media_type: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False)
     embedding_model: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("uq_kb_document_content_sha256", "content_sha256", unique=True),
+    )
 
 
 class AssistConversationRow(Base):
