@@ -143,8 +143,10 @@ def start_conversation(
     from fsm.assist.adapters.photo_repository import SqlAlchemyPhotoRepository
 
     with _session_factory(request)() as session:
-        conversation = _service(request, session).start(user.id)
+        service = _service(request, session)
+        conversation = service.start(user.id)
         session.commit()
+        service.remove_discarded_objects()
         pending_photos = SqlAlchemyPhotoRepository(session).list_unbound(conversation.id)
         return _conversation_json(conversation, pending_photos)
 
@@ -194,8 +196,10 @@ def end_conversation(
     conversation carries none.
     """
     with _session_factory(request)() as session:
-        conversation = _service(request, session).end(conversation_id, user.id)
+        service = _service(request, session)
+        conversation = service.end(conversation_id, user.id)
         session.commit()
+        service.remove_discarded_objects()
         return _conversation_json(conversation, [])
 
 
@@ -291,6 +295,7 @@ def send_message(
                 if fragment:
                     yield _sse("token", {"text": fragment})
             session.commit()
+            service.remove_discarded_objects()
             outcome = service.outcome()
             yield _sse(
                 "done",

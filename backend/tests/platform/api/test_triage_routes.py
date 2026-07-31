@@ -640,6 +640,43 @@ class TestTriageRoutes:
         assert f"photos/{photo['id']}/original" not in store.objects
         assert f"photos/{photo['id']}/preview" not in store.objects
 
+    def test_ending_a_conversation_leaves_no_objects_in_the_store(
+        self, pg_session_factory, authenticate
+    ):
+        """The /end route must flush the removals the ending staged once its commit went through."""
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            _upload_photo(client, conversation_id, _jpeg_bytes())
+
+            ended = client.post(f"/api/assist/conversations/{conversation_id}/end")
+
+        assert ended.status_code == 200
+        assert app.state.photo_store.objects == {}
+
+    def test_a_solved_turn_leaves_no_objects_in_the_store(
+        self, pg_session_factory, authenticate
+    ):
+        """The message route's streamed turn must flush staged removals after its commit."""
+        app = build_app(
+            pg_session_factory, FakeChatModel(replies=[f"Glad that fixed it. {SOLVED_MARKER}"])
+        )
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
+
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "That worked, thanks.", "photo_ids": [photo["id"]]},
+            )
+
+        assert stream.status_code == 200
+        assert app.state.photo_store.objects == {}
+
     def test_deleting_a_sent_photo_is_404(self, pg_session_factory, authenticate):
         app = build_app(pg_session_factory, FakeChatModel(replies=["Is the display lit?"]))
         authenticate(app, role=Role.CUSTOMER)

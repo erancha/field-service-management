@@ -117,6 +117,9 @@ class TriageService:
         self._photos = photos
         self._photo_store = photo_store
         self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
+        # Object keys an ending has discarded; their store deletion is deferred until the
+        # transaction that recorded the ending has committed.
+        self._discarded_keys: list[str] = []
 
     def start(self, customer_id: uuid.UUID) -> Conversation:
         """The customer's open conversation, retiring one they walked away from.
@@ -285,21 +288,32 @@ class TriageService:
             for photo in message.photos
         )
 
+    def remove_discarded_objects(self) -> None:
+        """Delete from the object store what the endings above discarded.
+
+        The caller invokes this only after committing the transaction that recorded the ending —
+        the remove-after-commit order the service-call deletion path also follows — so a failed
+        commit cannot leave a still-ACTIVE conversation whose images are already gone.
+        """
+        if self._discarded_keys:
+            assert self._photo_store is not None, "discarded keys staged without a photo store"
+            self._photo_store.remove(self._discarded_keys)
+            self._discarded_keys = []
+
     def _discard_photos(self, conversation: Conversation) -> None:
         """A conversation that ended without a technician leaves nothing in object storage.
 
         Metadata rows of sent photos stay so the transcript still names what was attached;
-        never-sent uploads lose both their objects and their rows."""
+        never-sent uploads lose both their objects and their rows. The objects themselves are
+        only staged here; they die in remove_discarded_objects after the ending commits."""
         if self._photos is None or self._photo_store is None:
             return
         unbound = self._photos.list_unbound(conversation.id)
-        keys = [
+        self._discarded_keys.extend(
             key
             for photo in (*self._sent_photos(conversation), *unbound)
             for key in photo_keys(photo.object_key)
-        ]
-        if keys:
-            self._photo_store.remove(keys)
+        )
         self._photos.delete_unbound(conversation.id)
 
     def _discard_unbound(self, conversation_id: uuid.UUID) -> None:
@@ -308,7 +322,7 @@ class TriageService:
             return
         unbound = self._photos.list_unbound(conversation_id)
         if unbound:
-            self._photo_store.remove(
-                [key for photo in unbound for key in photo_keys(photo.object_key)]
+            self._discarded_keys.extend(
+                key for photo in unbound for key in photo_keys(photo.object_key)
             )
             self._photos.delete_unbound(conversation_id)

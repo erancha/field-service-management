@@ -617,6 +617,7 @@ def test_a_solved_conversation_leaves_no_objects_behind(
     drain(service, convo.id, "Here is a photo.", photo_ids=[sent_photo.id])
 
     drain(service, convo.id, "That worked, thanks.")
+    service.remove_discarded_objects()
 
     assert fake_photo_store.objects == {}
     assert fake_photo_repo.list_unbound(convo.id) == []
@@ -640,6 +641,32 @@ def test_customer_end_discards_the_conversations_objects(
     drain(service, convo.id, "Here is a photo.", photo_ids=[sent_photo.id])
 
     service.end(convo.id, CUSTOMER)
+    service.remove_discarded_objects()
+
+    assert fake_photo_store.objects == {}
+
+
+def test_an_ending_removes_objects_only_when_the_caller_confirms_the_commit(
+    fake_photo_repo: FakePhotoRepository, fake_photo_store: FakePhotoStore
+) -> None:
+    """An ending stages its object removals for the caller to flush after the transaction
+    commits; removing inline would let a failed commit leave a still-ACTIVE conversation
+    whose images are already gone."""
+    service, _, _, _ = make_service(
+        replies=[f"Glad that fixed it. {SOLVED_MARKER}"],
+        photos=fake_photo_repo,
+        photo_store=fake_photo_store,
+    )
+    convo = service.start(CUSTOMER)
+    photo = make_photo()
+    fake_photo_repo.add(convo.id, photo)
+    store_photo_objects(fake_photo_store, photo)
+
+    drain(service, convo.id, "That worked, thanks.", photo_ids=[photo.id])
+
+    assert set(fake_photo_store.objects) == set(photo_keys(photo.object_key))
+
+    service.remove_discarded_objects()
 
     assert fake_photo_store.objects == {}
 
@@ -662,6 +689,7 @@ def test_escalation_hands_the_sent_photos_to_the_opener_and_keeps_their_objects(
     drain(service, convo.id, "Here is a photo.", photo_ids=[sent_photo.id])
 
     drain(service, convo.id, "Still cold after all that.")
+    service.remove_discarded_objects()
 
     assert openers.opened_photos[-1] == [sent_photo]
     for key in photo_keys(sent_photo.object_key):
