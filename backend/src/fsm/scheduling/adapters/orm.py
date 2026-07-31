@@ -19,7 +19,7 @@ from sqlalchemy import (
     Text,
     Time,
 )
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -36,6 +36,10 @@ class ServiceCallRow(Base):
     description: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    # Both null for a call opened from the plain description form, and for one opened before the
+    # triage assistant kept its summary as structure.
+    triage_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    headline: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class AppointmentRow(Base):

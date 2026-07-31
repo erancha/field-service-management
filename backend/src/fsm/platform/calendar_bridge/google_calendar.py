@@ -8,8 +8,14 @@ from datetime import datetime
 from typing import Callable
 from uuid import UUID
 
+from fsm.assist.ports.chat_model import TriageSummary
 from fsm.google_calendar.ports.client import GoogleCalendarClient
-from fsm.platform.calendar_bridge.description_html import render_description
+from fsm.platform.calendar_bridge.description_html import (
+    BLOCK_SEPARATOR,
+    fields_html,
+    blocks_html,
+    text_html,
+)
 from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment import Appointment
 from fsm.scheduling.domain.appointment_context import AppointmentContext
@@ -101,29 +107,33 @@ class GoogleCalendarAdapter:
         description_parts: list[str] = []
         # The technician's event echoes the name and phone shown to the customer (grouped as one
         # block) so the technician can confirm the customer was given correct contact details.
-        technician_lines = [
-            f"{label}: {value.strip()}"
+        technician_fields = [
+            (label, value.strip())
             for label, value in (
                 ("Technician", context.technician_name),
                 ("Technician phone", context.technician_phone),
             )
             if value and value.strip()
         ]
-        if technician_lines:
-            description_parts.append("\n".join(technician_lines))
-        problem = (context.problem_description or "").strip()
-        if problem:
-            # The stored description leads with a bare fault line because the event title is
-            # composed from it, so the label it needs to read as a field is added here.
-            description_parts.append(f"Problem: {problem}")
+        if technician_fields:
+            description_parts.append(fields_html(technician_fields))
+        if context.triage_summary is not None:
+            summary = TriageSummary.from_dict(context.triage_summary)
+            description_parts.append(blocks_html(summary.blocks()))
+        else:
+            problem = (context.problem_description or "").strip()
+            if problem:
+                # A call opened from the plain description form has no structure to lay out, only
+                # the customer's own words, which the event labels as the problem.
+                description_parts.append(fields_html([("Problem", problem)]))
         details = (appointment.details or "").strip()
         if details:
-            description_parts.append(details)
+            description_parts.append(text_html(details))
         phone = (context.customer_phone or "").strip()
         if phone:
-            description_parts.append(f"Phone: {phone}")
+            description_parts.append(fields_html([("Phone", phone)]))
         if description_parts:
-            body["description"] = render_description(description_parts)
+            body["description"] = BLOCK_SEPARATOR.join(description_parts)
         if self._attendee_email is not None:
             customer_email = self._attendee_email(appointment.customer_id)
             if customer_email:

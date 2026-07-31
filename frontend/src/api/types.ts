@@ -35,6 +35,13 @@ export interface Appointment {
   details?: string
 }
 
+/** A heading over either bullets or labelled fields; the other list is empty. */
+export interface SummaryBlock {
+  heading: string
+  bullets: string[]
+  fields: [string, string][]
+}
+
 export interface UpcomingAppointment {
   id: string
   service_call_id: string
@@ -44,7 +51,12 @@ export interface UpcomingAppointment {
   end: string
   status: string
   details: string | null
+  /** The service call's description as text. */
   problem: string
+  /** The fault in one line, for a surface with one line to show. */
+  headline: string
+  /** The same content as blocks to render; absent unless the triage assistant escalated the call. */
+  summary: SummaryBlock[] | null
   technician_name: string
   customer_name: string
   address: string | null

@@ -15,7 +15,8 @@ vi.mock('../../api/scheduling.ts', () => ({
 const ITEM: UpcomingAppointment = {
   id: 'a1', service_call_id: 's1', technician_id: 't1', customer_id: 'c1',
   start: '2099-06-01T09:00:00Z', end: '2099-06-01T11:00:00Z', status: 'SCHEDULED',
-  details: null, problem: 'Fix boiler', technician_name: 'Tara', customer_name: 'Cara', address: '12 Main St',
+  details: null, problem: 'Fix boiler', headline: 'Fix boiler', summary: null,
+  technician_name: 'Tara', customer_name: 'Cara', address: '12 Main St',
   created_at: '2020-01-01T00:00:00Z', photos: [],
 }
 
@@ -41,13 +42,17 @@ describe('UpcomingAppointments', () => {
     expect(screen.getByText(/Cara/)).toBeInTheDocument()
   })
 
-  it('keeps the collapsed row to the fault, not the whole triage summary', () => {
+  it('keeps the collapsed row to the fault the API singled out', () => {
     renderList({
-      items: [{ ...ITEM, problem: 'No picture, sound present\n\nAction items:\n- Bring LED strips' }],
+      items: [{
+        ...ITEM,
+        problem: 'Summary\n\nProblem:\n- No picture, sound present',
+        headline: 'No picture, sound present',
+      }],
     })
 
     expect(screen.getByText('No picture, sound present')).toBeInTheDocument()
-    expect(screen.queryByText(/Action items/)).toBeNull()
+    expect(screen.queryByText(/Summary/)).toBeNull()
   })
 
   it('hides the technician name when showTechnicianName is false', () => {
@@ -106,7 +111,7 @@ describe('UpcomingAppointments', () => {
   })
 
   it('highlights appointments scheduled within the last 24 hours', () => {
-    const recent = { ...ITEM, id: 'a2', problem: 'Just booked', created_at: new Date(Date.now() - 3_600_000).toISOString() }
+    const recent = { ...ITEM, id: 'a2', problem: 'Just booked', headline: 'Just booked', created_at: new Date(Date.now() - 3_600_000).toISOString() }
     renderList({ items: [recent, ITEM], showTechnicianName: true, showReschedule: true })
     expect(screen.getByText('Just booked').closest('li')).toHaveClass('upcoming__item--recent')
     expect(screen.getByText('Fix boiler').closest('li')).not.toHaveClass('upcoming__item--recent')

@@ -54,7 +54,9 @@ def _context_lines(context: AppointmentContextView) -> str:
     """Render the customer/problem block appended to email and feed bodies.
 
     Every rendered field is required on this surface (booking enforces the customer's phone and
-    address), so the block is always present and complete.
+    address), so the block is always present and complete. The problem follows the contact lines
+    as its own paragraph rather than a labelled one: a call escalated from triage arrives already
+    laid out under its own headings, and labelling the whole layout would title it twice.
     """
     lines = [
         _required_line("Customer", context.customer_name),
@@ -62,9 +64,11 @@ def _context_lines(context: AppointmentContextView) -> str:
         _required_line("Address", context.service_address),
         _required_line("Technician", context.technician_name),
         _required_line("Technician phone", context.technician_phone),
-        _required_line("Problem", context.problem_description),
     ]
-    return "\n\n" + "\n".join(lines)
+    problem = context.problem_description
+    if problem is None or not problem.strip():
+        raise ValueError("Appointment context is missing required field: Problem")
+    return "\n\n" + "\n".join(lines) + "\n\n" + problem
 
 
 class DeliveringNotificationPort:

@@ -102,6 +102,8 @@ class CalendarProjectionDispatcher:
         return dataclasses.replace(
             self._customer_context_resolver(appt.customer_id),
             problem_description=service_call.description,
+            problem_headline=service_call.headline,
+            triage_summary=service_call.triage_summary,
             technician_name=technician.technician_name,
             technician_phone=technician.technician_phone,
         )

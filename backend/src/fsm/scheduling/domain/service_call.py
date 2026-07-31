@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from fsm.scheduling.domain.errors import InvalidTransition
 
@@ -27,6 +28,12 @@ class ServiceCall:
     description: str
     status: ServiceCallStatus
     created_at: datetime
+    # The triage assistant's structured summary, as the JSON it was written in, and the fault in
+    # one line. Scheduling stores and forwards both without reading into the summary: the assist
+    # context owns its shape, and the surfaces that render it are composed where both are visible.
+    # Both are absent for a call opened from the plain description form.
+    triage_summary: dict[str, Any] | None = None
+    headline: str | None = None
 
     def mark_scheduled(self) -> None:
         """Transition status from OPEN to SCHEDULED.

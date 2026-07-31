@@ -1,68 +1,49 @@
-"""Renders a calendar event description as the basic HTML Google Calendar accepts.
+"""Renders parts of a calendar event description as the basic HTML Google Calendar accepts.
 
-The description arrives as plain-text blocks assembled from the service call's triage summary and
-the appointment's own fields. This module gives that text the structure a technician can scan on a
-phone before a visit: a "Label: value" line keeps its label in bold, a run of "- " lines becomes a
-bullet list, and every other line is escaped and carried through as written.
+Google renders a description as HTML, so the structure a technician scans on a phone is expressed in
+markup: every heading is bold and everything under one is a bullet, giving a flat run of headings
+rather than a nested tree. The appointment card renders the same shape from the same structure.
+Nothing here parses text — every renderer is handed what it prints, and customer-written values are
+escaped.
 """
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from html import escape
 
-# A field label is short and alphabetic. The bound is what keeps prose that merely contains a
-# colon ("the fault appeared at 10:30 yesterday") from being read as a labelled field.
-_LABELLED_LINE = re.compile(r"^(?P<label>[A-Za-z][A-Za-z ]{0,29}):(?P<value>.*)$")
+from fsm.assist.ports.chat_model import SummaryBlock
 
-_BULLET = "- "
+BLOCK_SEPARATOR = "<br><br>"
 
 
-def render_description(blocks: Sequence[str]) -> str:
-    """Render the description blocks as one HTML document, a blank line between blocks."""
-    return "<br><br>".join(_block_html(block) for block in blocks)
+def blocks_html(blocks: Sequence[SummaryBlock]) -> str:
+    """Render the triage summary's layout: each block a bold heading over its bullets."""
+    return BLOCK_SEPARATOR.join(
+        _block_html(block) for block in blocks if block.bullets or block.fields
+    )
 
 
-def _block_html(block: str) -> str:
-    """Render one block, collecting each run of bullet lines into a single list."""
-    rendered: list[str] = []
-    bullets: list[str] = []
-    for line in block.split("\n"):
-        if line.startswith(_BULLET):
-            bullets.append(f"<li>{_text(line[len(_BULLET):])}</li>")
-            continue
-        if bullets:
-            rendered.append(_list_html(bullets))
-            bullets = []
-        rendered.append(_line_html(line))
-    if bullets:
-        rendered.append(_list_html(bullets))
-    return _joined(rendered)
+def fields_html(fields: Sequence[tuple[str, str]]) -> str:
+    """Render standalone labelled lines — the contact details that are not part of the summary."""
+    return "<br>".join(_field_html(label, value) for label, value in fields)
 
 
-def _list_html(items: list[str]) -> str:
-    return f"<ul>{''.join(items)}</ul>"
+def text_html(text: str) -> str:
+    """Render free text written by hand, keeping the author's line breaks."""
+    return "<br>".join(_escaped(line) for line in text.split("\n"))
 
 
-def _joined(parts: list[str]) -> str:
-    """Join rendered parts; a list brings its own line breaks, two text lines need one between."""
-    html = ""
-    for part in parts:
-        if html and not html.endswith("</ul>") and not part.startswith("<ul>"):
-            html += "<br>"
-        html += part
-    return html
+def _block_html(block: SummaryBlock) -> str:
+    items = [_escaped(bullet) for bullet in block.bullets]
+    items += [_field_html(label, value) for label, value in block.fields]
+    return f"<b>{_escaped(block.heading)}:</b><ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>"
 
 
-def _line_html(line: str) -> str:
-    """Bold the leading label of a "Label: value" line; render anything else as plain text."""
-    match = _LABELLED_LINE.match(line)
-    if match is None:
-        return _text(line)
-    return f"<b>{match['label']}:</b>{_text(match['value'])}"
+def _field_html(label: str, value: str) -> str:
+    return f"<b>{_escaped(label)}:</b> {_escaped(value)}"
 
 
-def _text(value: str) -> str:
+def _escaped(value: str) -> str:
     """Escape customer-written text into an HTML text node.
 
     Quotes are left as typed: nothing here is interpolated into an attribute, and a technician

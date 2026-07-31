@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import zoneinfo
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -23,6 +24,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
+from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.photo_store import original_key, preview_key
 from fsm.scheduling.application.appointment_service import AppointmentService
 from fsm.scheduling.application.service_call_service import ServiceCallService
@@ -52,6 +54,7 @@ from fsm.platform.api.schemas import (
     ServiceCallPhotoResponse,
     ServiceCallResponse,
     SlotResponse,
+    SummaryBlockResponse,
     UpcomingAppointmentResponse,
     UpcomingAppointmentsResponse,
     WorkingHoursRequest,
@@ -712,8 +715,9 @@ def list_upcoming_appointments(
         users = SqlAlchemyUserRepository(uow.session)
         # Key: user id. Value: (preferred display name, address) resolved once per distinct id.
         user_cache: dict[UUID, tuple[str, str | None]] = {}
-        # Key: service-call id. Value: problem description, resolved once per distinct id.
-        problem_cache: dict[UUID, str] = {}
+        # Key: service-call id. Value: what the row and card show of the problem — the description
+        # text, the one-line headline, and the summary layout when triage wrote one.
+        problem_cache: dict[UUID, _ProblemView] = {}
         # Key: service-call id. Value: its photo attachments, resolved once per distinct id.
         photo_cache: dict[UUID, list[ServiceCallPhotoResponse]] = {}
 
@@ -723,9 +727,11 @@ def list_upcoming_appointments(
                 user_cache[user_id] = (u.preferred_name, u.address)
             return user_cache[user_id]
 
-        def resolve_problem(service_call_id: UUID) -> str:
+        def resolve_problem(service_call_id: UUID) -> _ProblemView:
             if service_call_id not in problem_cache:
-                problem_cache[service_call_id] = uow.service_calls.get(service_call_id).description
+                problem_cache[service_call_id] = _problem_view(
+                    uow.service_calls.get(service_call_id)
+                )
             return problem_cache[service_call_id]
 
         def resolve_photos(service_call_id: UUID) -> list[ServiceCallPhotoResponse]:
@@ -748,7 +754,9 @@ def list_upcoming_appointments(
                 end=appt.time_range.end,
                 status=appt.status.value,
                 details=appt.details,
-                problem=resolve_problem(appt.service_call_id),
+                problem=resolve_problem(appt.service_call_id).problem,
+                headline=resolve_problem(appt.service_call_id).headline,
+                summary=resolve_problem(appt.service_call_id).summary,
                 technician_name=resolve_user(appt.technician_id)[0],
                 customer_name=resolve_user(appt.customer_id)[0],
                 address=resolve_user(appt.customer_id)[1],
@@ -764,6 +772,44 @@ def list_upcoming_appointments(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _ProblemView:
+    """What one service call contributes to an appointment row: text, headline, and layout."""
+
+    problem: str
+    headline: str
+    summary: list[SummaryBlockResponse] | None
+
+
+def _problem_view(service_call) -> _ProblemView:
+    """Project a service call's problem for the API.
+
+    A call the triage assistant escalated carries the summary as structure, so the response ships
+    the same layout the calendar renders and the client renders it rather than reading the text
+    back apart. A call opened from the plain description form has only its description, whose first
+    line stands in as the headline.
+    """
+    if service_call.triage_summary is None:
+        return _ProblemView(
+            problem=service_call.description,
+            headline=service_call.description.split("\n", 1)[0],
+            summary=None,
+        )
+    summary = TriageSummary.from_dict(service_call.triage_summary)
+    return _ProblemView(
+        problem=service_call.description,
+        headline=summary.headline(),
+        summary=[
+            SummaryBlockResponse(
+                heading=block.heading,
+                bullets=list(block.bullets),
+                fields=[(label, value) for label, value in block.fields],
+            )
+            for block in summary.blocks()
+        ],
+    )
 
 
 def _publish_appointment_changed(app, appt) -> None:

@@ -11,6 +11,7 @@ wiring bug and raises.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from fsm.shared.constants import BRAND
 
@@ -24,6 +25,9 @@ class AppointmentContext:
 
     customer_name is the display name to show for the customer; problem_description is the
     service call's reported problem. Both are optional and default to None.
+    problem_headline and triage_summary come from a service call opened by the triage assistant:
+    the fault in one line, and the structured summary as the JSON the assist context wrote it in,
+    which scheduling forwards without reading into.
     service_address and customer_phone come from the customer's profile; renderers place them in
     the event location and contact lines.
     technician_name and technician_phone identify the assigned technician; the notifications
@@ -38,14 +42,21 @@ class AppointmentContext:
 
     customer_name: str | None = None
     problem_description: str | None = None
+    problem_headline: str | None = None
+    triage_summary: dict[str, Any] | None = None
     service_address: str | None = None
     customer_phone: str | None = None
     technician_name: str | None = None
     technician_phone: str | None = None
 
     def problem_summary(self) -> str:
-        """First line of the problem, truncated to the title limit; '' when absent or blank."""
-        stripped = (self.problem_description or "").strip()
+        """The fault in one line, truncated to the title limit; '' when absent or blank.
+
+        A call escalated from triage carries a headline written for exactly this; one opened from
+        the plain description form has none, and its first line stands in.
+        """
+        source = self.problem_headline or self.problem_description
+        stripped = (source or "").strip()
         if not stripped:
             return ""
         first_line = stripped.splitlines()[0]

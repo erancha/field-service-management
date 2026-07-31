@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from fsm.assist.domain.conversation import Photo
+from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.photo_store import PhotoStore, photo_keys
 from fsm.assist.ports.service_calls import OpenedServiceCall, ServiceCallOpener
 from fsm.scheduling.adapters.repositories import (
@@ -31,9 +32,18 @@ class SchedulingServiceCallOpener:
         self._attachments = SqlAlchemyServiceCallAttachmentRepository(session)
 
     def open(
-        self, customer_id: uuid.UUID, description: str, photos: Sequence[Photo] = ()
+        self,
+        customer_id: uuid.UUID,
+        description: str,
+        photos: Sequence[Photo] = (),
+        summary: TriageSummary | None = None,
     ) -> OpenedServiceCall:
-        service_call = self._service.open_service_call(customer_id, description)
+        service_call = self._service.open_service_call(
+            customer_id,
+            description,
+            triage_summary=summary.as_dict() if summary is not None else None,
+            headline=summary.headline() if summary is not None else None,
+        )
         self._attachments.add_all(
             [
                 ServiceCallAttachment(

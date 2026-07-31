@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from fsm.assist.domain.conversation import Photo
+from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.service_calls import ServiceCallOpener
 from fsm.platform.service_call_bridge import SchedulingServiceCallOpener
 from fsm.scheduling.adapters.repositories import (
@@ -17,7 +18,15 @@ from fsm.scheduling.adapters.repositories import (
 from fsm.scheduling.domain import ServiceCallStatus
 from tests.assist.fakes import FakeServiceCallOpener
 
-DESCRIPTION = "Equipment: Oven\nProblem category: Not heating"
+SUMMARY = TriageSummary(
+    equipment="Oven",
+    problem_category="Not heating",
+    symptoms="Stays cold",
+    suspected_cause="Heating element",
+    action_items=("Bring a spare element",),
+    steps_ruled_out=("Breaker reset — no change",),
+)
+DESCRIPTION = SUMMARY.render()
 
 
 @pytest.fixture
@@ -96,3 +105,25 @@ def test_open_with_photos_persists_attachment_rows(session) -> None:
 
     stored = SqlAlchemyServiceCallAttachmentRepository(session).list_for_service_call(opened.id)
     assert [(a.id, a.object_key) for a in stored] == [(photo.id, "photos/x")]
+
+
+def test_the_scheduling_opener_keeps_the_summary_as_structure(session) -> None:
+    """The stored JSON is what every surface renders from, so it must survive the write."""
+    opened = SchedulingServiceCallOpener(session).open(
+        uuid.uuid4(), DESCRIPTION, summary=SUMMARY
+    )
+    session.flush()
+
+    stored = SqlAlchemyServiceCallRepository(session).get(opened.id)
+    assert TriageSummary.from_dict(stored.triage_summary) == SUMMARY
+    assert stored.headline == "Not heating"
+
+
+def test_a_call_opened_without_a_summary_stores_none(session) -> None:
+    opened = SchedulingServiceCallOpener(session).open(uuid.uuid4(), "Boiler leaks")
+    session.flush()
+
+    stored = SqlAlchemyServiceCallRepository(session).get(opened.id)
+    assert stored.triage_summary is None
+    assert stored.headline is None
+

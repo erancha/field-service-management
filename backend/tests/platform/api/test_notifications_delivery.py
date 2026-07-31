@@ -131,7 +131,7 @@ class TestNotificationsDelivery:
         assert cust_event.id == tech_event.id
         assert cust_event.kind == "BOOKED"
         assert cust_event.subject == "Appointment booked — Notification test"
-        assert "Problem: Notification test" in cust_event.body
+        assert cust_event.body.endswith("\n\nNotification test")
         assert "Technician: Grace Hopper" in cust_event.body
         assert "Technician phone: +972-50-200" in cust_event.body
         assert str(appt_id) not in cust_event.body

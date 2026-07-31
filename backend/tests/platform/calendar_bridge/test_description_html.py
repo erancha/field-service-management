@@ -1,43 +1,59 @@
-"""The calendar event description is basic HTML, so a technician can scan it on a phone."""
+"""The calendar event description is basic HTML, rendered from the layout rather than parsed."""
 from __future__ import annotations
 
-from fsm.platform.calendar_bridge.description_html import render_description
+from fsm.assist.ports.chat_model import SummaryBlock, TriageSummary
+from fsm.platform.calendar_bridge.description_html import blocks_html, fields_html, text_html
+
+SUMMARY = TriageSummary(
+    equipment="Arealift inDOMO HP home lift",
+    problem_category="Fault code F5",
+    symptoms="Stops between floors",
+    suspected_cause="Undetermined",
+    action_items=("Bring the inDOMO HP fault list",),
+    steps_ruled_out=("Power cycled — no change",),
+)
 
 
-def test_blocks_are_separated_by_a_blank_line() -> None:
-    rendered = render_description(["Problem: No hot water", "Phone: +972-50-123"])
+def test_the_layout_is_one_flat_run_of_bold_headings_over_bullets() -> None:
+    """No grouping above the headings: the appointment card renders this same shape."""
+    rendered = blocks_html(SUMMARY.blocks())
 
-    assert rendered == "<b>Problem:</b> No hot water<br><br><b>Phone:</b> +972-50-123"
+    assert rendered == (
+        "<b>Problem:</b><ul><li>Fault code F5</li><li>Stops between floors</li></ul>"
+        "<br><br>"
+        "<b>Action items:</b><ul><li>Bring the inDOMO HP fault list</li></ul>"
+        "<br><br>"
+        "<b>Triage summary:</b><ul>"
+        "<li><b>Equipment:</b> Arealift inDOMO HP home lift</li>"
+        "<li><b>Suspected cause:</b> Undetermined</li></ul>"
+        "<br><br>"
+        "<b>Steps ruled out:</b><ul><li>Power cycled — no change</li></ul>"
+    )
 
 
-def test_action_items_become_a_bullet_list() -> None:
-    rendered = render_description(
+def test_a_block_the_conversation_gave_nothing_for_prints_no_heading() -> None:
+    rendered = blocks_html(
         [
-            "Problem: Fault code F5\n"
-            "\n"
-            "Action items:\n"
-            "- Bring the inDOMO HP fault list\n"
-            "- Confirm where F5 is displayed\n"
-            "Equipment: Arealift inDOMO HP home lift"
+            SummaryBlock("Problem", bullets=("Fault code F5",)),
+            SummaryBlock("Steps ruled out", bullets=()),
         ]
     )
 
-    assert rendered == (
-        "<b>Problem:</b> Fault code F5<br><br><b>Action items:</b>"
-        "<ul><li>Bring the inDOMO HP fault list</li>"
-        "<li>Confirm where F5 is displayed</li></ul>"
-        "<b>Equipment:</b> Arealift inDOMO HP home lift"
-    )
+    assert rendered == "<b>Problem:</b><ul><li>Fault code F5</li></ul>"
 
 
 def test_markup_in_the_customer_s_words_is_escaped() -> None:
-    rendered = render_description(["Symptoms: shows <F5> & then stops"])
+    rendered = fields_html([("Symptoms", "shows <F5> & then stops")])
 
     assert rendered == "<b>Symptoms:</b> shows &lt;F5&gt; &amp; then stops"
 
 
-def test_a_line_that_is_not_a_labelled_field_is_left_alone() -> None:
-    """Only a short leading label is bolded, so prose with a colon in it stays prose."""
-    rendered = render_description(["Customer said the fault appeared at 10:30 yesterday"])
+def test_a_colon_in_free_text_stays_text() -> None:
+    """Nothing reads the text for structure, so prose is carried through as written."""
+    rendered = text_html("Customer said the fault appeared at 10:30 yesterday")
 
     assert rendered == "Customer said the fault appeared at 10:30 yesterday"
+
+
+def test_free_text_keeps_the_author_s_line_breaks() -> None:
+    assert text_html("Gate code 4321\nDog in the yard") == "Gate code 4321<br>Dog in the yard"

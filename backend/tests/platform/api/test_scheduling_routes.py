@@ -30,6 +30,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
+from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.photo_store import object_prefix, original_key, preview_key
 from fsm.platform.app import create_app
 from fsm.identity.domain.role import Role
@@ -136,12 +137,14 @@ def _seed_contact(pg_session_factory, cust_id, tech_id, address="12 Main St", ph
     _seed_user(pg_session_factory, tech_id, Role.TECHNICIAN, address=address, phone=phone)
 
 
-def _seed_service_call(pg_session_factory, sc_id, customer_id, description="Fix boiler"):
+def _seed_service_call(pg_session_factory, sc_id, customer_id, description="Fix boiler",
+                       triage_summary=None, headline=None):
     from fsm.scheduling.adapters.orm import ServiceCallRow
     with pg_session_factory() as s:
         with s.begin():
             s.add(ServiceCallRow(id=sc_id, customer_id=customer_id, description=description,
-                                 status="OPEN", created_at=datetime(2024, 1, 1, tzinfo=timezone.utc)))
+                                 status="OPEN", created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                                 triage_summary=triage_summary, headline=headline))
 
 
 def _seed_appt(pg_session_factory, *, appt_id, sc_id, technician_id, customer_id, start, end, status="SCHEDULED"):
@@ -837,6 +840,62 @@ class TestUpcomingEndpoint:
         assert items[0]["photos"] == [
             {"id": str(seed.photo_id), "filename": "plate.jpg", "size_bytes": 14}
         ]
+
+    def test_an_escalated_call_ships_the_layout_so_the_client_renders_no_prose(
+        self, client, auth, pg_session_factory
+    ):
+        summary = TriageSummary(
+            equipment="LG 86NANO91VPA television",
+            problem_category="No picture, sound present",
+            symptoms="Sound plays normally",
+            suspected_cause="Backlight failure",
+            action_items=("Bring backlight strip parts",),
+            steps_ruled_out=("Flashlight test showed no faint image",),
+        )
+        tech, cust, sc = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        _seed_user(pg_session_factory, tech, Role.TECHNICIAN)
+        _seed_user(pg_session_factory, cust, Role.CUSTOMER)
+        _seed_service_call(pg_session_factory, sc, cust, description=summary.render(),
+                           triage_summary=summary.as_dict(), headline=summary.headline())
+        _seed_appt(pg_session_factory, appt_id=uuid.uuid4(), sc_id=sc, technician_id=tech,
+                   customer_id=cust, start=self._far(1), end=self._far(1, 11))
+        auth(tech, Role.TECHNICIAN)
+
+        [item] = client.get("/api/appointments/upcoming", params={"limit": 5}).json()["items"]
+
+        assert item["headline"] == "No picture, sound present"
+        assert [block["heading"] for block in item["summary"]] == [
+            "Problem",
+            "Action items",
+            "Triage summary",
+            "Steps ruled out",
+        ]
+        assert item["summary"][0] == {
+            "heading": "Problem",
+            "bullets": ["No picture, sound present", "Sound plays normally"],
+            "fields": [],
+        }
+        assert item["summary"][2]["fields"] == [
+            ["Equipment", "LG 86NANO91VPA television"],
+            ["Suspected cause", "Backlight failure"],
+        ]
+
+    def test_a_call_opened_from_the_description_form_ships_its_first_line_as_the_headline(
+        self, client, auth, pg_session_factory
+    ):
+        tech, cust, sc = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        _seed_user(pg_session_factory, tech, Role.TECHNICIAN)
+        _seed_user(pg_session_factory, cust, Role.CUSTOMER)
+        _seed_service_call(pg_session_factory, sc, cust, description="Boiler leaks\nSee the photo")
+        _seed_appt(pg_session_factory, appt_id=uuid.uuid4(), sc_id=sc, technician_id=tech,
+                   customer_id=cust, start=self._far(1), end=self._far(1, 11))
+        auth(tech, Role.TECHNICIAN)
+
+        [item] = client.get("/api/appointments/upcoming", params={"limit": 5}).json()["items"]
+
+        assert item["summary"] is None
+        assert item["headline"] == "Boiler leaks"
+        assert item["problem"] == "Boiler leaks\nSee the photo"
 
     def test_upcoming_appointments_photos_default_to_empty(self, client, auth, pg_session_factory):
         """A call with no attachment rows renders an empty photo list, not an omitted field."""

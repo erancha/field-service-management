@@ -204,30 +204,38 @@ describe('AppointmentCard facts', () => {
     expect(screen.getByText(/12 Main St/)).toBeInTheDocument()
   })
 
-  it('gives the triage summary’s action items their own labelled list', () => {
-    const problem = [
-      'No picture, sound present',
-      '',
-      'Action items:',
-      '- Confirm backlight failure with the panel powered on',
-      '- Bring backlight/LED strip parts',
-      'Equipment: LG 86NANO91VPA television',
-    ].join('\n')
+  it('renders the summary layout the API sends, heading by heading', () => {
+    const summary = [
+      { heading: 'Problem', bullets: ['No picture, sound present'], fields: [] },
+      { heading: 'Action items', bullets: ['Bring backlight strip parts'], fields: [] },
+      { heading: 'Triage summary', bullets: [], fields: [['Equipment', 'LG 86NANO91VPA']] as [string, string][] },
+      { heading: 'Steps ruled out', bullets: [], fields: [] },
+    ]
     const { container } = render(
-      <AppointmentCard appointment={makeAppointment()} problem={problem} />,
+      <AppointmentCard appointment={makeAppointment()} problem="ignored text" summary={summary} />,
     )
 
-    expect(screen.getByText('Action items')).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'Confirm backlight failure with the panel powered on',
-      'Bring backlight/LED strip parts',
+    // One flat run of headings, no grouping above them, and a block the conversation gave nothing
+    // for prints neither heading nor list — the calendar event renders exactly this shape.
+    expect(
+      Array.from(container.querySelectorAll('.triage-summary h4')).map((h) => h.textContent),
+    ).toEqual(['Problem:', 'Action items:', 'Triage summary:'])
+    expect(
+      Array.from(container.querySelectorAll('.triage-summary li')).map((li) => li.textContent),
+    ).toEqual([
+      'No picture, sound present',
+      'Bring backlight strip parts',
+      'Equipment: LG 86NANO91VPA',
     ])
+  })
 
-    const problemText = container.querySelector('.appointment-card__problem')?.textContent
-    expect(problemText).toContain('No picture, sound present')
-    expect(problemText).toContain('Equipment: LG 86NANO91VPA television')
-    expect(problemText).not.toContain('Action items')
-    expect(problemText).not.toContain('Confirm backlight failure')
+  it('shows a hand-written description as the problem when there is no summary', () => {
+    const { container } = render(
+      <AppointmentCard appointment={makeAppointment()} problem="Boiler leaks" />,
+    )
+
+    expect(container.querySelector('.appointment-card__problem')?.textContent).toBe('Boiler leaks')
+    expect(container.querySelector('.triage-summary')).toBeNull()
   })
 
   it('renders the From and To moments in the shared minute-precision local format', () => {

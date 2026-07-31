@@ -43,9 +43,9 @@ class RecordingModel:
                     equipment="Oven",
                     problem_category="Not heating",
                     symptoms="Stays cold",
-                    steps_tried="Breaker reset — no change",
                     suspected_cause="Heating element",
                     action_items=["Bring a spare heating element"],
+                    steps_ruled_out=["Breaker reset — no change"],
                 )
 
         return _Structured()

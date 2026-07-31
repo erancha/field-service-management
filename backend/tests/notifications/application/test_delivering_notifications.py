@@ -327,7 +327,10 @@ class TestNotificationContext:
         body = msg["body"]
         assert "Technician: Grace Hopper" in body
         assert "Technician phone: +972-50-999" in body
-        assert body.index("Customer:") < body.index("Technician:") < body.index("Problem:")
+        assert body.index("Customer:") < body.index("Technician:")
+        # The problem trails the contact lines unlabelled: an escalated call arrives already
+        # laid out under its own headings, and a label would title it twice.
+        assert body.index("Technician phone:") < body.index("No hot water")
 
     def test_booked_body_names_customer_and_problem_without_bare_id(self):
         appt = _make_appointment()
@@ -338,7 +341,7 @@ class TestNotificationContext:
 
         [msg] = sender.sent
         assert "Customer: Ada Lovelace" in msg["body"]
-        assert "Problem: No hot water" in msg["body"]
+        assert msg["body"].endswith("\n\nNo hot water")
         assert str(appt.id) not in msg["body"]
 
     @pytest.mark.parametrize("field, label", [
@@ -395,7 +398,7 @@ class TestNotificationContext:
         port.appointment_cancelled(appt)
 
         assert len(sender.sent) == 2
-        assert all("Problem: No hot water" in m["body"] for m in sender.sent)
+        assert all(m["body"].endswith("\n\nNo hot water") for m in sender.sent)
         assert sender.sent[0]["subject"] == "Appointment rescheduled — No hot water"
         assert sender.sent[1]["subject"] == "Appointment cancelled — No hot water"
 

@@ -101,6 +101,14 @@ class ServiceCallPhotoResponse(BaseModel):
     size_bytes: int
 
 
+class SummaryBlockResponse(BaseModel):
+    """A heading over either bullets or labelled fields; the other list is empty."""
+
+    heading: str
+    bullets: list[str]
+    fields: list[tuple[str, str]]
+
+
 class UpcomingAppointmentResponse(BaseModel):
     id: UUID
     service_call_id: UUID
@@ -110,7 +118,12 @@ class UpcomingAppointmentResponse(BaseModel):
     end: datetime
     status: str
     details: str | None
+    # problem is the service call's description as text; summary is the same content as the layout
+    # every surface renders, present only for a call the triage assistant escalated. headline is
+    # the fault in one line, for the row that has one line to show.
     problem: str
+    headline: str
+    summary: list[SummaryBlockResponse] | None
     technician_name: str
     customer_name: str
     address: str | None

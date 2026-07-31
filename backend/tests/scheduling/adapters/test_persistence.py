@@ -258,6 +258,29 @@ class TestSqlAlchemyServiceCallRepository:
         assert fetched.description == sc.description
         assert fetched.status == sc.status
 
+    def test_the_triage_summary_and_headline_round_trip(self, session):
+        """Scheduling stores the assist context's JSON whole; it never reads into it."""
+        repo = SqlAlchemyServiceCallRepository(session)
+        sc = _make_service_call()
+        sc.triage_summary = {"problem_category": "Not heating", "action_items": ["Bring a part"]}
+        sc.headline = "Not heating"
+        repo.add(sc)
+
+        fetched = repo.get(sc.id)
+
+        assert fetched.triage_summary == sc.triage_summary
+        assert fetched.headline == "Not heating"
+
+    def test_a_call_opened_from_the_description_form_stores_no_summary(self, session):
+        repo = SqlAlchemyServiceCallRepository(session)
+        sc = _make_service_call()
+        repo.add(sc)
+
+        fetched = repo.get(sc.id)
+
+        assert fetched.triage_summary is None
+        assert fetched.headline is None
+
     def test_get_missing_raises_not_found(self, session):
         repo = SqlAlchemyServiceCallRepository(session)
         with pytest.raises(NotFoundError):

@@ -20,11 +20,13 @@ class _SummarySchema(BaseModel):
     equipment: str = Field(description="Make, model, and type of the equipment.")
     problem_category: str = Field(description="Short label for the fault.")
     symptoms: str = Field(description="What the customer observes.")
-    steps_tried: str = Field(description="Each step attempted and what it changed.")
     suspected_cause: str = Field(description="Best assessment, or that it is undetermined.")
     action_items: list[str] = Field(
         min_length=1,
         description="What to do first and what to bring, one short imperative each.",
+    )
+    steps_ruled_out: list[str] = Field(
+        description="Each step already attempted and what it eliminated.",
     )
 
 
@@ -106,7 +108,7 @@ class LangChainChatModel:
             equipment=result.equipment,
             problem_category=result.problem_category,
             symptoms=result.symptoms,
-            steps_tried=result.steps_tried,
             suspected_cause=result.suspected_cause,
             action_items=tuple(result.action_items),
+            steps_ruled_out=tuple(result.steps_ruled_out),
         )

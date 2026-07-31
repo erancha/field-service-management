@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 from uuid import UUID, uuid4
 
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
@@ -31,6 +31,8 @@ class ServiceCallService:
         self,
         customer_id: UUID,
         description: str,
+        triage_summary: dict[str, Any] | None = None,
+        headline: str | None = None,
     ) -> ServiceCall:
         """Create a new OPEN service call, persist it, and return it."""
         sc = ServiceCall(
@@ -39,6 +41,8 @@ class ServiceCallService:
             description=description,
             status=ServiceCallStatus.OPEN,
             created_at=self._clock(),
+            triage_summary=triage_summary,
+            headline=headline,
         )
         self._service_calls.add(sc)
         return sc

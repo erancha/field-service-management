@@ -130,9 +130,9 @@ class FakeChatModel:
             equipment="Oven",
             problem_category="Not heating",
             symptoms="Stays cold",
-            steps_tried="Breaker reset — no change",
             suspected_cause="Heating element",
             action_items=("Bring a spare heating element",),
+            steps_ruled_out=("Breaker reset — no change",),
         )
         self.stream_calls: list[tuple[str, list[Message]]] = []
         self.summarize_calls: list[tuple[str, list[Message]]] = []
@@ -200,13 +200,19 @@ class FakeServiceCallOpener:
     def __init__(self) -> None:
         self.opened: list[OpenedServiceCall] = []
         self.opened_photos: list[list[Photo]] = []
+        self.opened_summaries: list[TriageSummary | None] = []
 
     def open(
-        self, customer_id: uuid.UUID, description: str, photos: Sequence[Photo] = ()
+        self,
+        customer_id: uuid.UUID,
+        description: str,
+        photos: Sequence[Photo] = (),
+        summary: TriageSummary | None = None,
     ) -> OpenedServiceCall:
         call = OpenedServiceCall(id=uuid.uuid4(), description=description)
         self.opened.append(call)
         self.opened_photos.append(list(photos))
+        self.opened_summaries.append(summary)
         return call
 
 

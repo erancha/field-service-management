@@ -3,9 +3,27 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from fsm.assist.domain.conversation import Message
+
+
+@dataclass(frozen=True)
+class SummaryBlock:
+    """A heading over one kind of content: a bullet list, or labelled fields — never both.
+
+    Which one a block carries is fixed by the layout, so a renderer can branch on it without
+    inspecting the values. Both empty is a block the conversation gave nothing for — nothing was
+    ruled out, say — and every renderer omits it, heading included.
+    """
+
+    heading: str
+    bullets: tuple[str, ...] = ()
+    fields: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.bullets and self.fields:
+            raise ValueError(f"block {self.heading!r} carries both bullets and fields")
 
 
 @dataclass(frozen=True)
@@ -15,29 +33,76 @@ class TriageSummary:
     equipment: str
     problem_category: str
     symptoms: str
-    steps_tried: str
     suspected_cause: str
     action_items: tuple[str, ...]
+    steps_ruled_out: tuple[str, ...]
+
+    def blocks(self) -> tuple[SummaryBlock, ...]:
+        """The layout of the summary, and the only definition of it.
+
+        Every surface — the calendar event, the appointment card, the notification email — walks
+        this sequence, so they present the same headings in the same order and none of them
+        re-derives the shape from rendered text.
+
+        One flat run of headings, no grouping above them: what a technician needs before setting
+        out comes first, and what is worth reading on the way follows. The fault leads the Problem
+        block because a surface with one line to spend shows that line, and it is the headline.
+        """
+        return (
+            SummaryBlock("Problem", bullets=(self.problem_category, self.symptoms)),
+            SummaryBlock("Action items", bullets=self.action_items),
+            SummaryBlock(
+                "Triage summary",
+                fields=(
+                    ("Equipment", self.equipment),
+                    ("Suspected cause", self.suspected_cause),
+                ),
+            ),
+            SummaryBlock("Steps ruled out", bullets=self.steps_ruled_out),
+        )
+
+    def headline(self) -> str:
+        """The fault in one line, for a surface that has only one to spend."""
+        return self.problem_category
 
     def render(self) -> str:
-        """The service-call description text; the single place this summary is formatted.
+        """The plain-text projection of the layout, stored as the service call's description.
 
-        The fault category stands alone on the first line because the calendar event takes its
-        title from it, and every surface that shows the summary labels that line itself. A blank
-        line sets it off from the action items, which come above the background fields so the
-        technician meets the job to be done before the evidence behind it.
+        Anything that reads a service call as text — the notification email, a feed row — gets the
+        same headings in the same order as the surfaces that render the structure directly.
         """
-        return "\n".join(
-            [
-                self.problem_category,
-                "",
-                "Action items:",
-                *(f"- {item}" for item in self.action_items),
-                f"Equipment: {self.equipment}",
-                f"Symptoms: {self.symptoms}",
-                f"Steps tried: {self.steps_tried}",
-                f"Suspected cause: {self.suspected_cause}",
-            ]
+        lines: list[str] = []
+        for block in self.blocks():
+            if not block.bullets and not block.fields:
+                continue
+            if lines:
+                lines.append("")
+            lines.append(f"{block.heading}:")
+            lines.extend(f"- {bullet}" for bullet in block.bullets)
+            lines.extend(f"- {label}: {value}" for label, value in block.fields)
+        return "\n".join(lines)
+
+    def as_dict(self) -> dict[str, Any]:
+        """The summary as the JSON stored on the service call; blocks() lays it back out."""
+        return {
+            "equipment": self.equipment,
+            "problem_category": self.problem_category,
+            "symptoms": self.symptoms,
+            "suspected_cause": self.suspected_cause,
+            "action_items": list(self.action_items),
+            "steps_ruled_out": list(self.steps_ruled_out),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TriageSummary:
+        """Rebuild a summary from stored JSON; a row missing a field is a broken write, not a case."""
+        return cls(
+            equipment=data["equipment"],
+            problem_category=data["problem_category"],
+            symptoms=data["symptoms"],
+            suspected_cause=data["suspected_cause"],
+            action_items=tuple(data["action_items"]),
+            steps_ruled_out=tuple(data["steps_ruled_out"]),
         )
 
 

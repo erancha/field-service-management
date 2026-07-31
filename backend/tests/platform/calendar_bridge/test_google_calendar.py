@@ -13,6 +13,8 @@ import pytest
 from fsm.google_calendar.ports.client import GoogleCalendarClient
 from fsm.platform.calendar_bridge.google_calendar import GoogleCalendarAdapter
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.assist.ports.chat_model import TriageSummary
+from fsm.platform.calendar_bridge.description_html import blocks_html
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.time_range import TimeRange
 
@@ -500,4 +502,63 @@ class TestLocationAndPhone:
             "<b>Technician:</b> Grace Hopper<br><b>Technician phone:</b> +972-50-999"
             "<br><br><b>Problem:</b> No hot water<br><br><b>Phone:</b> +972-50-123"
         )
+
+
+class TestStructuredSummary:
+    """A call escalated from triage carries structure, so the event renders the layout itself."""
+
+    SUMMARY = TriageSummary(
+        equipment="LG 86NANO91VPA television",
+        problem_category="No picture, sound present",
+        symptoms="Sound plays normally with a black screen",
+        suspected_cause="Backlight failure",
+        action_items=("Bring backlight/LED strip parts",),
+        steps_ruled_out=("Flashlight test showed no faint image",),
+    )
+
+    def _context(self, **overrides) -> AppointmentContext:
+        return AppointmentContext(
+            customer_name="Ada Lovelace",
+            problem_description=self.SUMMARY.render(),
+            problem_headline=self.SUMMARY.headline(),
+            triage_summary=self.SUMMARY.as_dict(),
+            **overrides,
+        )
+
+    def test_the_title_takes_the_headline_not_the_first_line_of_the_layout(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment_no_details, self._context())
+
+        summary_line = client.inserted[0][1]["summary"]
+        assert summary_line == "Field Service Management: Ada Lovelace : No picture, sound present"
+        assert "Summary" not in summary_line
+
+    def test_the_description_renders_the_layout_the_summary_defines(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(appointment_no_details, self._context())
+
+        assert client.inserted[0][1]["description"] == blocks_html(self.SUMMARY.blocks())
+
+    def test_the_contact_lines_still_bracket_the_layout(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+
+        adapter.create_event(
+            appointment_no_details,
+            self._context(technician_name="Grace Hopper", customer_phone="+972-50-123"),
+        )
+
+        description = client.inserted[0][1]["description"]
+        assert description.startswith("<b>Technician:</b> Grace Hopper<br><br><b>Problem:</b>")
+        assert description.endswith("<br><br><b>Phone:</b> +972-50-123")
 

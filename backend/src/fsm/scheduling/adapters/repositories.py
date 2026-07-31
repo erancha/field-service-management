@@ -58,6 +58,8 @@ def _row_to_service_call(row: ServiceCallRow) -> ServiceCall:
         description=row.description,
         status=ServiceCallStatus(row.status),
         created_at=row.created_at,
+        triage_summary=row.triage_summary,
+        headline=row.headline,
     )
 
 
@@ -68,6 +70,8 @@ def _service_call_to_row(sc: ServiceCall) -> ServiceCallRow:
         description=sc.description,
         status=sc.status.value,
         created_at=sc.created_at,
+        triage_summary=sc.triage_summary,
+        headline=sc.headline,
     )
 
 

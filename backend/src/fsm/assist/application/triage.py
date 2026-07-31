@@ -254,7 +254,10 @@ class TriageService:
             summary = self._chat_model.summarize(SUMMARY_SYSTEM_PROMPT, conversation.messages)
             description = summary.render()
             opened = self._service_calls.open(
-                conversation.customer_id, description, photos=self._sent_photos(conversation)
+                conversation.customer_id,
+                description,
+                photos=self._sent_photos(conversation),
+                summary=summary,
             )
             conversation.mark_escalated(opened.id, now)
             self._outcome = TurnOutcome(

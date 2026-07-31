@@ -272,6 +272,19 @@ def test_escalate_marker_opens_a_service_call_carrying_the_summary() -> None:
     assert service.outcome().service_call_description == opened.description
 
 
+
+def test_escalation_hands_the_opener_the_summary_it_wrote() -> None:
+    """The service call keeps the structure, so no surface has to read it back out of the text."""
+    service, _, chat_model, openers = make_service(
+        replies=[f"I will book a technician. {ESCALATE_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "Still cold after all that.")
+
+    assert openers.opened_summaries[0] == chat_model.summary
+
+
 def test_closed_marker_abandons_the_conversation_without_a_service_call() -> None:
     service, conversations, chat_model, openers = make_service(
         replies=[f"That is outside what I can help with. {CLOSED_MARKER}"]

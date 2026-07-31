@@ -68,15 +68,23 @@ def test_grounded_prompt_asks_for_a_citation_and_allows_a_fallback() -> None:
     assert "your own knowledge" in grounded
 
 
-def test_summary_prompt_asks_for_the_action_items_the_technician_reads_first() -> None:
-    assert "action_items" in SUMMARY_SYSTEM_PROMPT
+def test_summary_prompt_names_every_field_the_layout_renders() -> None:
+    for field in (
+        "problem_category",
+        "symptoms",
+        "action_items",
+        "equipment",
+        "suspected_cause",
+        "steps_ruled_out",
+    ):
+        assert field in SUMMARY_SYSTEM_PROMPT
 
 
-def test_summary_prompt_bounds_each_field_and_bars_ruled_out_evidence() -> None:
+def test_summary_prompt_bounds_each_field_and_separates_what_is_read_when() -> None:
     prompt = SUMMARY_SYSTEM_PROMPT.lower()
 
     assert "one or two sentences" in prompt
-    assert "ruled out" in prompt
+    assert "before setting out" in prompt
 
 
 def test_strip_markers_returns_plain_text_when_no_marker_is_present() -> None:

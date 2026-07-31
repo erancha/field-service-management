@@ -398,12 +398,28 @@ body {
   color: var(--color-text);
 }
 
-/* The triage summary is one labelled field per line; collapsed whitespace would run them together. */
+/* A description written by hand keeps the author's line breaks; collapsed whitespace loses them. */
 .appointment-card__problem {
   white-space: pre-line;
 }
 
-.appointment-card__action-items {
+/* Matches the calendar event: bold heading over a bullet list, blocks set apart by blank space. */
+.triage-summary {
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+.triage-summary h4 {
+  margin: 0 0 0.15rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.triage-summary__block + .triage-summary__block {
+  margin-top: 0.7rem;
+}
+
+.triage-summary ul {
   margin: 0;
   padding-left: 1.1rem;
 }
