@@ -14,8 +14,14 @@ from uuid import UUID, uuid4
 
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.availability import generate_slots
+from fsm.scheduling.domain.booking_rate_limit import CancellationRateLimit
 from fsm.scheduling.domain.contact_info import ContactInfo
-from fsm.scheduling.domain.errors import IncompleteContactInfo, InvalidTransition, SlotUnavailable
+from fsm.scheduling.domain.errors import (
+    BookingRateLimited,
+    IncompleteContactInfo,
+    InvalidTransition,
+    SlotUnavailable,
+)
 from fsm.scheduling.domain.service_call import ServiceCallStatus
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.domain.working_hours import WeeklyWorkingHours
@@ -36,11 +42,17 @@ class AppointmentService:
     - Enforces no-overlap constraint before booking or rescheduling
     - Persists mutations and enqueues outbox entries in the same transaction
     - Rejects a booking whose customer or technician lacks required contact data
+    - Pauses booking for a customer whose recent cancellations exceed the churn limit
     - Delegates external calendar projection to CalendarProjectionDispatcher via the outbox
 
     contact_resolver maps a user id to their ContactInfo, injected so the layer stays identity-free.
     It is consulted only by book_appointment; when unset, booking treats all contact as absent and
     rejects (fail closed), so a booking path that forgets to wire it cannot silently skip the check.
+
+    cancellation_limit caps a customer's book/cancel churn, counted from the audit log's
+    CANCELLED records. None disables the limit; like contact_resolver it is consulted only
+    by book_appointment. display_tz is the zone the rejection renders its reopen time in —
+    it affects only that message, never stored timestamps.
     """
 
     def __init__(
@@ -53,6 +65,8 @@ class AppointmentService:
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         new_id: Callable[[], UUID] = uuid4,
         contact_resolver: Callable[[UUID], ContactInfo] | None = None,
+        cancellation_limit: CancellationRateLimit | None = None,
+        display_tz: tzinfo = timezone.utc,
     ) -> None:
         self._appointments = appointments
         self._service_calls = service_calls
@@ -62,6 +76,8 @@ class AppointmentService:
         self._clock = clock
         self._new_id = new_id
         self._contact_resolver = contact_resolver
+        self._cancellation_limit = cancellation_limit
+        self._display_tz = display_tz
 
     def propose_slots(
         self,
@@ -122,6 +138,8 @@ class AppointmentService:
         Validates that the service call exists and is OPEN before any mutation.
         Raises NotFoundError if the service call does not exist.
         Raises InvalidTransition if the service call is not OPEN.
+        Raises BookingRateLimited if the customer's recent cancellations exceed the
+        configured churn limit.
         Raises IncompleteContactInfo if the customer lacks an address or phone, or the assigned
         technician lacks a phone.
         Raises SlotUnavailable if time_range overlaps any active appointment for the technician.
@@ -136,10 +154,11 @@ class AppointmentService:
                 f"with status {sc.status.value!r}; only OPEN calls may be booked."
             )
 
+        now = self._clock()
+        self._guard_not_rate_limited(customer_id, now)
         self._guard_contact_complete(customer_id, technician_id)
         self._guard_no_overlap(technician_id, time_range, exclude_id=None)
 
-        now = self._clock()
         appt = Appointment(
             id=self._new_id(),
             service_call_id=service_call_id,
@@ -228,6 +247,23 @@ class AppointmentService:
         self._outbox.enqueue(OutboxOperation.UPDATE, appt.id)
         self._notifications.appointment_updated(appt)
         return appt
+
+    def _guard_not_rate_limited(self, customer_id: UUID, now: datetime) -> None:
+        """Reject the booking while the customer's recent cancellations exceed the churn limit."""
+        if self._cancellation_limit is None:
+            return
+        cancellations = self._appointments.list_customer_cancellations_since(
+            customer_id, now - self._cancellation_limit.window
+        )
+        retry_at = self._cancellation_limit.blocked_until(cancellations, now)
+        if retry_at is not None:
+            _log.warning(
+                "BookingRateLimited: booking rejected; customer_id=%s cancellations=%d retry_at=%s",
+                customer_id,
+                len(cancellations),
+                retry_at,
+            )
+            raise BookingRateLimited(retry_at.astimezone(self._display_tz))
 
     def _guard_contact_complete(self, customer_id: UUID, technician_id: UUID) -> None:
         """Reject the booking unless the customer has address+phone and the technician has a phone.

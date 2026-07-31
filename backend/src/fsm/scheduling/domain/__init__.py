@@ -11,13 +11,15 @@ Public types re-exported here:
 - AppointmentStatus, Appointment: scheduled visit lifecycle
 - ServiceCallAttachment: a triage photo carried over onto a service call
 - ContactInfo: per-party contact details a booking depends on
+- CancellationRateLimit: cap on a customer's book/cancel churn
 - SchedulingError, InvalidTimeRange, InvalidTransition, NotFoundError,
-  SlotUnavailable, IncompleteContactInfo: error hierarchy
+  SlotUnavailable, IncompleteContactInfo, BookingRateLimited: error hierarchy
 - generate_slots: deterministic slot generation for technician availability
 - build_ical_uid, parse_ical_uid: identity scheme tying appointments to calendar events
 """
 
 from fsm.scheduling.domain.errors import (
+    BookingRateLimited,
     IncompleteContactInfo,
     InvalidTimeRange,
     InvalidTransition,
@@ -25,6 +27,7 @@ from fsm.scheduling.domain.errors import (
     SchedulingError,
     SlotUnavailable,
 )
+from fsm.scheduling.domain.booking_rate_limit import CancellationRateLimit
 from fsm.scheduling.domain.contact_info import ContactInfo
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.domain.working_hours import DailyHours, WeeklyWorkingHours
@@ -41,6 +44,8 @@ __all__ = [
     "NotFoundError",
     "SlotUnavailable",
     "IncompleteContactInfo",
+    "BookingRateLimited",
+    "CancellationRateLimit",
     "ContactInfo",
     "TimeRange",
     "DailyHours",

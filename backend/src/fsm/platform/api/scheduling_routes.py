@@ -10,6 +10,7 @@ Domain error mapping:
 - NotFoundError                       → 404 Not Found
 - InvalidTimeRange                    → 400 Bad Request
 - IncompleteContactInfo               → 422 Unprocessable Entity
+- BookingRateLimited                  → 429 Too Many Requests
 """
 from __future__ import annotations
 
@@ -28,7 +29,9 @@ from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.photo_store import original_key, preview_key
 from fsm.scheduling.application.appointment_service import AppointmentService
 from fsm.scheduling.application.service_call_service import ServiceCallService
+from fsm.scheduling.domain.booking_rate_limit import CancellationRateLimit
 from fsm.scheduling.domain.errors import (
+    BookingRateLimited,
     IncompleteContactInfo,
     InvalidTimeRange,
     InvalidTransition,
@@ -168,6 +171,7 @@ _DOMAIN_ERROR_STATUS: dict[type[SchedulingError], int] = {
     NotFoundError: 404,
     InvalidTimeRange: 400,
     IncompleteContactInfo: 422,
+    BookingRateLimited: 429,
 }
 
 
@@ -184,22 +188,36 @@ def handle_scheduling_error(request: Request, exc: SchedulingError) -> JSONRespo
     raise exc
 
 
+def _cancellation_limit(settings) -> CancellationRateLimit | None:
+    """Build the booking churn limit from settings; a limit of 0 turns the check off."""
+    if settings.fsm_booking_cancel_limit == 0:
+        return None
+    return CancellationRateLimit(
+        max_cancellations=settings.fsm_booking_cancel_limit,
+        window=timedelta(hours=settings.fsm_booking_cancel_window_hours),
+        cooloff=timedelta(hours=settings.fsm_booking_cancel_cooloff_hours),
+    )
+
+
 def _appointment_service(uow, request: Request) -> AppointmentService:
     """Build the AppointmentService shared by book/reschedule/cancel/add_details.
 
     The calendar port is a no-op stand-in: the mutation use cases never read it (only the
     availability query fetches busy time), and outbound calendar writes are enqueued to the
-    outbox, whose dispatcher holds the real client. The contact resolver is consulted only by
-    booking's contact-completeness guard; the other endpoints ignore it, and wiring it
-    unconditionally keeps the factory uniform.
+    outbox, whose dispatcher holds the real client. The contact resolver and cancellation
+    limit are consulted only by booking's guards; the other endpoints ignore them, and
+    wiring them unconditionally keeps the factory uniform.
     """
+    settings = _get_settings(request)
     return AppointmentService(
         appointments=uow.appointments,
         service_calls=uow.service_calls,
         calendar=NullCalendarPort(),
-        notifications=build_notifications(uow.session, _get_settings(request)),
+        notifications=build_notifications(uow.session, settings),
         outbox=uow.outbox,
         contact_resolver=build_contact_resolver(uow.session),
+        cancellation_limit=_cancellation_limit(settings),
+        display_tz=zoneinfo.ZoneInfo(settings.timezone),
     )
 
 

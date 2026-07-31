@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus, AuditAction
 from fsm.scheduling.domain.appointment_context import AppointmentContext
 from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.errors import NotFoundError
@@ -111,6 +111,15 @@ class InMemoryAppointmentRepository:
 
     def list_for_service_call(self, service_call_id: UUID) -> list[Appointment]:
         return [a for a in self._store.values() if a.service_call_id == service_call_id]
+
+    def list_customer_cancellations_since(self, customer_id: UUID, since: datetime) -> list[datetime]:
+        return [
+            occurred_at
+            for appointment_id, action, occurred_at in self.audits
+            if action is AuditAction.CANCELLED
+            and occurred_at >= since
+            and self._store[appointment_id].customer_id == customer_id
+        ]
 
 
 class _FakeHttp409(Exception):

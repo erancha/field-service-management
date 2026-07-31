@@ -1,8 +1,9 @@
 """Tests for AppointmentService application use cases."""
 from __future__ import annotations
 
+import zoneinfo
 from datetime import date, datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -10,6 +11,8 @@ from fsm.scheduling.application import AppointmentService
 from fsm.scheduling.domain import (
     Appointment,
     AppointmentStatus,
+    BookingRateLimited,
+    CancellationRateLimit,
     ContactInfo,
     IncompleteContactInfo,
     InvalidTransition,
@@ -928,6 +931,152 @@ class TestBookAppointmentContactEnforcement:
         )
         appt = self._book(service)
         assert appt.status == AppointmentStatus.SCHEDULED
+
+
+class TestBookingCancellationRateLimit:
+    """book_appointment rejects a customer whose recent cancellations exceed the configured limit.
+
+    The limit counts the customer's CANCELLED audit records inside a rolling window; once the
+    threshold is reached, booking stays blocked until the cool-off elapses after the latest
+    cancellation.
+    """
+
+    _LIMIT = CancellationRateLimit(
+        max_cancellations=2,
+        window=timedelta(hours=24),
+        cooloff=timedelta(hours=6),
+    )
+
+    def _svc_with_limit(
+        self, limit, appt_repo, sc_repo, calendar, notifications, outbox, display_tz=timezone.utc
+    ) -> AppointmentService:
+        return AppointmentService(
+            appointments=appt_repo,
+            service_calls=sc_repo,
+            calendar=calendar,
+            notifications=notifications,
+            outbox=outbox,
+            clock=lambda: _FIXED_NOW,
+            new_id=lambda: _APPT_ID,
+            contact_resolver=_complete_contact,
+            cancellation_limit=limit,
+            display_tz=display_tz,
+        )
+
+    def _seed_cancellation(self, appt_repo, occurred_at: datetime, customer_id: UUID = _CUST_ID) -> None:
+        """Store a cancelled appointment so its CANCELLED audit lands in the repository log."""
+        appt = Appointment(
+            id=uuid4(),
+            service_call_id=uuid4(),
+            technician_id=_TECH_ID,
+            customer_id=customer_id,
+            time_range=_tr(9, 11, day=1),
+            status=AppointmentStatus.SCHEDULED,
+            details=None,
+            created_at=occurred_at,
+            updated_at=occurred_at,
+        )
+        appt.cancel(now=occurred_at)
+        appt_repo.add(appt)
+
+    def _book(self, service):
+        return service.book_appointment(
+            service_call_id=_SC_ID,
+            technician_id=_TECH_ID,
+            customer_id=_CUST_ID,
+            time_range=_tr(9, 11),
+        )
+
+    def test_blocks_booking_at_threshold_within_window(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=2))
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=1))
+        service = self._svc_with_limit(
+            self._LIMIT, appt_repo, sc_repo, calendar, notifications, outbox
+        )
+        with pytest.raises(BookingRateLimited) as exc:
+            self._book(service)
+        assert exc.value.retry_at == _FIXED_NOW - timedelta(hours=1) + timedelta(hours=6)
+
+    def test_rejection_happens_before_any_mutation_or_notification(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=2))
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=1))
+        service = self._svc_with_limit(
+            self._LIMIT, appt_repo, sc_repo, calendar, notifications, outbox
+        )
+        with pytest.raises(BookingRateLimited):
+            self._book(service)
+        assert _APPT_ID not in appt_repo._store
+        assert len(outbox.all_entries) == 0
+        assert notifications.calls == []
+        assert sc_repo.get(_SC_ID).status is ServiceCallStatus.OPEN
+
+    def test_rejection_message_renders_reopen_time_in_display_timezone(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=2))
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=1))
+        service = self._svc_with_limit(
+            self._LIMIT, appt_repo, sc_repo, calendar, notifications, outbox,
+            display_tz=zoneinfo.ZoneInfo("Asia/Jerusalem"),
+        )
+        with pytest.raises(BookingRateLimited) as exc:
+            self._book(service)
+        # retry_at is 13:00 UTC; Asia/Jerusalem in June is UTC+3 (IDT).
+        assert "16:00 IDT" in str(exc.value)
+        assert exc.value.retry_at == _FIXED_NOW - timedelta(hours=1) + timedelta(hours=6)
+
+    def test_cancellations_older_than_window_do_not_count(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=30))
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=25))
+        service = self._svc_with_limit(
+            self._LIMIT, appt_repo, sc_repo, calendar, notifications, outbox
+        )
+        appt = self._book(service)
+        assert appt.status is AppointmentStatus.SCHEDULED
+
+    def test_booking_reopens_after_cooloff(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=8))
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=7))
+        service = self._svc_with_limit(
+            self._LIMIT, appt_repo, sc_repo, calendar, notifications, outbox
+        )
+        appt = self._book(service)
+        assert appt.status is AppointmentStatus.SCHEDULED
+
+    def test_other_customers_cancellations_do_not_count(
+        self, appt_repo, sc_repo, calendar, notifications, outbox
+    ):
+        _seed_open_service_call(sc_repo)
+        other_customer = uuid4()
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=2), other_customer)
+        self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=1), other_customer)
+        service = self._svc_with_limit(
+            self._LIMIT, appt_repo, sc_repo, calendar, notifications, outbox
+        )
+        appt = self._book(service)
+        assert appt.status is AppointmentStatus.SCHEDULED
+
+    def test_no_limit_configured_allows_repeated_churn(
+        self, appt_repo, sc_repo, calendar, notifications, outbox, svc
+    ):
+        _seed_open_service_call(sc_repo)
+        for hours_ago in range(1, 6):
+            self._seed_cancellation(appt_repo, _FIXED_NOW - timedelta(hours=hours_ago))
+        appt = self._book(svc)
+        assert appt.status is AppointmentStatus.SCHEDULED
 
 
 # ---------------------------------------------------------------------------

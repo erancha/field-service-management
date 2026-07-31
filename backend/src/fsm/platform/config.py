@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     fsm_sync_enabled: bool = False
     fsm_sync_interval_seconds: float = 30.0
 
+    # Book/cancel churn limit: a customer who cancels fsm_booking_cancel_limit or more
+    # appointments within the rolling window is blocked from booking until the cool-off
+    # elapses after their latest cancellation. A limit of 0 disables the check.
+    fsm_booking_cancel_limit: int = Field(default=3, ge=0)
+    fsm_booking_cancel_window_hours: float = Field(default=24.0, gt=0)
+    fsm_booking_cancel_cooloff_hours: float = Field(default=24.0, gt=0)
+
     smtp_host: str | None = None
     smtp_port: int = 587
     # Account we authenticate to the relay as. In the Gmail model this address is also the sender,

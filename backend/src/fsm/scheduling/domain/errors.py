@@ -1,5 +1,7 @@
 """Domain exception hierarchy for the scheduling bounded context."""
 
+from datetime import datetime
+
 
 class SchedulingError(Exception):
     """Base class for all scheduling domain errors."""
@@ -31,3 +33,18 @@ class IncompleteContactInfo(SchedulingError):
     def __init__(self, missing: list[str]) -> None:
         self.missing = list(missing)
         super().__init__("Missing required contact information: " + ", ".join(missing))
+
+
+class BookingRateLimited(SchedulingError):
+    """Raised when a customer's recent cancellations put their booking on a cool-off.
+
+    retry_at is the moment booking reopens; the message renders it in retry_at's own
+    timezone, so the raiser controls the zone the customer sees.
+    """
+
+    def __init__(self, retry_at: datetime) -> None:
+        self.retry_at = retry_at
+        super().__init__(
+            "Too many recently cancelled appointments on this account; "
+            f"booking reopens at {retry_at:%Y-%m-%d %H:%M %Z}."
+        )

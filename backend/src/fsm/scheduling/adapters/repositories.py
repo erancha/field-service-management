@@ -21,7 +21,7 @@ from fsm.scheduling.adapters.orm import (
     ServiceCallAttachmentRow,
     ServiceCallRow,
 )
-from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
+from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus, AuditAction
 from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.errors import NotFoundError, SlotUnavailable
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
@@ -280,6 +280,22 @@ class SqlAlchemyAppointmentRepository:
             .all()
         )
         return [_row_to_appointment(row) for row in rows]
+
+    def list_customer_cancellations_since(
+        self, customer_id: uuid.UUID, since: datetime
+    ) -> list[datetime]:
+        """Return occurred_at of each CANCELLED audit on this customer's appointments, >= since."""
+        rows = (
+            self._session.query(AppointmentAuditRow.occurred_at)
+            .join(AppointmentRow, AppointmentRow.id == AppointmentAuditRow.appointment_id)
+            .filter(
+                AppointmentRow.customer_id == customer_id,
+                AppointmentAuditRow.action == AuditAction.CANCELLED.value,
+                AppointmentAuditRow.occurred_at >= since,
+            )
+            .all()
+        )
+        return [row.occurred_at for row in rows]
 
 
 class SqlAlchemyServiceCallAttachmentRepository:

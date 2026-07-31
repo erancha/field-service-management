@@ -325,3 +325,31 @@ class TestSqlAlchemyAuditIntegration:
         ).fetchall()
         assert len(rows) == 1
         assert rows[0].appointment_id == appt.id
+
+
+class TestListCustomerCancellationsSince:
+    """The cancellation query returns only this customer's CANCELLED audits at/after `since`."""
+
+    def test_filters_by_customer_action_and_time(self, pg_session_audit):
+        from fsm.scheduling.adapters.repositories import SqlAlchemyAppointmentRepository
+
+        repo = SqlAlchemyAppointmentRepository(pg_session_audit)
+        customer = uuid.uuid4()
+
+        recent = _make_appointment(customer_id=customer)
+        recent.cancel(now=_utc(10))
+        repo.add(recent)
+
+        stale = _make_appointment(customer_id=customer)
+        stale.cancel(now=_utc(7))
+        repo.add(stale)
+
+        other_customer = _make_appointment()
+        other_customer.cancel(now=_utc(10))
+        repo.add(other_customer)
+
+        booked_not_cancelled = _make_appointment(customer_id=customer)
+        booked_not_cancelled.record_booked(_utc(10))
+        repo.add(booked_not_cancelled)
+
+        assert repo.list_customer_cancellations_since(customer, _utc(9)) == [_utc(10)]

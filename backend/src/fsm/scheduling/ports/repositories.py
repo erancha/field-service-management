@@ -100,6 +100,14 @@ class AppointmentRepository(Protocol):
         """Return every appointment booked against this service call."""
         ...
 
+    def list_customer_cancellations_since(self, customer_id: UUID, since: datetime) -> list[datetime]:
+        """Return when each of this customer's appointments was cancelled, at or after `since`.
+
+        Sourced from the append-only audit log's CANCELLED records, so cancellations keep
+        counting toward the booking rate limit even though the appointments are terminal.
+        """
+        ...
+
 
 @runtime_checkable
 class ServiceCallAttachmentRepository(Protocol):
