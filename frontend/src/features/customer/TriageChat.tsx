@@ -72,6 +72,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   const [pendingPhotos, setPendingPhotos] = useState<PhotoRef[]>([])
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const draftRef = useRef<HTMLTextAreaElement>(null)
   const nextLocalId = useRef(0)
   const attachedCount =
     messages.reduce((n, m) => n + (m.photos?.length ?? 0), 0) + pendingPhotos.length
@@ -94,6 +95,10 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   }, [attempt])
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages, streaming])
+
+  // Focus belongs in the composer, and both dependencies are a moment it has to be put back: the
+  // composer mounts only once the conversation resolves, and clicking Send moves focus to Send.
+  useEffect(() => { if (!sending) draftRef.current?.focus() }, [conversationId, sending])
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
@@ -263,6 +268,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                 <label>
                   Your message:
                   <textarea
+                    ref={draftRef}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     rows={3}

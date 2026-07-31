@@ -63,6 +63,20 @@ describe('TriageChat', () => {
     expect(screen.getByText('Is the display lit?')).toBeInTheDocument()
   })
 
+  it('holds focus in the composer on arrival and again after a send', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+
+    const composer = await screen.findByRole('textbox')
+    expect(composer).toHaveFocus()
+
+    await userEvent.type(composer, 'It will not heat.')
+    await userEvent.click(screen.getByRole('button', { name: /send/i }))
+
+    await waitFor(() => expect(composer).toHaveFocus())
+  })
+
   it('shows the customer turn immediately and the reply as it streams', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
