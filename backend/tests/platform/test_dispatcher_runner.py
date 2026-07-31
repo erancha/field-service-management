@@ -16,7 +16,12 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from fsm.platform.config import Settings
-from fsm.platform.dispatcher_runner import build_dispatcher, make_auth_disconnect_handler, run_forever
+from fsm.platform.dispatcher_runner import (
+    build_dispatcher,
+    make_auth_disconnect_handler,
+    photo_url_builder,
+    run_forever,
+)
 from fsm.google_calendar.adapters.orm import CalendarConnectionRow
 from fsm.scheduling.adapters.orm import AppointmentRow, OutboxRow, ServiceCallRow
 
@@ -62,6 +67,7 @@ def pg_settings(pg_engine):
         fsm_token_key=None,
         fsm_dispatch_enabled=False,
         fsm_dispatch_interval_seconds=0.01,
+        technician_app_url="https://tech.example.com",
     )
 
 
@@ -150,6 +156,24 @@ class TestBuildDispatcher:
             # NullCalendarPort generates a synthetic null-evt-<uuid> id.
             assert appt_row.external_event_id is not None
             assert appt_row.external_event_id.startswith("null-evt-")
+
+    def test_build_dispatcher_fails_fast_without_the_technician_app_url(
+        self, pg_session_factory, pg_engine
+    ):
+        """The dispatcher writes photo links into calendar events, so a dispatch-enabled
+        deployment must configure the technician app's public base URL or die at startup."""
+        settings = Settings(database_url=str(pg_engine.url), app_env="test")
+
+        with pytest.raises(ValueError, match="technician_app_url"):
+            build_dispatcher(pg_session_factory, settings)
+
+    def test_photo_url_builder_forms_the_download_route_under_the_base(self):
+        build_url = photo_url_builder("https://tech.example.com/")
+        sc_id, photo_id = uuid.uuid4(), uuid.uuid4()
+
+        assert build_url(sc_id, photo_id) == (
+            f"https://tech.example.com/api/service-calls/{sc_id}/photos/{photo_id}"
+        )
 
 
 class TestRunForever:

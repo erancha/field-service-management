@@ -99,7 +99,8 @@ export function AppointmentCard({
             <li key={photo.id}>
               <a
                 href={servicePhotoUrl(appointment.service_call_id, photo.id, 'original')}
-                download={photo.filename}
+                target="_blank"
+                rel="noopener noreferrer"
               >
                 <img
                   src={servicePhotoUrl(appointment.service_call_id, photo.id, 'preview')}

@@ -251,7 +251,7 @@ describe('AppointmentCard facts', () => {
 })
 
 describe('AppointmentCard photos', () => {
-  it('renders each photo as a preview thumbnail linking to the original download', () => {
+  it('renders each photo as a preview thumbnail that opens the original in a new tab', () => {
     const appointment = makeAppointment()
     render(
       <AppointmentCard
@@ -270,7 +270,11 @@ describe('AppointmentCard photos', () => {
       'href',
       `/api/service-calls/${appointment.service_call_id}/photos/p1?variant=original`,
     )
-    expect(link).toHaveAttribute('download', 'plate.jpg')
+    // Clicking shows the full image rather than saving a file, so the anchor must not carry a
+    // download attribute — the route serves the original inline.
+    expect(link).not.toHaveAttribute('download')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   it('renders no gallery without photos', () => {

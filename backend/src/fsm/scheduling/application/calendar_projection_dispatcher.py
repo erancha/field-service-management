@@ -55,7 +55,8 @@ class CalendarProjectionDispatcher:
     silently wrapped into a resolver that always returns the same port.
 
     Customer profile context (name, address, phone) and the assigned technician's own name and
-    phone come from injected resolvers and are merged with the service-call problem at build time.
+    phone come from injected resolvers and are merged at build time with the service call's
+    problem and, when a photo_url builder is injected, links to its photo attachments.
     """
 
     def __init__(
@@ -67,6 +68,7 @@ class CalendarProjectionDispatcher:
         on_calendar_error: Callable[[UUID, Exception], None] | None = None,
         customer_context_resolver: Callable[[UUID], AppointmentContext] | None = None,
         technician_context_resolver: Callable[[UUID], AppointmentContext] | None = None,
+        photo_url: Callable[[UUID, UUID], str] | None = None,
     ) -> None:
         if calendar is None and calendar_resolver is None:
             raise ValueError(
@@ -93,12 +95,23 @@ class CalendarProjectionDispatcher:
             if technician_context_resolver is not None
             else (lambda _technician_id: AppointmentContext())
         )
+        self._photo_url = photo_url
 
     def _build_context(self, uow: UnitOfWork, appt: Appointment) -> AppointmentContext:
         """Assemble enrichment context: customer profile fields and the technician's own name and
-        phone come from the injected resolvers, the problem from the service call."""
+        phone come from the injected resolvers, the problem and its photos from the service call.
+
+        Photos are carried as links (built by the injected photo_url callable) rather than
+        attached, so the event stays small and the download route's participant check remains
+        the only path to the image."""
         service_call = uow.service_calls.get(appt.service_call_id)
         technician = self._technician_context_resolver(appt.technician_id)
+        photo_links: tuple[tuple[str, str], ...] = ()
+        if self._photo_url is not None:
+            photo_links = tuple(
+                (attachment.filename, self._photo_url(appt.service_call_id, attachment.id))
+                for attachment in uow.attachments.list_for_service_call(appt.service_call_id)
+            )
         return dataclasses.replace(
             self._customer_context_resolver(appt.customer_id),
             problem_description=service_call.description,
@@ -106,6 +119,7 @@ class CalendarProjectionDispatcher:
             triage_summary=service_call.triage_summary,
             technician_name=technician.technician_name,
             technician_phone=technician.technician_phone,
+            photo_links=photo_links,
         )
 
     def run_once(self, limit: int = 50) -> int:

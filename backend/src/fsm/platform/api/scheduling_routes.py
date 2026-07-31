@@ -306,9 +306,12 @@ def download_service_call_photo(
         if attachment.service_call_id != service_call_id:
             raise HTTPException(status_code=404, detail="No such photo on this service call")
 
+    # Both variants are served inline: the links in calendar events and the web app's thumbnail
+    # clicks must display the image in the browser, and the header's filename still names a
+    # save-as for anyone downloading.
     if variant == "original":
         key, media_type, disposition = (
-            original_key(attachment.object_key), attachment.media_type, "attachment"
+            original_key(attachment.object_key), attachment.media_type, "inline"
         )
     else:
         key, media_type, disposition = (

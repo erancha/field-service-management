@@ -394,6 +394,31 @@ class TestBuildBody:
         body = client.inserted[0][1]
         assert body["description"] == "<b>Problem:</b> No hot water"
 
+    def test_photo_links_render_as_a_photos_block_after_the_problem(
+        self, appointment_no_details: Appointment
+    ) -> None:
+        """One anchor per photo, labeled by its filename, so the technician at the door can open
+        the images that identified the equipment."""
+        client = FakeGoogleCalendarClient()
+        adapter = GoogleCalendarAdapter(client=client, calendar_id=CALENDAR_ID)
+        context = AppointmentContext(
+            problem_description="No hot water",
+            photo_links=(
+                ("plate.jpg", "https://tech.example.com/api/service-calls/sc/photos/p1"),
+            ),
+        )
+
+        adapter.create_event(appointment_no_details, context)
+
+        body = client.inserted[0][1]
+        assert body["description"] == (
+            "<b>Problem:</b> No hot water"
+            "<br><br>"
+            "<b>Photos:</b><ul>"
+            '<li><a href="https://tech.example.com/api/service-calls/sc/photos/p1">plate.jpg</a></li>'
+            "</ul>"
+        )
+
     def test_title_falls_back_when_context_empty(
         self, appointment_no_details: Appointment
     ) -> None:

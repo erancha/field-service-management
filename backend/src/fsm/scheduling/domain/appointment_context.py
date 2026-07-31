@@ -33,6 +33,9 @@ class AppointmentContext:
     technician_name and technician_phone identify the assigned technician; the notifications
     resolver populates them for the customer, and the dispatcher resolver populates them for the
     technician's own event so the technician can confirm the contact the customer was given.
+    photo_links carries one (filename, absolute URL) pair per photo attached to the service call,
+    pointing at the app's authenticated download route; empty when the call has no photos or the
+    projection has no URL builder configured.
 
     Title composition lives here so the Google event title and the technician email subject are
     built from the same appointment data. Notification application code calls these methods
@@ -48,6 +51,7 @@ class AppointmentContext:
     customer_phone: str | None = None
     technician_name: str | None = None
     technician_phone: str | None = None
+    photo_links: tuple[tuple[str, str], ...] = ()
 
     def problem_summary(self) -> str:
         """The fault in one line, truncated to the title limit; '' when absent or blank.

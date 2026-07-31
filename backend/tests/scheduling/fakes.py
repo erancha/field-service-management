@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.appointment_context import AppointmentContext
+from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.errors import NotFoundError
 from fsm.scheduling.domain.service_call import ServiceCall
 from fsm.scheduling.domain.time_range import TimeRange
@@ -399,6 +400,25 @@ class _RollbackableOutboxProxy:
         return self._real.get_attempts(entry_id)
 
 
+class InMemoryServiceCallAttachmentRepository:
+    """List-backed ServiceCallAttachmentRepository; rows keep insertion (oldest-first) order."""
+
+    def __init__(self) -> None:
+        self.rows: list[ServiceCallAttachment] = []
+
+    def add_all(self, attachments) -> None:
+        self.rows.extend(attachments)
+
+    def get(self, attachment_id: UUID) -> ServiceCallAttachment:
+        for row in self.rows:
+            if row.id == attachment_id:
+                return row
+        raise NotFoundError(f"Attachment {attachment_id!r} not found")
+
+    def list_for_service_call(self, service_call_id: UUID) -> list[ServiceCallAttachment]:
+        return [row for row in self.rows if row.service_call_id == service_call_id]
+
+
 class _RollbackableAppointmentProxy:
     """Wraps InMemoryAppointmentRepository and buffers save() calls until flush()."""
 
@@ -442,10 +462,13 @@ class FakeUnitOfWork:
         outbox: "InMemoryOutboxRepository",
         appointments: "InMemoryAppointmentRepository",
         service_calls: "InMemoryServiceCallRepository | None" = None,
+        attachments: "InMemoryServiceCallAttachmentRepository | None" = None,
     ) -> None:
         self._outbox_real = outbox
         self._appointments_real = appointments
         self.service_calls = service_calls if service_calls is not None else InMemoryServiceCallRepository()
+        # Read-only in the dispatcher, so no rollback proxy is needed.
+        self.attachments = attachments if attachments is not None else InMemoryServiceCallAttachmentRepository()
         self.commit_raises_once: bool = False
         self._raise_on_next_commit: bool = False
         self.outbox: _RollbackableOutboxProxy = _RollbackableOutboxProxy(outbox)

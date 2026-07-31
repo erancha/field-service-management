@@ -920,7 +920,11 @@ class TestUpcomingEndpoint:
 
 
 class TestServiceCallPhotoDownload:
-    def test_technician_on_the_appointment_downloads_the_original(self, client_as_technician, seed):
+    def test_technician_on_the_appointment_gets_the_original_shown_inline(
+        self, client_as_technician, seed
+    ):
+        """The original is served inline so a calendar link or web thumbnail click displays the
+        image in the browser; the filename in the header still names a save-as."""
         response = client_as_technician.get(
             f"/api/service-calls/{seed.call_id}/photos/{seed.photo_id}"
         )
@@ -929,7 +933,7 @@ class TestServiceCallPhotoDownload:
         assert response.content == b"original-bytes"
         assert response.headers["content-type"].startswith("image/jpeg")
         assert response.headers["content-disposition"] == (
-            'attachment; filename="plate.jpg"; filename*=UTF-8\'\'plate.jpg'
+            'inline; filename="plate.jpg"; filename*=UTF-8\'\'plate.jpg'
         )
 
     def test_preview_variant_serves_the_inline_jpeg(self, client_as_technician, seed):

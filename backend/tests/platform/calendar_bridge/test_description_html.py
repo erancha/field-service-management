@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 from fsm.assist.ports.chat_model import SummaryBlock, TriageSummary
-from fsm.platform.calendar_bridge.description_html import blocks_html, fields_html, text_html
+from fsm.platform.calendar_bridge.description_html import (
+    blocks_html,
+    fields_html,
+    links_html,
+    text_html,
+)
 
 SUMMARY = TriageSummary(
     equipment="Arealift inDOMO HP home lift",
@@ -57,3 +62,27 @@ def test_a_colon_in_free_text_stays_text() -> None:
 
 def test_free_text_keeps_the_author_s_line_breaks() -> None:
     assert text_html("Gate code 4321\nDog in the yard") == "Gate code 4321<br>Dog in the yard"
+
+
+def test_links_render_as_anchor_bullets_under_a_bold_heading() -> None:
+    rendered = links_html(
+        "Photos", [("plate.jpg", "https://tech.example.com/api/service-calls/sc/photos/p1")]
+    )
+
+    assert rendered == (
+        '<b>Photos:</b><ul>'
+        '<li><a href="https://tech.example.com/api/service-calls/sc/photos/p1">plate.jpg</a></li>'
+        "</ul>"
+    )
+
+
+def test_link_labels_and_hrefs_are_escaped_for_their_positions() -> None:
+    """The label is a text node; the href sits in a quoted attribute, so quotes and ampersands
+    must be entity-encoded there or a crafted filename could break out of the attribute."""
+    rendered = links_html("Photos", [('<oven> & "door".jpg', 'https://h/x?a=1&b="2"')])
+
+    assert rendered == (
+        '<b>Photos:</b><ul>'
+        '<li><a href="https://h/x?a=1&amp;b=&quot;2&quot;">&lt;oven&gt; &amp; "door".jpg</a></li>'
+        "</ul>"
+    )

@@ -9,6 +9,7 @@ import pytest
 from fsm.scheduling.application.calendar_projection_dispatcher import CalendarProjectionDispatcher
 from fsm.scheduling.domain.appointment import Appointment, AppointmentStatus
 from fsm.scheduling.domain.appointment_context import AppointmentContext
+from fsm.scheduling.domain.attachment import ServiceCallAttachment
 from fsm.scheduling.domain.service_call import ServiceCall, ServiceCallStatus
 from fsm.scheduling.domain.time_range import TimeRange
 from fsm.scheduling.ports.outbox import MAX_ATTEMPTS, OutboxOperation
@@ -678,6 +679,61 @@ class TestContextEnrichment:
         [context] = calendar.created_contexts.values()
         assert context.technician_name == _TECH_NAME
         assert context.technician_phone == _TECH_PHONE
+
+    def test_create_resolves_the_calls_attachments_into_photo_links(
+        self,
+        uow: FakeUnitOfWork,
+        appt_repo: InMemoryAppointmentRepository,
+        outbox: InMemoryOutboxRepository,
+        calendar: FakeCalendarPort,
+    ) -> None:
+        """With a photo URL builder injected, each attachment on the service call becomes a
+        (filename, absolute URL) pair on the context the calendar renderer reads."""
+        photo_id = UUID("eeeeeeee-0000-0000-0000-000000000001")
+        uow.attachments.add_all(
+            [
+                ServiceCallAttachment(
+                    id=photo_id,
+                    service_call_id=_SC_ID,
+                    filename="plate.jpg",
+                    media_type="image/jpeg",
+                    size_bytes=14,
+                    object_key=f"photos/{photo_id}",
+                    created_at=_NOW,
+                )
+            ]
+        )
+        dispatcher = CalendarProjectionDispatcher(
+            uow_factory=lambda: uow,
+            calendar=calendar,
+            photo_url=lambda sc_id, p_id: f"https://tech.example.com/api/service-calls/{sc_id}/photos/{p_id}",
+        )
+        appt_id = UUID("aaaaaaaa-0000-0000-0000-000000000012")
+        appt_repo.add(_make_appointment(appt_id))
+        outbox.enqueue(OutboxOperation.CREATE, appt_id)
+
+        dispatcher.run_once()
+
+        [context] = calendar.created_contexts.values()
+        assert context.photo_links == (
+            ("plate.jpg", f"https://tech.example.com/api/service-calls/{_SC_ID}/photos/{photo_id}"),
+        )
+
+    def test_create_without_a_photo_url_builder_carries_no_links(
+        self,
+        dispatcher: CalendarProjectionDispatcher,
+        appt_repo: InMemoryAppointmentRepository,
+        outbox: InMemoryOutboxRepository,
+        calendar: FakeCalendarPort,
+    ) -> None:
+        appt_id = UUID("aaaaaaaa-0000-0000-0000-000000000013")
+        appt_repo.add(_make_appointment(appt_id))
+        outbox.enqueue(OutboxOperation.CREATE, appt_id)
+
+        dispatcher.run_once()
+
+        [context] = calendar.created_contexts.values()
+        assert context.photo_links == ()
 
     def test_update_passes_customer_name_and_problem_to_calendar(
         self,

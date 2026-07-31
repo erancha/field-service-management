@@ -108,8 +108,39 @@ def build_technician_context_resolver(session_factory) -> Callable[[UUID], Appoi
     return _resolve
 
 
+def photo_url_builder(base_url: str) -> Callable[[UUID, UUID], str]:
+    """Return a callable forming the absolute photo-download URL under the given public base.
+
+    The path mirrors the scheduling API's download route, so the link lands on the same
+    participant-checked endpoint the web app uses.
+    """
+    base = base_url.rstrip("/")
+
+    def _url(service_call_id: UUID, photo_id: UUID) -> str:
+        return f"{base}/api/service-calls/{service_call_id}/photos/{photo_id}"
+
+    return _url
+
+
+def require_technician_app_url(settings) -> str:
+    """Return the technician deployment's public base URL, refusing to proceed without it.
+
+    The events the dispatcher writes carry photo links built from this URL; emitting events
+    silently without them would hide a misconfigured deployment, so a dispatch-enabled process
+    must fail at startup instead.
+    """
+    if settings.technician_app_url is None:
+        raise ValueError(
+            "technician_app_url is not configured; the calendar dispatcher needs the "
+            "technician deployment's public base URL to build photo links"
+        )
+    return settings.technician_app_url
+
+
 def build_dispatcher(session_factory, settings) -> CalendarProjectionDispatcher:
     """Compose a CalendarProjectionDispatcher wired to the real DB and calendar resolver."""
+    photo_url = photo_url_builder(require_technician_app_url(settings))
+
     def uow_factory() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(session_factory)
 
@@ -123,6 +154,7 @@ def build_dispatcher(session_factory, settings) -> CalendarProjectionDispatcher:
         on_calendar_error=on_calendar_error,
         customer_context_resolver=customer_context_resolver,
         technician_context_resolver=technician_context_resolver,
+        photo_url=photo_url,
     )
 
 

@@ -14,6 +14,7 @@ from fsm.platform.calendar_bridge.description_html import (
     BLOCK_SEPARATOR,
     fields_html,
     blocks_html,
+    links_html,
     text_html,
 )
 from fsm.scheduling.domain import build_ical_uid
@@ -126,6 +127,10 @@ class GoogleCalendarAdapter:
                 # A call opened from the plain description form has no structure to lay out, only
                 # the customer's own words, which the event labels as the problem.
                 description_parts.append(fields_html([("Problem", problem)]))
+        if context.photo_links:
+            # The photos sit with the problem they illustrate, linked rather than attached so the
+            # download route's participant check stays the only path to the image.
+            description_parts.append(links_html("Photos", context.photo_links))
         details = (appointment.details or "").strip()
         if details:
             description_parts.append(text_html(details))

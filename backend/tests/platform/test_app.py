@@ -52,13 +52,16 @@ def test_session_cookie_is_not_secure_for_local_and_test(app_env):
     assert middleware.kwargs["https_only"] is False
 
 
-def _worker_settings() -> Settings:
-    return Settings(
+def _worker_settings(**overrides) -> Settings:
+    values: dict = dict(
         database_url="postgresql+psycopg://fsm:fsm@localhost:5432/fsm",
         app_env="test",
         fsm_dispatch_enabled=True,
         fsm_sync_enabled=True,
+        technician_app_url="https://tech.example.com",
     )
+    values.update(overrides)
+    return Settings(**values)
 
 
 @pytest.fixture
@@ -72,6 +75,16 @@ def stubbed_worker_runners(monkeypatch):
 
     monkeypatch.setattr(dispatcher_runner, "run_forever", idle_runner)
     monkeypatch.setattr(sync_runner, "run_forever", idle_runner)
+
+
+def test_create_app_refuses_dispatch_without_the_technician_app_url(stubbed_worker_runners):
+    """The check runs before the worker thread spawns: a raise inside the thread would kill only
+    the dispatcher while the web process kept serving, hiding the misconfiguration."""
+    with pytest.raises(ValueError, match="technician_app_url"):
+        create_app(
+            session_factory=lambda: None,
+            settings=_worker_settings(technician_app_url=None),
+        )
 
 
 def test_create_app_with_workers_emits_no_deprecation_warnings(stubbed_worker_runners):

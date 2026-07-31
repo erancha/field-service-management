@@ -132,7 +132,12 @@ for role in "${ROLES[@]}"; do
   port="$(port_for "$role")"
   echo "  FSM ($role) -> http://localhost:$port"
   role_env=(FSM_ROLE="$role")
-  [ "$role" = backoffice ] && role_env+=(FSM_DISPATCH_ENABLED=true FSM_SYNC_ENABLED=true)
+  # Backoffice owns the calendar workers; the dispatcher writes photo links into events, so the
+  # role that enables it also supplies the technician edge's address the links must land on.
+  [ "$role" = backoffice ] && role_env+=(
+    FSM_DISPATCH_ENABLED=true FSM_SYNC_ENABLED=true
+    TECHNICIAN_APP_URL="${TECHNICIAN_APP_URL:-http://localhost:8001}"
+  )
   ( cd "$BACKEND" && exec env "${role_env[@]}" "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --port "$port" ) &
   pids+=($!)
 done

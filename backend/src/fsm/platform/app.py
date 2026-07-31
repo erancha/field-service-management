@@ -87,7 +87,11 @@ def create_app(
         )
 
     if settings.fsm_dispatch_enabled:
-        from fsm.platform.dispatcher_runner import run_forever
+        from fsm.platform.dispatcher_runner import require_technician_app_url, run_forever
+
+        # Checked here, before the worker thread spawns: a raise inside the thread would kill
+        # only the dispatcher while the web process kept serving, hiding the misconfiguration.
+        require_technician_app_url(settings)
 
         # Resolve the factory the same way request handlers do: use the injected one
         # under test, otherwise build it lazily from settings. Gating on the flag alone

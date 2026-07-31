@@ -33,6 +33,19 @@ def text_html(text: str) -> str:
     return "<br>".join(_escaped(line) for line in text.split("\n"))
 
 
+def links_html(heading: str, links: Sequence[tuple[str, str]]) -> str:
+    """Render a bold heading over one anchor bullet per (label, url) pair.
+
+    The href sits in a quoted attribute, so it is escaped with quote=True — unlike the text
+    nodes, where quotes stay as typed. Labels are customer-written filenames; URLs are built by
+    the app and never customer-controlled."""
+    items = "".join(
+        f'<li><a href="{escape(url, quote=True)}">{_escaped(label)}</a></li>'
+        for label, url in links
+    )
+    return f"<b>{_escaped(heading)}:</b><ul>{items}</ul>"
+
+
 def _block_html(block: SummaryBlock) -> str:
     items = [_escaped(bullet) for bullet in block.bullets]
     items += [_field_html(label, value) for label, value in block.fields]

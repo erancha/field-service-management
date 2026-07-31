@@ -181,6 +181,11 @@ services:
       # config default (off) and only backoffice turns them on.
       FSM_DISPATCH_ENABLED: "true"
       FSM_SYNC_ENABLED: "true"
+      # The dispatcher above writes photo links into calendar events, and a link clicked from
+      # Google must be an absolute address on the technician-facing edge — nginx publishes that
+      # role on localhost:8001. Export TECHNICIAN_APP_URL before launching to point links at a
+      # public deployment instead.
+      TECHNICIAN_APP_URL: "${TECHNICIAN_APP_URL:-http://localhost:8001}"
     # Pinned to one process because it owns the calendar workers above (exactly one may run them).
     # Scaling this role would require moving the workers to a single dedicated process first.
     deploy:
