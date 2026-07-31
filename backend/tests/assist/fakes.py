@@ -228,8 +228,9 @@ class FakePhotoStore:
         return self.objects[key][0]
 
     def remove(self, keys: Sequence[str]) -> None:
+        """Deleting an absent key succeeds, as S3/MinIO object deletion is idempotent."""
         for key in keys:
-            del self.objects[key]
+            self.objects.pop(key, None)
             self.removed.append(key)
 
 
