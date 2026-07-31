@@ -4,6 +4,7 @@ import { useAppointments } from '../../hooks/useAppointments.ts'
 import { AppointmentCard } from '../../components/AppointmentCard.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
 import { formatWhen } from '../../utils/datetime.ts'
+import { problemHeadline } from '../../utils/problemText.ts'
 
 interface Props {
   items: UpcomingAppointment[]
@@ -68,7 +69,7 @@ export function UpcomingAppointments({ items, loading, error, refetch, showTechn
                 <div className="upcoming__summary">
                   <span className="upcoming__line">
                     <span className="upcoming__when">{formatWhen(it.start)}</span>
-                    <span className="upcoming__problem">{it.problem}</span>
+                    <span className="upcoming__problem">{problemHeadline(it.problem)}</span>
                   </span>
                   <span className="upcoming__line upcoming__meta">
                     <span>{it.customer_name}</span>

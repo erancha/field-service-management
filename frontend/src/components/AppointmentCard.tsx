@@ -3,6 +3,7 @@ import type { Appointment, PhotoRef } from '../api/types.ts'
 import { Button } from './Button.tsx'
 import { ReschedulePicker } from './ReschedulePicker.tsx'
 import { formatWhen } from '../utils/datetime.ts'
+import { splitProblem } from '../utils/problemText.ts'
 import { servicePhotoUrl } from '../api/scheduling.ts'
 
 interface AppointmentCardProps {
@@ -69,6 +70,8 @@ export function AppointmentCard({
   const status = appointment.status.toLowerCase()
   const isCancelled = status === 'cancelled'
 
+  const { problem: reportedProblem, actionItems } = splitProblem(problem ?? '')
+
   return (
     <div className={`appointment-card appointment-card--${status}`}>
       <div className="appointment-card__header">
@@ -79,7 +82,19 @@ export function AppointmentCard({
       <dl className="appointment-card__facts">
         <dt>From</dt><dd>{formatWhen(appointment.start)}</dd>
         <dt>To</dt><dd>{formatWhen(appointment.end)}</dd>
-        {problem && (<><dt>Problem</dt><dd>{problem}</dd></>)}
+        {reportedProblem && (
+          <><dt>Problem</dt><dd className="appointment-card__problem">{reportedProblem}</dd></>
+        )}
+        {actionItems.length > 0 && (
+          <>
+            <dt>Action items</dt>
+            <dd>
+              <ul className="appointment-card__action-items">
+                {actionItems.map((item) => (<li key={item}>{item}</li>))}
+              </ul>
+            </dd>
+          </>
+        )}
         {technicianName && (<><dt>Technician</dt><dd>{technicianName}</dd></>)}
         {customerName && (<><dt>Customer</dt><dd>{customerName}</dd></>)}
         {address && (<><dt>Address</dt><dd>{address}</dd></>)}

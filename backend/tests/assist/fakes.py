@@ -132,6 +132,7 @@ class FakeChatModel:
             symptoms="Stays cold",
             steps_tried="Breaker reset — no change",
             suspected_cause="Heating element",
+            action_items=("Bring a spare heating element",),
         )
         self.stream_calls: list[tuple[str, list[Message]]] = []
         self.summarize_calls: list[tuple[str, list[Message]]] = []

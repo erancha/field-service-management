@@ -37,8 +37,8 @@ The chat is available when `ASSIST_MODEL` and its provider's API key are set; wi
 customer sees the plain description form instead. The assistant works the problem with the customer,
 suggesting only steps that are safe for them to try — never anything involving gas, mains wiring,
 refrigerant, or working at height. A conversation ends solved, when the customer confirms the
-problem is fixed; escalated, when the assistant opens a service call carrying a summary — equipment,
-problem category, symptoms, steps tried with their results, and the suspected cause — after which
+problem is fixed; escalated, when the assistant opens a service call carrying a summary — the fault
+category, the action items, equipment, symptoms, steps tried, and the suspected cause — after which
 the customer books a technician through the same flow as before; or closed, booking nothing. Closing
 is what a conversation that was never an equipment fault ends in, and it is reachable two ways: the
 assistant closes one it cannot help with or is asked to stop, and an End chat button closes one

@@ -9,6 +9,7 @@ from typing import Callable
 from uuid import UUID
 
 from fsm.google_calendar.ports.client import GoogleCalendarClient
+from fsm.platform.calendar_bridge.description_html import render_description
 from fsm.scheduling.domain import build_ical_uid
 from fsm.scheduling.domain.appointment import Appointment
 from fsm.scheduling.domain.appointment_context import AppointmentContext
@@ -110,16 +111,19 @@ class GoogleCalendarAdapter:
         ]
         if technician_lines:
             description_parts.append("\n".join(technician_lines))
-        description_parts.extend(
-            part
-            for part in (context.problem_description, appointment.details)
-            if part and part.strip()
-        )
+        problem = (context.problem_description or "").strip()
+        if problem:
+            # The stored description leads with a bare fault line because the event title is
+            # composed from it, so the label it needs to read as a field is added here.
+            description_parts.append(f"Problem: {problem}")
+        details = (appointment.details or "").strip()
+        if details:
+            description_parts.append(details)
         phone = (context.customer_phone or "").strip()
         if phone:
             description_parts.append(f"Phone: {phone}")
         if description_parts:
-            body["description"] = "\n\n".join(description_parts)
+            body["description"] = render_description(description_parts)
         if self._attendee_email is not None:
             customer_email = self._attendee_email(appointment.customer_id)
             if customer_email:

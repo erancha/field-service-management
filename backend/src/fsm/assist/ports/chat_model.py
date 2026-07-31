@@ -17,13 +17,23 @@ class TriageSummary:
     symptoms: str
     steps_tried: str
     suspected_cause: str
+    action_items: tuple[str, ...]
 
     def render(self) -> str:
-        """The service-call description text; the single place this summary is formatted."""
+        """The service-call description text; the single place this summary is formatted.
+
+        The fault category stands alone on the first line because the calendar event takes its
+        title from it, and every surface that shows the summary labels that line itself. A blank
+        line sets it off from the action items, which come above the background fields so the
+        technician meets the job to be done before the evidence behind it.
+        """
         return "\n".join(
             [
+                self.problem_category,
+                "",
+                "Action items:",
+                *(f"- {item}" for item in self.action_items),
                 f"Equipment: {self.equipment}",
-                f"Problem category: {self.problem_category}",
                 f"Symptoms: {self.symptoms}",
                 f"Steps tried: {self.steps_tried}",
                 f"Suspected cause: {self.suspected_cause}",

@@ -94,6 +94,12 @@ SUMMARY_SYSTEM_PROMPT = """\
 Summarize the triage conversation for the technician who will attend the job. Write only what the \
 conversation supports; where something was never established, say so plainly rather than guessing.
 
+Keep every field to one or two sentences. Leave out evidence you ruled out, and do not explain how \
+you know something or which message it came from — the technician reads the conclusion, not the \
+reasoning behind it.
+
+- action_items: what the technician should do first and what to bring, one short imperative each \
+and at most three. This is the first thing the technician reads.
 - equipment: make, model, and type as far as they are known.
 - problem_category: a short label for the fault, such as "Not heating" or "Water leak".
 - symptoms: what the customer observes, in their terms.

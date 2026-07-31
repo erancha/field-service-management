@@ -204,6 +204,32 @@ describe('AppointmentCard facts', () => {
     expect(screen.getByText(/12 Main St/)).toBeInTheDocument()
   })
 
+  it('gives the triage summary’s action items their own labelled list', () => {
+    const problem = [
+      'No picture, sound present',
+      '',
+      'Action items:',
+      '- Confirm backlight failure with the panel powered on',
+      '- Bring backlight/LED strip parts',
+      'Equipment: LG 86NANO91VPA television',
+    ].join('\n')
+    const { container } = render(
+      <AppointmentCard appointment={makeAppointment()} problem={problem} />,
+    )
+
+    expect(screen.getByText('Action items')).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Confirm backlight failure with the panel powered on',
+      'Bring backlight/LED strip parts',
+    ])
+
+    const problemText = container.querySelector('.appointment-card__problem')?.textContent
+    expect(problemText).toContain('No picture, sound present')
+    expect(problemText).toContain('Equipment: LG 86NANO91VPA television')
+    expect(problemText).not.toContain('Action items')
+    expect(problemText).not.toContain('Confirm backlight failure')
+  })
+
   it('renders the From and To moments in the shared minute-precision local format', () => {
     const appointment = makeAppointment()
     render(<AppointmentCard appointment={appointment} />)

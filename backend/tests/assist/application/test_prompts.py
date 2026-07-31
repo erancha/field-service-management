@@ -7,6 +7,7 @@ from fsm.assist.application.prompts import (
     CLOSED_MARKER,
     ESCALATE_MARKER,
     SOLVED_MARKER,
+    SUMMARY_SYSTEM_PROMPT,
     TRIAGE_SYSTEM_PROMPT,
     build_system_prompt,
     strip_markers,
@@ -65,6 +66,17 @@ def test_grounded_prompt_asks_for_a_citation_and_allows_a_fallback() -> None:
 
     assert "name the document" in grounded
     assert "your own knowledge" in grounded
+
+
+def test_summary_prompt_asks_for_the_action_items_the_technician_reads_first() -> None:
+    assert "action_items" in SUMMARY_SYSTEM_PROMPT
+
+
+def test_summary_prompt_bounds_each_field_and_bars_ruled_out_evidence() -> None:
+    prompt = SUMMARY_SYSTEM_PROMPT.lower()
+
+    assert "one or two sentences" in prompt
+    assert "ruled out" in prompt
 
 
 def test_strip_markers_returns_plain_text_when_no_marker_is_present() -> None:

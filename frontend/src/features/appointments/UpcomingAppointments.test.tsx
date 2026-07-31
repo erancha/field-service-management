@@ -41,6 +41,15 @@ describe('UpcomingAppointments', () => {
     expect(screen.getByText(/Cara/)).toBeInTheDocument()
   })
 
+  it('keeps the collapsed row to the fault, not the whole triage summary', () => {
+    renderList({
+      items: [{ ...ITEM, problem: 'No picture, sound present\n\nAction items:\n- Bring LED strips' }],
+    })
+
+    expect(screen.getByText('No picture, sound present')).toBeInTheDocument()
+    expect(screen.queryByText(/Action items/)).toBeNull()
+  })
+
   it('hides the technician name when showTechnicianName is false', () => {
     renderList()
     expect(screen.queryByText(/Tara/)).not.toBeInTheDocument()

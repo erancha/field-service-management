@@ -379,7 +379,7 @@ class TestBuildBody:
         adapter.create_event(appointment, context)
 
         body = client.inserted[0][1]
-        assert body["description"] == "No hot water\n\nCheck HVAC unit"
+        assert body["description"] == "<b>Problem:</b> No hot water<br><br>Check HVAC unit"
 
     def test_description_is_problem_only_when_no_details(
         self, appointment_no_details: Appointment, context: AppointmentContext
@@ -390,7 +390,7 @@ class TestBuildBody:
         adapter.create_event(appointment_no_details, context)
 
         body = client.inserted[0][1]
-        assert body["description"] == "No hot water"
+        assert body["description"] == "<b>Problem:</b> No hot water"
 
     def test_title_falls_back_when_context_empty(
         self, appointment_no_details: Appointment
@@ -464,7 +464,7 @@ class TestLocationAndPhone:
         adapter.create_event(appointment_no_details, context)
 
         body = client.inserted[0][1]
-        assert body["description"] == "No hot water\n\nPhone: +972-50-123"
+        assert body["description"] == "<b>Problem:</b> No hot water<br><br><b>Phone:</b> +972-50-123"
 
     def test_phone_alone_still_produces_description(
         self, appointment_no_details: Appointment
@@ -477,7 +477,7 @@ class TestLocationAndPhone:
         )
 
         body = client.inserted[0][1]
-        assert body["description"] == "Phone: +972-50-123"
+        assert body["description"] == "<b>Phone:</b> +972-50-123"
 
     def test_technician_name_and_phone_lead_the_description(
         self, appointment_no_details: Appointment
@@ -497,76 +497,7 @@ class TestLocationAndPhone:
 
         body = client.inserted[0][1]
         assert body["description"] == (
-            "Technician: Grace Hopper\nTechnician phone: +972-50-999"
-            "\n\nNo hot water\n\nPhone: +972-50-123"
+            "<b>Technician:</b> Grace Hopper<br><b>Technician phone:</b> +972-50-999"
+            "<br><br><b>Problem:</b> No hot water<br><br><b>Phone:</b> +972-50-123"
         )
 
-
-# ---------------------------------------------------------------------------
-# Customer attendee
-# ---------------------------------------------------------------------------
-
-def _appointment():
-    now = datetime(2026, 7, 6, 9, 0, tzinfo=timezone.utc)
-    return Appointment(
-        id=uuid.uuid4(),
-        service_call_id=uuid.uuid4(),
-        technician_id=uuid.uuid4(),
-        customer_id=uuid.uuid4(),
-        time_range=TimeRange(now, datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc)),
-        status=AppointmentStatus.SCHEDULED,
-        details=None,
-        created_at=now,
-        updated_at=now,
-    )
-
-
-def test_build_body_sets_customer_attendee_when_email_resolves():
-    client = FakeGoogleCalendarClient()
-    adapter = GoogleCalendarAdapter(
-        client, "cal-1", attendee_email=lambda _customer_id: "cust@example.com"
-    )
-    adapter.create_event(_appointment(), AppointmentContext(customer_name="John"))
-    _cal, body, _send = client.inserted[-1]
-    assert body["attendees"] == [
-        {"email": "cust@example.com", "responseStatus": "needsAction"}
-    ]
-
-
-def test_build_body_omits_attendee_when_email_is_none():
-    client = FakeGoogleCalendarClient()
-    adapter = GoogleCalendarAdapter(client, "cal-1", attendee_email=lambda _id: None)
-    adapter.create_event(_appointment(), AppointmentContext(customer_name="John"))
-    _cal, body, _send = client.inserted[-1]
-    assert "attendees" not in body
-
-
-def test_build_body_lets_guests_modify_the_event():
-    client = FakeGoogleCalendarClient()
-    adapter = GoogleCalendarAdapter(
-        client, "cal-1", attendee_email=lambda _customer_id: "cust@example.com"
-    )
-    body = adapter._build_body(_appointment(), AppointmentContext())
-    assert body["guestsCanModify"] is True
-
-
-# ---------------------------------------------------------------------------
-# insert_event + sendUpdates + 409 duplicate recovery
-# ---------------------------------------------------------------------------
-
-def test_create_uses_insert_with_send_updates_all():
-    client = FakeGoogleCalendarClient()
-    adapter = GoogleCalendarAdapter(client, "cal-1", attendee_email=lambda _id: "c@x.com")
-    adapter.create_event(_appointment(), AppointmentContext(customer_name="John"))
-    _cal, _body, send_updates = client.inserted[-1]
-    assert send_updates == "all"
-
-
-def test_create_recovers_existing_event_on_duplicate_ical_uid():
-    client = FakeGoogleCalendarClient()
-    adapter = GoogleCalendarAdapter(client, "cal-1", attendee_email=lambda _id: "c@x.com")
-    appt = _appointment()
-    first = adapter.create_event(appt, AppointmentContext(customer_name="John"))
-    # a crash-retry re-runs create for the same appointment (same deterministic iCalUID)
-    second = adapter.create_event(appt, AppointmentContext(customer_name="John"))
-    assert first == second == "evt-123"

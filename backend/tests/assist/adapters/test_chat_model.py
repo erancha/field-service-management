@@ -45,6 +45,7 @@ class RecordingModel:
                     symptoms="Stays cold",
                     steps_tried="Breaker reset — no change",
                     suspected_cause="Heating element",
+                    action_items=["Bring a spare heating element"],
                 )
 
         return _Structured()
@@ -183,6 +184,14 @@ def test_summarize_returns_the_port_dataclass() -> None:
     assert isinstance(summary, TriageSummary)
     assert summary.equipment == "Oven"
     assert summary.problem_category == "Not heating"
+
+
+def test_summarize_carries_the_action_items_into_the_port_dataclass() -> None:
+    adapter = LangChainChatModel(RecordingModel())
+
+    summary = adapter.summarize("summarize", [message(MessageRole.CUSTOMER, "Broken.")])
+
+    assert summary.action_items == ("Bring a spare heating element",)
 
 
 def test_summarize_sends_the_system_prompt_then_the_exchange_as_one_labelled_transcript() -> None:

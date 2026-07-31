@@ -22,6 +22,10 @@ class _SummarySchema(BaseModel):
     symptoms: str = Field(description="What the customer observes.")
     steps_tried: str = Field(description="Each step attempted and what it changed.")
     suspected_cause: str = Field(description="Best assessment, or that it is undetermined.")
+    action_items: list[str] = Field(
+        min_length=1,
+        description="What to do first and what to bring, one short imperative each.",
+    )
 
 
 _TRANSCRIPT_LABELS = {MessageRole.CUSTOMER: "Customer", MessageRole.ASSISTANT: "Assistant"}
@@ -104,4 +108,5 @@ class LangChainChatModel:
             symptoms=result.symptoms,
             steps_tried=result.steps_tried,
             suspected_cause=result.suspected_cause,
+            action_items=tuple(result.action_items),
         )
