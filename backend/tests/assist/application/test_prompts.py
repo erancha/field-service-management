@@ -68,6 +68,21 @@ def test_grounded_prompt_asks_for_a_citation_and_allows_a_fallback() -> None:
     assert "your own knowledge" in grounded
 
 
+def test_triage_prompt_fixes_how_a_step_s_result_is_asked_for() -> None:
+    """Wording that drifts between turns leaves the customer answering about the wrong attempt."""
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
+
+    assert "naming the step" in prompt
+    assert "which attempt you mean" in prompt
+
+
+def test_triage_prompt_keeps_working_the_problem_after_a_step_changes_nothing() -> None:
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
+
+    assert "narrowed the fault" in prompt
+    assert "not at the first setback" in prompt
+
+
 def test_summary_prompt_names_every_field_the_layout_renders() -> None:
     for field in (
         "problem_category",
