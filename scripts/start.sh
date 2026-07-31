@@ -15,7 +15,8 @@
 # builds the backend image and brings the role(s) up as internal compose services (alongside db,
 # redis, minio, and a one-shot migration) behind an nginx edge that serves the SPA and publishes one
 # localhost port per role. Host mode provisions a virtualenv, starts PostgreSQL + Redis + MinIO via
-# Docker, applies migrations, builds the frontend, and runs uvicorn per role directly on those ports.
+# Docker, applies migrations, rebuilds the frontend when its sources changed, and runs uvicorn per
+# role directly on those ports.
 #
 # Bring the stack down or tail logs with scripts/docker-helper.sh (--stop / --logs / --ps).
 set -euo pipefail
@@ -91,8 +92,16 @@ fi
 # --- host mode: provision (idempotent, shared by every role) ---
 command -v npm >/dev/null 2>&1 || { echo "npm not found — install Node.js + npm and retry." >&2; exit 1; }
 [ -d "$VENV" ] || python3 -m venv "$VENV"
-"$VENV/bin/python" -c "import fsm" 2>/dev/null \
-  || ( cd "$BACKEND" && "$VENV/bin/pip" install --quiet --disable-pip-version-check -e ".[dev]" )
+# The dist-info dir's mtime records the last editable install, so reinstalling only when it is
+# absent or pyproject.toml changed since picks up new dependencies without paying pip's
+# multi-second no-op on every start.
+DIST_INFO=$(echo "$VENV"/lib/python*/site-packages/fsm-*.dist-info)
+if [ ! -d "$DIST_INFO" ] || [ "$BACKEND/pyproject.toml" -nt "$DIST_INFO" ]; then
+  # The venv has no pip of its own (Debian ships python without ensurepip), so installs go through
+  # the system pip pointed at the venv's interpreter — one mechanism that works either way.
+  ( cd "$BACKEND" && python3 -m pip --python "$VENV/bin/python" install --quiet \
+      --disable-pip-version-check -e ".[dev]" )
+fi
 set -a; . "$BACKEND/.env"; set +a
 
 # Cross-process SSE needs a shared broker: each role runs as its own uvicorn, so the in-memory bus
@@ -112,9 +121,22 @@ done
 ( cd "$BACKEND" && "$VENV/bin/alembic" upgrade head )
 
 # Build the React app and serve it from FastAPI at "/" (Node + npm required, checked above).
+# dist doubles as the freshness marker: rebuild only when something under frontend/ outside
+# node_modules and dist itself is newer than it. Inputs are everything-but-outputs rather than an
+# enumerated list, so a new config or asset can only over-trigger a redundant build, never go stale.
 FRONTEND="$ROOT/frontend"
-echo "Building frontend..."
-( cd "$FRONTEND" && { [ -d node_modules ] || npm install --no-audit --no-fund; } && npm run build )
+if [ ! -d "$FRONTEND/dist" ] || [ -n "$(find "$FRONTEND" \
+      \( -path "$FRONTEND/node_modules" -o -path "$FRONTEND/dist" \) -prune \
+      -o -newer "$FRONTEND/dist" -print -quit)" ]; then
+  echo "Building frontend..."
+  # Dependencies reinstall only when a manifest changed since dist was produced (or on first build).
+  ( cd "$FRONTEND" \
+    && { { [ -d node_modules ] && ! [ package.json -nt dist ] && ! [ package-lock.json -nt dist ]; } \
+         || npm install --no-audit --no-fund; } \
+    && npm run build )
+else
+  echo "Frontend dist is up to date — skipping build."
+fi
 export FSM_FRONTEND_DIST="$FRONTEND/dist"
 
 # Run one uvicorn per role as a background child and wait on all of them, so a single Ctrl-C
