@@ -17,13 +17,18 @@ interface ProfileFormProps {
   requiredFields?: Array<'address' | 'phone'>
 }
 
-const FIELD_LABELS: Record<'address' | 'phone', string> = {
-  address: 'service address',
-  phone: 'phone',
-}
-
 export function ProfileForm({ user, onSaved, onSkip, requiredFields = [] }: ProfileFormProps) {
   const { refresh } = useAuth()
+  // A customer's address is the destination of a service call; anyone else's (technician,
+  // back-office) is their own base, used by dispatch and never shown to customers.
+  const addressWording =
+    user.role === 'CUSTOMER'
+      ? { label: 'Service address', placeholder: 'Where should the technician go?' }
+      : { label: 'Base address', placeholder: 'Where are you based?' }
+  const fieldLabels: Record<'address' | 'phone', string> = {
+    address: addressWording.label.toLowerCase(),
+    phone: 'phone',
+  }
   const [displayName, setDisplayName] = useState(user.display_name ?? '')
   const [address, setAddress] = useState(user.address ?? '')
   const [phone, setPhone] = useState(user.phone ?? '')
@@ -48,7 +53,7 @@ export function ProfileForm({ user, onSaved, onSkip, requiredFields = [] }: Prof
     const values = { address, phone }
     const missing = requiredFields.filter((field) => !values[field].trim())
     if (missing.length > 0) {
-      const fields = missing.map((f) => FIELD_LABELS[f]).join(' and ')
+      const fields = missing.map((f) => fieldLabels[f]).join(' and ')
       // Only the customer books; the technician supplies contact so a booked customer can reach them.
       const reason = user.role === 'CUSTOMER' ? 'before booking' : 'to complete your profile'
       setError(`Please add your ${fields} ${reason}.`)
@@ -90,11 +95,11 @@ export function ProfileForm({ user, onSaved, onSkip, requiredFields = [] }: Prof
           />
         </label>
         <label>
-          Service address:
+          {addressWording.label}:
           <input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="Where should the technician go?"
+            placeholder={addressWording.placeholder}
           />
         </label>
         <label>

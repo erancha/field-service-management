@@ -98,6 +98,27 @@ describe('ProfileForm', () => {
     expect(screen.getByText(/complete your profile/i)).toBeInTheDocument()
   })
 
+  it('words the address field as the technician\'s own base, not a service call', () => {
+    const technician: CurrentUser = { ...baseUser, role: 'TECHNICIAN' }
+    renderForm({ user: technician })
+
+    expect(screen.getByLabelText(/base address/i)).toHaveValue('12 Main St')
+    expect(screen.queryByLabelText(/service address/i)).toBeNull()
+    expect(screen.queryByPlaceholderText(/where should the technician go/i)).toBeNull()
+  })
+
+  it('names the technician\'s address as "base address" when required and blank', async () => {
+    const technician: CurrentUser = { ...baseUser, role: 'TECHNICIAN', address: null }
+    renderForm({ requiredFields: ['address'], user: technician })
+    await userEvent.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(updateProfile).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(/please add your base address to complete your profile/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/service address/i)).toBeNull()
+  })
+
   it('rejects a clearly-malformed phone number on submit', async () => {
     const { onSaved } = renderForm()
     await userEvent.type(screen.getByLabelText(/phone/i), '123')
