@@ -32,6 +32,7 @@ from testcontainers.postgres import PostgresContainer
 
 from fsm.assist.ports.chat_model import TriageSummary
 from fsm.assist.ports.photo_store import object_prefix, original_key, preview_key
+from fsm.platform.api.scheduling_routes import _content_disposition
 from fsm.platform.app import create_app
 from fsm.identity.domain.role import Role
 from tests.assist.fakes import FakePhotoStore
@@ -1019,6 +1020,26 @@ class TestServiceCallPhotoDownload:
 
         assert response.status_code == 503
         assert response.json()["detail"] == "Photo storage not configured"
+
+
+class TestContentDispositionHeader:
+    """Unit tests of the header builder; the download tests above cover the HTTP path."""
+
+    def test_a_slash_in_the_filename_is_percent_encoded_in_the_extended_form(self):
+        """RFC 5987's attr-char grammar has no place for a bare "/", so the extended
+        filename* value must carry it percent-encoded."""
+        header = _content_disposition("attachment", "boiler/plate.jpg")
+
+        assert "filename*=UTF-8''boiler%2Fplate.jpg" in header
+
+    def test_a_backslash_never_reaches_the_header(self):
+        """Inside the quoted fallback a trailing backslash escapes the closing quote, leaving
+        the header unterminated for a strict RFC 7230 parser, so backslashes are stripped."""
+        header = _content_disposition("attachment", "plate.jpg\\")
+
+        assert "\\" not in header
+        assert "%5C" not in header
+        assert 'filename="plate.jpg"' in header
 
 
 class TestAppointmentChangePublish:
