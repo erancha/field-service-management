@@ -12,6 +12,7 @@ from fsm.assist.application.prompts import (
     MARKERS,
     SOLVED_MARKER,
     SUMMARY_SYSTEM_PROMPT,
+    YES_NO_MARKER,
     build_system_prompt,
     strip_markers,
 )
@@ -69,11 +70,16 @@ def _utc_now() -> datetime:
 
 @dataclass(frozen=True)
 class TurnOutcome:
-    """How the conversation stands after a turn; the escalation fields are set only on escalation."""
+    """How the conversation stands after a turn; the escalation fields are set only on escalation.
+
+    offer_yes_no is how the chat surface learns, without parsing the reply text, that the turn's
+    question is a plain yes/no it can answer with tappable Yes/No buttons.
+    """
 
     status: ConversationStatus
     service_call_id: uuid.UUID | None = None
     service_call_description: str | None = None
+    offer_yes_no: bool = False
 
 
 def _safe_prefix_length(text: str) -> int:
@@ -269,7 +275,9 @@ class TriageService:
                 service_call_description=description,
             )
         else:
-            self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
+            self._outcome = TurnOutcome(
+                status=ConversationStatus.ACTIVE, offer_yes_no=marker == YES_NO_MARKER
+            )
 
         self._conversations.save(conversation)
         if question.photos and self._photos is not None:

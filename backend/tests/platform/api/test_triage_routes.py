@@ -11,7 +11,12 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from fsm.assist.application.prompts import CLOSED_MARKER, ESCALATE_MARKER, SOLVED_MARKER
+from fsm.assist.application.prompts import (
+    CLOSED_MARKER,
+    ESCALATE_MARKER,
+    SOLVED_MARKER,
+    YES_NO_MARKER,
+)
 from fsm.assist.domain.conversation import MAX_PHOTOS_PER_CONVERSATION
 from fsm.identity.domain.role import Role
 from fsm.platform.api.triage_routes import MAX_MESSAGE_CHARS, MAX_PHOTO_BYTES
@@ -148,6 +153,44 @@ class TestTriageRoutes:
             ("CUSTOMER", "The oven will not heat."),
             ("ASSISTANT", "Is the display lit?"),
         ]
+
+    def test_a_yes_no_question_is_flagged_on_the_done_frame(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(
+            pg_session_factory, FakeChatModel(replies=[f"Is the breaker on? {YES_NO_MARKER}"])
+        )
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat."},
+            )
+
+        frames = read_sse(stream)
+        tokens = "".join(payload["text"] for event, payload in frames if event == "token")
+        assert "[[" not in tokens
+        done = [payload for event, payload in frames if event == "done"][0]
+        assert done["status"] == "ACTIVE"
+        assert done["offer_yes_no"] is True
+
+    def test_an_open_question_leaves_the_done_frame_unflagged(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel(replies=["Is the display lit?"]))
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat."},
+            )
+
+        done = [payload for event, payload in read_sse(stream) if event == "done"][0]
+        assert done["offer_yes_no"] is False
 
     def test_a_solved_ending_creates_no_service_call(self, pg_session_factory, authenticate):
         app = build_app(

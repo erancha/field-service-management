@@ -8,6 +8,9 @@
   --color-secondary: #6b7280;
   --color-danger: #dc2626;
   --color-danger-hover: #b91c1c;
+  --color-success: #16a34a;
+  /* The darker success green is defined once, below, as --color-success-text. */
+  --color-success-hover: var(--color-success-text);
   --color-bg: #f9fafb;
   --color-surface: #ffffff;
   --color-border: #e5e7eb;
@@ -76,6 +79,15 @@ body {
 
 .btn-danger:hover:not(:disabled) {
   background: var(--color-danger-hover);
+}
+
+.btn-success {
+  background: var(--color-success);
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--color-success-hover);
 }
 
 .btn-google {
@@ -887,6 +899,12 @@ body {
 .chat__ended p,
 .chat__give-up p {
   margin: 0;
+}
+
+.chat__quick-replies {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 .chat__composer textarea {

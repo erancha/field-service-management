@@ -195,5 +195,7 @@ export interface TriageConversationSummary {
 
 export interface TriageTurnResult {
   status: TriageStatus
+  /** True when the reply's one question is a plain yes/no, so the chat can offer Yes/No buttons. */
+  offer_yes_no: boolean
   service_call: { id: string; description: string } | null
 }

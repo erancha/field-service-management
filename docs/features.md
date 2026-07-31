@@ -56,11 +56,20 @@ model is a change to `ASSIST_MODEL` and its key, with no code change. The assist
 steps that are safe for a customer to try — never gas, mains wiring, refrigerant, or working at
 height.
 
+When the assistant's one question is a plain yes/no ("Is the breaker on?"), the chat shows tappable
+Yes and No quick-reply buttons alongside the composer, which stays available for a qualified answer.
+The assistant flags such questions explicitly — a control marker stripped server-side and carried as
+a flag on the turn's final SSE frame — so the client never guesses from the reply text, and history
+read back after a conversation ends never shows buttons.
+
 A conversation ends one of three ways:
 
 - **Solved** — the customer confirms the problem is fixed.
-- **Escalated** — a service call is opened carrying the summary, after which the customer books a
-  technician through the same flow as before.
+- **Escalated** — the assistant first asks, as a yes/no question, whether to book a technician
+  visit; only a Yes opens the service call carrying the summary, after which the customer books a
+  technician through the same flow as before. A No stays in the conversation for one more try or a
+  late correction — though a declined safety escalation reopens nothing unsafe: the assistant
+  repeats that a technician is the safe way forward.
 - **Closed** — it was never an equipment fault, or the customer asked to stop. Booking nothing is
   the point, so asking to leave never books a visit. Both the assistant and an End chat button can
   close one.
@@ -69,8 +78,8 @@ The summary is **stored as structure, not prose**: the service call keeps the fi
 one layout definition drives the calendar event's HTML, the appointment card, and the notification
 email, so no surface reads a rendering back apart.
 
-Around the edges: a conversation that runs long escalates on its own, because each turn re-sends the
-whole exchange and a customer still stuck that far in needs a visit; one left quiet for 24 hours is
+Around the edges: a conversation that runs long escalates on its own, without the booking question,
+because each turn re-sends the whole exchange and a customer still stuck that far in needs a visit; one left quiet for 24 hours is
 retired; a customer has at most one active conversation, enforced by a partial unique index; replies
 stream to the browser and survive a page reload; ended conversations stay readable, newest first;
 and a conversation nobody typed into never appears. Opening a service call never depends on the

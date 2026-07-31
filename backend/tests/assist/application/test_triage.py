@@ -12,6 +12,7 @@ from fsm.assist.application.prompts import (
     ESCALATE_MARKER,
     SOLVED_MARKER,
     TRIAGE_SYSTEM_PROMPT,
+    YES_NO_MARKER,
 )
 from fsm.assist.application.triage import (
     GROUNDING_HITS,
@@ -300,6 +301,34 @@ def test_closed_marker_abandons_the_conversation_without_a_service_call() -> Non
     assert openers.opened == []
     assert chat_model.summarize_calls == []
     assert service.outcome() == TurnOutcome(status=ConversationStatus.ABANDONED)
+
+
+def test_a_yes_no_question_flags_the_offer_and_keeps_the_conversation_active() -> None:
+    service, conversations, _, openers = make_service(
+        replies=[f"Is the breaker on? {YES_NO_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+
+    fragments = list(service.reply(convo.id, CUSTOMER, "The oven will not heat."))
+
+    assert all("[[" not in fragment for fragment in fragments)
+    assert "".join(fragments).strip() == "Is the breaker on?"
+    stored = conversations.rows[convo.id]
+    assert stored.status is ConversationStatus.ACTIVE
+    assert stored.messages[-1].text == "Is the breaker on?"
+    assert openers.opened == []
+    assert service.outcome() == TurnOutcome(
+        status=ConversationStatus.ACTIVE, offer_yes_no=True
+    )
+
+
+def test_an_open_question_offers_no_yes_no_buttons() -> None:
+    service, _, _, _ = make_service(replies=["What is the model number?"])
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "The oven will not heat.")
+
+    assert service.outcome().offer_yes_no is False
 
 
 def test_end_abandons_an_open_conversation() -> None:

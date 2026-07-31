@@ -62,6 +62,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   const [streaming, setStreaming] = useState('')
   const [status, setStatus] = useState<TriageStatus>('ACTIVE')
   const [draft, setDraft] = useState('')
+  const [offerYesNo, setOfferYesNo] = useState(false)
   const [sending, setSending] = useState(false)
   const [ending, setEnding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,16 +98,25 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages, streaming])
 
   // Focus belongs in the composer, and both dependencies are a moment it has to be put back: the
-  // composer mounts only once the conversation resolves, and clicking Send moves focus to Send.
+  // composer mounts only once the conversation resolves, and a send leaves focus on whichever
+  // button started it — Send, or a Yes/No quick reply that may unmount with the answer.
   useEffect(() => { if (!sending) draftRef.current?.focus() }, [conversationId, sending])
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
+    await send(draft.trim(), true)
+  }
+
+  /**
+   * One customer turn through the streaming path, shared by the composer and the Yes/No quick
+   * replies. Only a composer send consumes the draft: a tapped quick reply must leave whatever
+   * the customer has typed intact, so consumesDraft also scopes the on-failure draft restore.
+   */
+  async function send(text: string, consumesDraft: boolean) {
     if (conversationId === null) return
-    const text = draft.trim()
     const sent = pendingPhotos
     setError(null)
-    setDraft('')
+    if (consumesDraft) setDraft('')
     setSending(true)
     // The live exchange is what the customer is now watching; history folds out of its way.
     setCollapseKey((n) => n + 1)
@@ -132,6 +142,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
         { id: `local-${nextLocalId.current++}`, role: 'ASSISTANT', text: reply.trim(), created_at: '' },
       ])
       setStatus(result.status)
+      setOfferYesNo(result.offer_yes_no)
       setPendingPhotos([])
       // An ending moves this exchange into the customer's history.
       if (result.status !== 'ACTIVE') setHistoryKey((n) => n + 1)
@@ -148,7 +159,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     } catch (err) {
       setError(safeErrorMessage(err, 'The assistant could not answer just now. Please try again.'))
       setMessages((prior) => prior.filter((m) => m.id !== optimisticId))
-      setDraft(text)
+      if (consumesDraft) setDraft(text)
       // The ids stay unbound server-side, so a retried turn can re-send the same photos.
     } finally {
       setStreaming('')
@@ -221,6 +232,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     setStreaming('')
     setStatus('ACTIVE')
     setDraft('')
+    setOfferYesNo(false)
     setError(null)
     setAttempt((n) => n + 1)
   }
@@ -263,6 +275,27 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                 )}
                 <div ref={endRef} />
               </ChatTurns>
+
+              {offerYesNo && (
+                <div className="chat__quick-replies">
+                  <Button
+                    type="button"
+                    variant="success"
+                    disabled={sending}
+                    onClick={() => void send('Yes', false)}
+                  >
+                    Yes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={sending}
+                    onClick={() => void send('No', false)}
+                  >
+                    No
+                  </Button>
+                </div>
+              )}
 
               <form onSubmit={handleSend} className="form chat__composer">
                 <label>

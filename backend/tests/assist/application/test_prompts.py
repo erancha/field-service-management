@@ -9,6 +9,7 @@ from fsm.assist.application.prompts import (
     SOLVED_MARKER,
     SUMMARY_SYSTEM_PROMPT,
     TRIAGE_SYSTEM_PROMPT,
+    YES_NO_MARKER,
     build_system_prompt,
     strip_markers,
 )
@@ -38,6 +39,20 @@ def test_prompt_documents_every_control_marker() -> None:
     assert SOLVED_MARKER in TRIAGE_SYSTEM_PROMPT
     assert ESCALATE_MARKER in TRIAGE_SYSTEM_PROMPT
     assert CLOSED_MARKER in TRIAGE_SYSTEM_PROMPT
+    assert YES_NO_MARKER in TRIAGE_SYSTEM_PROMPT
+
+
+def test_prompt_requires_the_customers_agreement_before_escalating() -> None:
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
+
+    assert "whether to book" in prompt
+    assert "after the customer agrees" in prompt
+
+
+def test_prompt_keeps_a_declined_safety_escalation_away_from_self_help() -> None:
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
+
+    assert "declining does not reopen self-help" in prompt
 
 
 def test_a_search_that_found_nothing_leaves_the_prompt_untouched() -> None:
@@ -125,6 +140,13 @@ def test_strip_markers_extracts_and_removes_the_closed_marker() -> None:
 
     assert text == "No problem — closing this off."
     assert marker == CLOSED_MARKER
+
+
+def test_strip_markers_extracts_and_removes_the_yes_no_marker() -> None:
+    text, marker = strip_markers(f"Is the breaker on?\n{YES_NO_MARKER}")
+
+    assert text == "Is the breaker on?"
+    assert marker == YES_NO_MARKER
 
 
 def test_strip_markers_finds_a_marker_written_inline() -> None:

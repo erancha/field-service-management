@@ -301,6 +301,7 @@ def send_message(
                 "done",
                 {
                     "status": outcome.status.value,
+                    "offer_yes_no": outcome.offer_yes_no,
                     "service_call": (
                         None
                         if outcome.service_call_id is None
