@@ -4,14 +4,20 @@
 #
 # The deployment serves each role on its own hostname over TLS — https://tech|app|admin.$FSM_DOMAIN —
 # because Google accepts an https redirect URI for a public host but rejects a plain-http one, and
-# every booking and scheduling route needs a completed sign-in. Postgres and Redis keep the base
-# file's loopback-only publishing, so nginx is the single reachable service.
+# every booking and scheduling route needs a completed sign-in. Postgres, Redis, and MinIO publish
+# on loopback only, so nginx is the single reachable service.
 services:
   db:
     restart: unless-stopped
 
   redis:
     restart: unless-stopped
+
+  minio:
+    # The base file publishes the object store on every interface for local development. Here it
+    # is loopback-only, so nginx stays the single service reachable from outside the box.
+    ports: !override
+      - "127.0.0.1:9100:9000"
 
   # migrate runs to completion and exits, so it keeps the default restart policy; a restarting
   # one-shot migration would loop forever.

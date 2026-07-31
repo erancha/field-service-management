@@ -87,10 +87,13 @@ services:
     environment:
       MINIO_ROOT_USER: fsm
       MINIO_ROOT_PASSWORD: fsm-minio-local
-    # Published so host-mode backends reach the store at localhost:9000; Docker-mode backends
-    # reach it in-network as minio:9000.
+    # Published on every interface so a photo object can be fetched from a device other than this
+    # host — a technician opening the calendar event on a phone. The host port stays off MinIO's
+    # default 9000 so this stack coexists with another local S3 store already holding it.
+    # Host-mode backends reach the store at localhost:9100; Docker-mode backends reach it
+    # in-network as minio:9000.
     ports:
-      - "127.0.0.1:9000:9000"
+      - "9100:9000"
     volumes:
       - fsm_minio:/data
     healthcheck:
