@@ -18,6 +18,7 @@ from langchain_postgres import PGEngine, PGVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import create_engine, inspect
 
+from fsm.assist.domain.document import ExtractedText
 from fsm.assist.ports.document_index import ProgressCallback, SearchHit
 from fsm.assist.ports.progress import progress_step
 
@@ -45,7 +46,9 @@ class PgVectorDocumentIndex:
         self._embeddings = embeddings
         self._table_name = table_name
         self._engine = PGEngine.from_connection_string(url=connection_url)
-        self._splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+        self._splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=150, add_start_index=True
+        )
         self._store: PGVectorStore | None = None
 
     def _table_exists(self) -> bool:
@@ -74,17 +77,20 @@ class PgVectorDocumentIndex:
         self,
         document_id: uuid.UUID,
         filename: str,
-        text: str,
+        extracted: ExtractedText,
         on_progress: ProgressCallback | None = None,
     ) -> int:
-        chunks = self._splitter.split_text(text)
+        # create_documents rather than split_text: the splitter reports each chunk's offset in the
+        # whole text, which is what resolves to a page. The split itself is the same either way.
+        chunks = self._splitter.create_documents([extracted.text])
         documents = [
             Document(
-                page_content=chunk,
+                page_content=chunk.page_content,
                 metadata={
                     "document_id": str(document_id),
                     "filename": filename,
                     "chunk_index": i,
+                    "page": extracted.page_of(chunk.metadata["start_index"]),
                 },
             )
             for i, chunk in enumerate(chunks)
@@ -119,6 +125,7 @@ class PgVectorDocumentIndex:
                 content=doc.page_content,
                 # The store returns cosine distance; similarity = 1 - distance.
                 score=1.0 - distance,
+                page=doc.metadata.get("page"),
             )
             for doc, distance in results
         ]

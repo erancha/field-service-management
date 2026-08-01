@@ -20,8 +20,10 @@ from fsm.assist.application.triage import (
     GROUNDING_HITS,
     MAX_CUSTOMER_TURNS,
     TURN_CAP_HANDOFF,
+    DocumentRef,
     TriageService,
     TurnOutcome,
+    cited_sources,
 )
 from fsm.assist.domain.conversation import (
     CONVERSATION_TTL,
@@ -31,6 +33,7 @@ from fsm.assist.domain.conversation import (
     MessageRole,
     Photo,
 )
+from fsm.assist.domain.document import ExtractedText
 from fsm.assist.domain.errors import ConversationClosed, ConversationNotFound, PhotoNotFound
 from fsm.assist.ports.document_index import SearchHit
 from fsm.assist.ports.photo_repository import PhotoRepository
@@ -539,7 +542,7 @@ def test_a_turn_searches_the_index_with_the_customers_own_words() -> None:
 
 def test_a_matching_document_reaches_the_model_as_prompt_material() -> None:
     index = FakeDocumentIndex()
-    index.index_document(uuid.uuid4(), "oven-guide.md", OVEN_DOC)
+    index.index_document(uuid.uuid4(), "oven-guide.md", ExtractedText(text=OVEN_DOC))
     service, chat_model = make_grounded_service(index)
     convo = service.start(CUSTOMER)
 
@@ -566,7 +569,7 @@ def test_every_turn_searches_again_so_the_topic_can_move_mid_conversation() -> N
 
 def test_a_search_that_matches_nothing_leaves_the_model_on_the_bare_prompt() -> None:
     index = FakeDocumentIndex()
-    index.index_document(uuid.uuid4(), "oven-guide.md", OVEN_DOC)
+    index.index_document(uuid.uuid4(), "oven-guide.md", ExtractedText(text=OVEN_DOC))
     service, chat_model = make_grounded_service(index)
     convo = service.start(CUSTOMER)
 
@@ -768,3 +771,105 @@ def test_the_turn_cap_escalation_carries_a_sent_photo_to_the_opener(
     drain(service, convo.id, "Still not fixed.", photo_ids=[photo.id])
 
     assert openers.opened_photos[-1] == [photo]
+
+
+DOC_A = uuid.uuid4()
+DOC_B = uuid.uuid4()
+
+
+def hit(document_id: uuid.UUID, filename: str, score: float) -> SearchHit:
+    return SearchHit(document_id=document_id, filename=filename, content="…", score=score)
+
+
+class ScoredIndex(FakeDocumentIndex):
+    """Returns hits with the scores a test names, standing in for a real similarity search."""
+
+    def __init__(self, hits: list[SearchHit]) -> None:
+        super().__init__()
+        self.hits = hits
+
+    def search(self, query: str, limit: int) -> list[SearchHit]:
+        return self.hits[:limit]
+
+
+def test_a_document_matching_on_a_cluster_of_chunks_is_offered_as_a_source() -> None:
+    assert cited_sources(
+        [hit(DOC_A, "elevators.pdf", 0.55), hit(DOC_A, "elevators.pdf", 0.48)]
+    ) == (DocumentRef(id=DOC_A, filename="elevators.pdf"),)
+
+
+def test_a_document_matching_on_one_chunk_alone_is_not_offered() -> None:
+    assert cited_sources([hit(DOC_A, "elevators.pdf", 0.55), hit(DOC_B, "ovens.pdf", 0.50)]) == ()
+
+
+def test_chunks_below_the_score_do_not_count_towards_the_cluster() -> None:
+    assert cited_sources(
+        [hit(DOC_A, "elevators.pdf", 0.55), hit(DOC_A, "elevators.pdf", 0.44)]
+    ) == ()
+
+
+def test_a_search_that_matched_nothing_well_offers_no_source() -> None:
+    assert cited_sources([hit(DOC_A, "elevators.pdf", 0.24)] * 3) == ()
+
+
+def test_qualifying_documents_are_offered_best_match_first() -> None:
+    sources = cited_sources(
+        [
+            hit(DOC_A, "elevators.pdf", 0.50),
+            hit(DOC_A, "elevators.pdf", 0.49),
+            hit(DOC_B, "ovens.pdf", 0.60),
+            hit(DOC_B, "ovens.pdf", 0.46),
+        ]
+    )
+    assert [source.filename for source in sources] == ["ovens.pdf", "elevators.pdf"]
+
+
+def test_a_turn_reports_the_documents_it_matched_on_its_outcome() -> None:
+    index = ScoredIndex([hit(DOC_A, "elevators.pdf", 0.55), hit(DOC_A, "elevators.pdf", 0.48)])
+    service, _ = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "The lift doors keep bouncing open.")
+
+    assert service.outcome().sources == (DocumentRef(id=DOC_A, filename="elevators.pdf"),)
+
+
+def test_a_turn_that_matched_nothing_well_reports_no_documents() -> None:
+    index = ScoredIndex([hit(DOC_A, "elevators.pdf", 0.24), hit(DOC_A, "elevators.pdf", 0.22)])
+    service, _ = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "What time does the office open?")
+
+    assert service.outcome().sources == ()
+
+
+def test_the_next_turn_replaces_the_previous_turns_documents() -> None:
+    index = ScoredIndex([hit(DOC_A, "elevators.pdf", 0.55), hit(DOC_A, "elevators.pdf", 0.48)])
+    service, _ = make_grounded_service(index)
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "The lift doors keep bouncing open.")
+
+    index.hits = [hit(DOC_A, "elevators.pdf", 0.24)]
+    drain(service, convo.id, "Never mind, what time does the office open?")
+
+    assert service.outcome().sources == ()
+
+
+def test_the_offered_page_is_where_the_best_matching_passage_starts() -> None:
+    sources = cited_sources(
+        [
+            SearchHit(document_id=DOC_A, filename="elevators.pdf", content="…", score=0.48,
+                      page=12),
+            SearchHit(document_id=DOC_A, filename="elevators.pdf", content="…", score=0.55,
+                      page=213),
+        ]
+    )
+
+    assert sources == (DocumentRef(id=DOC_A, filename="elevators.pdf", page=213),)
+
+
+def test_a_document_indexed_without_pages_is_offered_without_one() -> None:
+    sources = cited_sources([hit(DOC_A, "notes.md", 0.55), hit(DOC_A, "notes.md", 0.48)])
+
+    assert sources == (DocumentRef(id=DOC_A, filename="notes.md", page=None),)

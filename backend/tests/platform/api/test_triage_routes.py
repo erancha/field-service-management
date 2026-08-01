@@ -19,6 +19,8 @@ from fsm.assist.application.prompts import (
     QUESTION_OPEN,
 )
 from fsm.assist.domain.conversation import MAX_PHOTOS_PER_CONVERSATION
+from fsm.assist.domain.document import ExtractedText
+from fsm.assist.ports.document_index import SearchHit
 from fsm.identity.domain.role import Role
 from fsm.platform.api.triage_routes import MAX_MESSAGE_CHARS, MAX_PHOTO_BYTES
 from fsm.platform.app import create_app
@@ -275,7 +277,7 @@ class TestTriageRoutes:
         chat_model = FakeChatModel(replies=["Hold the reset button."])
         app = build_app(pg_session_factory, chat_model)
         index = FakeDocumentIndex()
-        index.index_document(uuid.uuid4(), "oven-guide.md", OVEN_DOC)
+        index.index_document(uuid.uuid4(), "oven-guide.md", ExtractedText(text=OVEN_DOC))
         app.state.kb_index = index
         authenticate(app, role=Role.CUSTOMER)
 
@@ -289,6 +291,60 @@ class TestTriageRoutes:
         system, _ = chat_model.stream_calls[0]
         assert "oven-guide.md" in system
         assert OVEN_DOC in system
+
+    def test_a_strongly_matched_document_reaches_the_browser_on_the_done_frame(
+        self, pg_session_factory, authenticate
+    ):
+        """The customer is offered the document to open; the id is what the link resolves."""
+
+        class ScoredIndex(FakeDocumentIndex):
+            def search(self, query: str, limit: int) -> list[SearchHit]:
+                return [
+                    SearchHit(document_id=document_id, filename="oven-guide.md",
+                              content=OVEN_DOC, score=score, page=page)
+                    for score, page in ((0.61, 7), (0.52, 4))
+                ]
+
+        document_id = uuid.uuid4()
+        app = build_app(pg_session_factory, FakeChatModel(replies=["Hold the reset button."]))
+        app.state.kb_index = ScoredIndex()
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "The oven will not heat."},
+            )
+
+        done = [payload for event, payload in read_sse(stream) if event == "done"][0]
+        assert done["sources"] == [
+            {"id": str(document_id), "filename": "oven-guide.md", "page": 7}
+        ]
+
+    def test_a_weakly_matched_document_is_not_offered_to_the_customer(
+        self, pg_session_factory, authenticate
+    ):
+        class WeakIndex(FakeDocumentIndex):
+            def search(self, query: str, limit: int) -> list[SearchHit]:
+                return [
+                    SearchHit(document_id=uuid.uuid4(), filename="oven-guide.md",
+                              content=OVEN_DOC, score=0.24)
+                ]
+
+        app = build_app(pg_session_factory, FakeChatModel(replies=["Tell me more."]))
+        app.state.kb_index = WeakIndex()
+        authenticate(app, role=Role.CUSTOMER)
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            stream = client.post(
+                f"/api/assist/conversations/{conversation_id}/messages",
+                json={"text": "What time does the office open?"},
+            )
+
+        done = [payload for event, payload in read_sse(stream) if event == "done"][0]
+        assert done["sources"] == []
 
     def test_ending_a_conversation_abandons_it_without_a_service_call(
         self, pg_session_factory, authenticate

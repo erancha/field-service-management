@@ -12,7 +12,7 @@ from fsm.assist.domain.conversation import (
     MessageRole,
     Photo,
 )
-from fsm.assist.domain.document import KbDocument
+from fsm.assist.domain.document import ExtractedText, KbDocument
 from fsm.assist.domain.errors import (
     ConversationAlreadyOpen,
     ConversationNotFound,
@@ -81,10 +81,10 @@ class FakeDocumentIndex:
         self,
         document_id: uuid.UUID,
         filename: str,
-        text: str,
+        extracted: ExtractedText,
         on_progress=None,
     ) -> int:
-        self.texts[document_id] = (filename, text)
+        self.texts[document_id] = (filename, extracted.text)
         if on_progress is not None:
             on_progress(1, 1)
         return 1
@@ -108,10 +108,12 @@ class FakeDocumentIndex:
 class FakeTextExtractor:
     """Decodes bytes as UTF-8, whatever the claimed type."""
 
-    def extract(self, filename: str, media_type: str, content: bytes, on_progress=None) -> str:
+    def extract(
+        self, filename: str, media_type: str, content: bytes, on_progress=None
+    ) -> ExtractedText:
         if on_progress is not None:
             on_progress(1, 1)
-        return content.decode("utf-8")
+        return ExtractedText(text=content.decode("utf-8"))
 
 
 class FakeChatModel:

@@ -1001,6 +1001,17 @@ body {
   display: block;
 }
 
+/* Sits under a reply the knowledge base backed, quieter than the answer it points at. */
+.chat__turn-sources {
+  margin: 0.5rem 0 0;
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}
+
+.chat__turn-sources a {
+  color: inherit;
+}
+
 .chat__composer-field {
   display: flex;
   flex-direction: column;

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import uuid
 
 import pytest
 from alembic import command as alembic_command
@@ -159,3 +160,46 @@ class TestKbRoutes:
         authenticate(app, role=Role.ADMIN)
         assert _upload(client).status_code == 201
         assert app.state.kb_index.ran_on_event_loop is False
+
+
+class TestDocumentContent:
+    """Serving a document's bytes — the one knowledge-base route open past the back office."""
+
+    def test_a_customer_can_open_a_document_inline(self, pg_session_factory, authenticate):
+        app = _app(pg_session_factory)
+        client = TestClient(app, follow_redirects=False)
+        authenticate(app, role=Role.ADMIN)
+        doc = _upload(client, name="manual.md", body=b"# Photo eye\nCheck the lens").json()
+
+        authenticate(app, role=Role.CUSTOMER)
+        served = client.get(f"/api/kb/documents/{doc['id']}/content")
+
+        assert served.status_code == 200
+        assert served.content == b"# Photo eye\nCheck the lens"
+        assert served.headers["content-type"].startswith("text/markdown")
+        assert served.headers["content-disposition"].startswith('inline; filename="manual.md"')
+
+    def test_a_non_ascii_filename_still_serves(self, pg_session_factory, authenticate):
+        app = _app(pg_session_factory)
+        client = TestClient(app, follow_redirects=False)
+        authenticate(app, role=Role.ADMIN)
+        doc = _upload(client, name="מדריך.md", body=b"# Nudging\nDoors close slowly").json()
+
+        authenticate(app, role=Role.CUSTOMER)
+        served = client.get(f"/api/kb/documents/{doc['id']}/content")
+
+        assert served.status_code == 200
+        assert "filename*=UTF-8''" in served.headers["content-disposition"]
+
+    def test_an_unknown_document_is_a_404(self, pg_session_factory, authenticate):
+        app = _app(pg_session_factory)
+        client = TestClient(app, follow_redirects=False)
+        authenticate(app, role=Role.CUSTOMER)
+
+        assert client.get(f"/api/kb/documents/{uuid.uuid4()}/content").status_code == 404
+
+    def test_a_signed_out_visitor_cannot_open_a_document(self, pg_session_factory):
+        app = _app(pg_session_factory)
+        client = TestClient(app, follow_redirects=False)
+
+        assert client.get(f"/api/kb/documents/{uuid.uuid4()}/content").status_code == 401

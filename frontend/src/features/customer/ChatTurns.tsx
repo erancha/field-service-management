@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { PhotoRef, QuestionSpan, TriageMessage } from '../../api/types.ts'
+import type { PhotoRef, QuestionSpan, SourceRef, TriageMessage } from '../../api/types.ts'
+import { kbDocumentUrl } from '../../api/kb.ts'
 
 interface ChatTurnsProps {
   messages: TriageMessage[]
@@ -17,10 +18,21 @@ interface ChatTurnsProps {
    * a conversation ends, so neither emphasises anything.
    */
   questionSpan?: QuestionSpan | null
+  /**
+   * Documents to offer under a turn, keyed by message id. The backend reports them per streamed
+   * turn and they are not stored with the transcript, so history read back carries none.
+   */
+  sourcesByMessage?: Record<string, SourceRef[]>
 }
 
 /** The bubbles of a conversation, whether it is the live exchange or one read back from history. */
-export function ChatTurns({ messages, children, photoPreviewUrl, questionSpan }: ChatTurnsProps) {
+export function ChatTurns({
+  messages,
+  children,
+  photoPreviewUrl,
+  questionSpan,
+  sourcesByMessage,
+}: ChatTurnsProps) {
   return (
     <ol className="chat__log">
       {messages.map((message, index) => (
@@ -52,6 +64,23 @@ export function ChatTurns({ messages, children, photoPreviewUrl, questionSpan }:
               )}
             </ul>
           )}
+          {sourcesByMessage?.[message.id]?.length ? (
+            <p className="chat__turn-sources">
+              From the knowledge base:{' '}
+              {sourcesByMessage[message.id].map((source) => (
+                <a
+                  key={source.id}
+                  href={kbDocumentUrl(source.id, source.page)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {source.page === null
+                    ? source.filename
+                    : `${source.filename}, page ${source.page}`}
+                </a>
+              ))}
+            </p>
+          ) : null}
         </li>
       ))}
       {children}

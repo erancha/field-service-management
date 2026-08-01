@@ -50,6 +50,23 @@ reference material the model follows and cites by document name, falling back to
 when no uploaded document covers the topic. Retrieval repeats per turn, because the topic can move
 mid-chat.
 
+A turn whose retrieval landed well also offers the document itself: the reply carries a link that
+opens the original in a new tab at the page its best-matching passage starts on, served by the one
+knowledge-base route open past the back office.
+Two bars keep the offer honest, both stricter than what grounding needs, because naming a document
+on screen claims the answer rests on it: a chunk counts only above a cosine similarity of 0.45, and
+a document is offered only when at least two of its chunks clear that. Measured against an elevator
+controller manual, questions it answers score 0.47-0.55 and unrelated ones 0.21-0.25. The model
+still sees every retrieved chunk regardless of score, so the link governs what the customer is
+shown, not what the assistant reads. Links are reported per streamed turn and not stored with the
+transcript, so a reloaded or past conversation shows the turns without them.
+
+The page comes from offsets rather than from splitting the text page by page: extraction records
+where each page begins, indexing records where each chunk begins, and a lookup between the two gives
+a chunk its page. Chunking, and with it retrieval, is therefore exactly what it would be with no
+pages at all. A chunk carries whatever the indexing run that wrote it recorded, so a document whose
+chunks hold no page gains one on a re-index, which re-extracts from the stored original.
+
 The chat appears when `ASSIST_MODEL` and its provider's API key are set; with them unset the
 customer sees the plain description form instead, and switching between an Anthropic and an OpenAI
 model is a change to `ASSIST_MODEL` and its key, with no code change. The assistant suggests only

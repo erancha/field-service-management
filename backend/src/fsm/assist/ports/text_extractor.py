@@ -1,6 +1,7 @@
 """Outbound port for turning an uploaded file into plain text."""
 from typing import Protocol, runtime_checkable
 
+from fsm.assist.domain.document import ExtractedText
 from fsm.assist.ports.progress import ProgressCallback
 
 
@@ -12,8 +13,9 @@ class TextExtractor(Protocol):
         media_type: str,
         content: bytes,
         on_progress: ProgressCallback | None = None,
-    ) -> str:
-        """Plain text of the document; raises UnsupportedDocumentType for unknown formats.
+    ) -> ExtractedText:
+        """Plain text of the document, with its page starts; raises UnsupportedDocumentType for
+        unknown formats.
 
         The text is free of NUL, which the index stores in a Postgres text column that rejects it.
 

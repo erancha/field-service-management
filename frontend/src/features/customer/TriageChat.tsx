@@ -11,6 +11,7 @@ import {
 import type {
   PhotoRef,
   QuestionSpan,
+  SourceRef,
   ServiceCall,
   TriageEndedStatus,
   TriageMessage,
@@ -60,6 +61,9 @@ function safeErrorMessage(err: unknown, fallback: string): string {
 export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<TriageMessage[]>([])
+  // Per-turn and not stored with the transcript: a reload or a past conversation shows the turns
+  // without their documents.
+  const [sourcesByMessage, setSourcesByMessage] = useState<Record<string, SourceRef[]>>({})
   const [streaming, setStreaming] = useState('')
   const [status, setStatus] = useState<TriageStatus>('ACTIVE')
   const [draft, setDraft] = useState('')
@@ -170,10 +174,14 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
           setStreaming(reply)
         },
       )
+      const answerId = `local-${nextLocalId.current++}`
       setMessages((prior) => [
         ...prior,
-        { id: `local-${nextLocalId.current++}`, role: 'ASSISTANT', text: reply.trim(), created_at: '' },
+        { id: answerId, role: 'ASSISTANT', text: reply.trim(), created_at: '' },
       ])
+      if (result.sources.length > 0) {
+        setSourcesByMessage((prior) => ({ ...prior, [answerId]: result.sources }))
+      }
       setStatus(result.status)
       setQuestionSpan(result.question)
       setPendingPhotos([])
@@ -262,6 +270,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     setPendingPhotos([])
     setConversationId(null)
     setMessages([])
+    setSourcesByMessage({})
     setStreaming('')
     setStatus('ACTIVE')
     setDraft('')
@@ -303,6 +312,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                 messages={messages}
                 photoPreviewUrl={(photo) => triagePhotoPreviewUrl(conversationId, photo.id)}
                 questionSpan={questionSpan}
+                sourcesByMessage={sourcesByMessage}
               >
                 {streaming && (
                   <li className="chat__turn chat__turn--assistant" aria-live="polite">{streaming}</li>

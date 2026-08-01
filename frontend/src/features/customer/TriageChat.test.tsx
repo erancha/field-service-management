@@ -80,7 +80,7 @@ describe('TriageChat', () => {
 
   it('holds focus in the composer on arrival and again after a send', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
 
     const composer = await screen.findByRole('textbox')
@@ -97,7 +97,7 @@ describe('TriageChat', () => {
     vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
       onToken('Is ')
       onToken('it lit?')
-      return { status: 'ACTIVE', service_call: null, question: null }
+      return { sources: [], status: 'ACTIVE', service_call: null, question: null }
     })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -109,12 +109,53 @@ describe('TriageChat', () => {
     expect(await screen.findByText('Is it lit?')).toBeInTheDocument()
   })
 
+  it('offers the documents a turn matched, opening each in a new tab', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
+      onToken('Check the photo eye.')
+      return {
+        status: 'ACTIVE',
+        service_call: null,
+        question: null,
+        sources: [{ id: 'doc-1', filename: 'elevators.pdf', page: 213 }],
+      }
+    })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    await userEvent.type(screen.getByRole('textbox'), 'The doors keep reopening.')
+    await userEvent.click(screen.getByRole('button', { name: /send/i }))
+
+    const link = await screen.findByRole('link', { name: 'elevators.pdf, page 213' })
+    expect(link).toHaveAttribute('href', '/api/kb/documents/doc-1/content#page=213')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('offers no document when the turn matched nothing well enough', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
+      onToken('Tell me more.')
+      return { sources: [], status: 'ACTIVE', service_call: null, question: null }
+    })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    await userEvent.type(screen.getByRole('textbox'), 'What time does the office open?')
+    await userEvent.click(screen.getByRole('button', { name: /send/i }))
+
+    expect(await screen.findByText('Tell me more.')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByText(/knowledge base/i)).toBeNull()
+  })
+
   it('hands the created service call up when the assistant escalates', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply).mockResolvedValue({
       status: 'ESCALATED',
       service_call: { id: 'sc-1', description: 'Equipment: Oven' },
       question: null,
+      sources: [],
     })
     const onEscalated = vi.fn()
     render(<TriageChat onEscalated={onEscalated} onGiveUp={() => {}} />)
@@ -132,7 +173,7 @@ describe('TriageChat', () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
       onToken(YES_NO_REPLY)
-      return { status: 'ACTIVE', service_call: null, question: YES_NO_SPAN }
+      return { sources: [], status: 'ACTIVE', service_call: null, question: YES_NO_SPAN }
     })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -150,11 +191,11 @@ describe('TriageChat', () => {
     vi.mocked(streamAssistReply)
       .mockImplementationOnce(async (_id, _text, _photoIds, onToken) => {
         onToken(YES_NO_REPLY)
-        return { status: 'ACTIVE', service_call: null, question: YES_NO_SPAN }
+        return { sources: [], status: 'ACTIVE', service_call: null, question: YES_NO_SPAN }
       })
       .mockImplementationOnce(async (_id, _text, _photoIds, onToken) => {
         onToken('Then the fault is downstream.')
-        return { status: 'ACTIVE', service_call: null, question: null }
+        return { sources: [], status: 'ACTIVE', service_call: null, question: null }
       })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -171,8 +212,8 @@ describe('TriageChat', () => {
   it('sends a tapped answer as its own turn, the one-tap path', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: null })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
     await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
@@ -187,8 +228,8 @@ describe('TriageChat', () => {
   it('holds a tapped answer in the composer when the customer clears Send', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: null })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
     await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
@@ -214,8 +255,8 @@ describe('TriageChat', () => {
   it('carries text typed before the tap into the answer rather than stranding it', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: null })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
     await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
@@ -234,7 +275,7 @@ describe('TriageChat', () => {
   it('retires the quick replies once one has been tapped', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ sources: [], status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
     await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
@@ -249,7 +290,7 @@ describe('TriageChat', () => {
   it('keeps the quick replies out of an ordinary exchange', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply).mockResolvedValue(
-      { status: 'ACTIVE', service_call: null, question: null },
+      { sources: [], status: 'ACTIVE', service_call: null, question: null },
     )
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -264,7 +305,7 @@ describe('TriageChat', () => {
 
   it('closes the whole exchange down to the restart button when the problem is solved', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'SOLVED', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'SOLVED', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -349,7 +390,7 @@ describe('TriageChat', () => {
         messages: [{ id: 'm1', role: 'CUSTOMER', text: 'The oven will not heat.', created_at: '' }],
       })
       .mockResolvedValueOnce({ ...EMPTY_CONVERSATION, id: 'c2' })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'SOLVED', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'SOLVED', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -379,7 +420,7 @@ describe('TriageChat', () => {
       pending_photos: [],
     })
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -419,7 +460,7 @@ describe('TriageChat', () => {
     vi.mocked(startConversation)
       .mockResolvedValueOnce(EMPTY_CONVERSATION)
       .mockResolvedValueOnce({ ...EMPTY_CONVERSATION, id: 'c2' })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ABANDONED', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ABANDONED', service_call: null, question: null })
     const onEscalated = vi.fn()
     render(<TriageChat onEscalated={onEscalated} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -482,7 +523,7 @@ describe('TriageChat', () => {
   it('uploads a valid photo and sends its id with the next turn', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -570,7 +611,7 @@ describe('TriageChat', () => {
   it('clears pending photos after a delivered turn and keeps them on failure', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -644,7 +685,7 @@ describe('TriageChat', () => {
       ...EMPTY_CONVERSATION,
       pending_photos: [{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }],
     })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('button', { name: /remove plate.jpg/i })
 

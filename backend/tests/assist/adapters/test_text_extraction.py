@@ -25,12 +25,12 @@ def _tiny_pdf() -> bytes:
 
 def test_extracts_plain_text():
     extractor = CompositeTextExtractor()
-    assert extractor.extract("a.txt", "text/plain", b"hello") == "hello"
+    assert extractor.extract("a.txt", "text/plain", b"hello").text == "hello"
 
 
 def test_extracts_markdown_as_text():
     extractor = CompositeTextExtractor()
-    assert extractor.extract("a.md", "text/markdown", b"# Title\nBody") == "# Title\nBody"
+    assert extractor.extract("a.md", "text/markdown", b"# Title\nBody").text == "# Title\nBody"
 
 
 def test_pdf_roundtrip_yields_empty_text_for_blank_page():
@@ -38,7 +38,7 @@ def test_pdf_roundtrip_yields_empty_text_for_blank_page():
     # end-to-end and returns a string (emptiness is then caught by the application layer).
     extractor = CompositeTextExtractor()
     result = extractor.extract("a.pdf", "application/pdf", _tiny_pdf())
-    assert isinstance(result, str)
+    assert isinstance(result.text, str)
 
 
 @pytest.mark.parametrize(
@@ -50,12 +50,12 @@ def test_extracted_text_carries_no_nul_byte(name, media_type):
     failing the whole document over one unmappable glyph."""
     extractor = CompositeTextExtractor()
     content = _tiny_pdf() if name.endswith(".pdf") else b"before\x00after"
-    assert "\x00" not in extractor.extract(name, media_type, content)
+    assert "\x00" not in extractor.extract(name, media_type, content).text
 
 
 def test_nul_becomes_a_separator_rather_than_joining_its_neighbours():
     extractor = CompositeTextExtractor()
-    assert extractor.extract("a.txt", "text/plain", b"WORD\x00NEXT") == "WORD NEXT"
+    assert extractor.extract("a.txt", "text/plain", b"WORD\x00NEXT").text == "WORD NEXT"
 
 
 def test_pdf_extraction_reports_per_page_progress():
@@ -92,3 +92,22 @@ def test_corrupt_pdf_raises_a_domain_error():
     extractor = CompositeTextExtractor()
     with pytest.raises(UnsupportedDocumentType, match="could not be read as a PDF"):
         extractor.extract("broken.pdf", "application/pdf", b"not really a pdf")
+
+
+def test_a_pdf_reports_where_each_page_starts():
+    """Blank pages extract to empty text, so the starts are one apart — the joining newline —
+    which is enough to prove every page is measured, not just the first."""
+    extractor = CompositeTextExtractor()
+
+    extracted = extractor.extract("a.pdf", "application/pdf", _pdf_with_pages(3))
+
+    assert extracted.page_starts == (0, 1, 2)
+
+
+def test_a_format_without_pages_reports_none():
+    extractor = CompositeTextExtractor()
+
+    extracted = extractor.extract("a.md", "text/markdown", b"# Title\nBody")
+
+    assert extracted.page_starts == ()
+    assert extracted.page_of(0) is None

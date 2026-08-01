@@ -1,16 +1,19 @@
-"""Back-office knowledge-base management: upload, list, delete, search, re-index (ADMIN only)."""
+"""Back-office knowledge-base management: upload, list, delete, search, re-index (ADMIN only),
+plus serving a document's original bytes to any signed-in user."""
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from fsm.assist.application.knowledge_base import KnowledgeBaseService
 from fsm.assist.domain.document import KbDocument
+from fsm.assist.domain.errors import DocumentNotFound
 from fsm.identity.domain.role import Role
-from fsm.platform.api.auth_deps import SessionUser, require_role
+from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
+from fsm.platform.api.downloads import content_disposition
 from fsm.platform.assist_factory import build_text_extractor
 from fsm.platform.config import Settings
 from fsm.platform.events import publish_kb_ingest_progress
@@ -149,6 +152,38 @@ def delete_document(
         _service(request, session).delete(document_id)
         session.commit()
     return {"deleted": True}
+
+
+@router.get("/documents/{document_id}/content")
+def document_content(
+    document_id: uuid.UUID,
+    request: Request,
+    user: SessionUser = Depends(require_user),
+) -> Response:
+    """Serve a document's original bytes to any signed-in user.
+
+    The only route here open past the back office: the triage assistant names the documents its
+    answer rests on, and a customer who is shown a document's name can open it. Served inline so a
+    manual opens in the browser rather than downloading.
+    """
+    from fsm.assist.adapters.document_repository import SqlAlchemyKbDocumentRepository
+
+    with _session_factory(request)() as session:
+        documents = SqlAlchemyKbDocumentRepository(session)
+        try:
+            document = documents.get(document_id)
+            content = documents.get_content(document_id)
+        except DocumentNotFound:
+            raise HTTPException(status_code=404, detail="No such document")
+    return Response(
+        content=content,
+        media_type=document.media_type,
+        headers={
+            "Content-Disposition": content_disposition(
+                "inline", document.filename, fallback="document"
+            )
+        },
+    )
 
 
 @router.post("/search")

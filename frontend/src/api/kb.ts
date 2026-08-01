@@ -20,6 +20,17 @@ export async function uploadKbDocument(
   return apiUpload<KbUploadResult>(`${BASE}/documents`, form, onProgress)
 }
 
+/**
+ * Where a document's original bytes are served; opened in a new tab rather than fetched.
+ *
+ * A page becomes the #page fragment that browsers' built-in PDF viewers honour by convention
+ * rather than by specification; a viewer that ignores it opens the document at its start.
+ */
+export function kbDocumentUrl(id: string, page: number | null = null): string {
+  const url = `${BASE}/documents/${id}/content`
+  return page === null ? url : `${url}#page=${page}`
+}
+
 export async function deleteKbDocument(id: string): Promise<{ deleted: boolean }> {
   return apiDelete<{ deleted: boolean }>(`${BASE}/documents/${id}`)
 }

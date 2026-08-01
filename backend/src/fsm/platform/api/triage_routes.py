@@ -314,6 +314,14 @@ def send_message(
                             "description": outcome.service_call_description,
                         }
                     ),
+                    "sources": [
+                        {
+                            "id": str(source.id),
+                            "filename": source.filename,
+                            "page": source.page,
+                        }
+                        for source in outcome.sources
+                    ],
                 },
             )
 

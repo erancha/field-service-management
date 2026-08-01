@@ -99,9 +99,9 @@ class KnowledgeBaseService:
             )
         extract_progress = None if on_progress is None else partial(on_progress, "extracting")
         extract_started = self._clock()
-        text = self._extractor.extract(filename, media_type, content, extract_progress)
+        extracted = self._extractor.extract(filename, media_type, content, extract_progress)
         extract_seconds = (self._clock() - extract_started).total_seconds()
-        if not text.strip():
+        if not extracted.text.strip():
             raise EmptyDocumentText(
                 f'No text could be extracted from "{filename}" — scanned or image-only'
                 " documents cannot be indexed"
@@ -119,7 +119,9 @@ class KnowledgeBaseService:
         self._documents.add(document, content)
         index_progress = None if on_progress is None else partial(on_progress, "indexing")
         index_started = self._clock()
-        chunk_count = self._index.index_document(document.id, filename, text, index_progress)
+        chunk_count = self._index.index_document(
+            document.id, filename, extracted, index_progress
+        )
         index_seconds = (self._clock() - index_started).total_seconds()
         self._documents.update_index_state(document.id, chunk_count, self._embedding_model)
         return IngestResult(
@@ -154,8 +156,12 @@ class KnowledgeBaseService:
         documents = self._documents.list_all()
         for document in documents:
             content = self._documents.get_content(document.id)
-            text = self._extractor.extract(document.filename, document.media_type, content)
-            chunk_count = self._index.index_document(document.id, document.filename, text)
+            extracted = self._extractor.extract(
+                document.filename, document.media_type, content
+            )
+            chunk_count = self._index.index_document(
+                document.id, document.filename, extracted
+            )
             self._documents.update_index_state(
                 document.id, chunk_count, self._embedding_model
             )

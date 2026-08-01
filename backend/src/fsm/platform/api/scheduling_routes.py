@@ -19,7 +19,6 @@ import zoneinfo
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
-from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -69,6 +68,7 @@ from fsm.platform.events import publish_appointment_changed
 from fsm.platform.identity_lookup import build_contact_resolver
 from fsm.platform.notifications_factory import build_notifications
 from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
+from fsm.platform.api.downloads import content_disposition
 from fsm.identity.domain.role import Role
 
 _log = logging.getLogger(__name__)
@@ -275,27 +275,6 @@ def _photo_store(request: Request):
     return store
 
 
-def _content_disposition(disposition: str, filename: str) -> str:
-    """Build a Content-Disposition value from a customer-controlled filename.
-
-    Response headers are Latin-1 encoded by Starlette, so a filename with non-ASCII
-    characters (Hebrew, CJK, emoji, ...) must never be interpolated as-is: doing so raises
-    UnicodeEncodeError and turns the download into an unhandled 500. Per RFC 6266/5987, this
-    emits both a plain-ASCII fallback filename for clients that only understand the legacy
-    form, and a percent-encoded filename* for clients that render the real name.
-    """
-    # Backslashes are stripped with the quotes and newlines: inside the quoted fallback a
-    # backslash escapes the character after it, so a trailing one would swallow the closing quote.
-    safe_name = (
-        filename.replace('"', "").replace("\\", "").replace("\r", "").replace("\n", "")
-    )
-    # A name with no ASCII at all cannot have an ASCII extension either, so the fallback is fixed.
-    ascii_name = safe_name.encode("ascii", errors="ignore").decode("ascii").strip() or "photo"
-    # RFC 5987's attr-char grammar admits no bare "/", which quote() would keep by default.
-    encoded_name = quote(safe_name, safe="")
-    return f'{disposition}; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}'
-
-
 def _assert_call_participant(uow, call, user: SessionUser) -> None:
     """Authorize the call's customer, a technician appointed to it, or an administrator."""
     if user.role is Role.ADMIN or user.id == call.customer_id:
@@ -338,7 +317,11 @@ def download_service_call_photo(
     return Response(
         content=_photo_store(request).get(key),
         media_type=media_type,
-        headers={"Content-Disposition": _content_disposition(disposition, attachment.filename)},
+        headers={
+            "Content-Disposition": content_disposition(
+                disposition, attachment.filename, fallback="photo"
+            )
+        },
     )
 
 

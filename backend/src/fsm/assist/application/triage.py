@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from fsm.assist.application.prompts import (
@@ -28,7 +28,7 @@ from fsm.assist.domain.conversation import (
 from fsm.assist.domain.errors import ConversationAlreadyOpen
 from fsm.assist.ports.chat_model import ChatModel
 from fsm.assist.ports.conversation_repository import ConversationRepository
-from fsm.assist.ports.document_index import DocumentIndex
+from fsm.assist.ports.document_index import DocumentIndex, SearchHit
 from fsm.assist.ports.photo_repository import PhotoRepository
 from fsm.assist.ports.photo_store import PhotoStore, photo_keys
 from fsm.assist.ports.service_calls import ServiceCallOpener
@@ -58,6 +58,24 @@ Retrieval runs on every turn rather than once, since the topic can move within a
 count stays small because each hit's full chunk text goes into the system prompt.
 """
 
+SOURCE_MIN_SCORE = 0.45
+"""Cosine similarity a chunk must reach before its document is offered to the customer to open.
+
+Every retrieved chunk goes to the model regardless, because a chunk that turns out not to cover the
+question costs only prompt space. Naming a document on screen is a claim about where the answer
+came from, so it is held to a higher bar than grounding is. Measured against an elevator controller
+manual, questions the manual answers score 0.47-0.55 and unrelated questions 0.21-0.25; a question
+about different equipment in the same domain lands between the two, and excluding that case is what
+this cutoff and the chunk count below are together for.
+"""
+
+SOURCE_MIN_CHUNKS = 2
+"""Chunks above SOURCE_MIN_SCORE a document needs before it is offered.
+
+A document that genuinely covers the question matches in a cluster; a single passage clearing the
+bar alone is more often a coincidence of wording than coverage.
+"""
+
 TURN_CAP_HANDOFF = (
     "We have worked through a fair few things without getting this sorted, so I am opening a "
     "service call for a technician to take a proper look. You will be asked to pick a visit slot "
@@ -70,18 +88,53 @@ def _utc_now() -> datetime:
 
 
 @dataclass(frozen=True)
+class DocumentRef:
+    """A knowledge-base document the customer can be pointed at.
+
+    page is where its best-matching chunk starts, so a link can open a long manual at the passage
+    rather than at its cover; None for a document indexed without pages.
+    """
+
+    id: uuid.UUID
+    filename: str
+    page: int | None = None
+
+
+def cited_sources(hits: Sequence[SearchHit]) -> tuple[DocumentRef, ...]:
+    """The documents among these hits that cover the question well enough to offer, best first.
+
+    A document qualifies on SOURCE_MIN_CHUNKS chunks reaching SOURCE_MIN_SCORE, so coverage is
+    judged on a cluster of matches rather than one well-worded passage.
+    """
+    strong: dict[uuid.UUID, list[SearchHit]] = {}
+    for hit in hits:
+        if hit.score >= SOURCE_MIN_SCORE:
+            strong.setdefault(hit.document_id, []).append(hit)
+    qualifying = [group for group in strong.values() if len(group) >= SOURCE_MIN_CHUNKS]
+    qualifying.sort(key=lambda group: max(hit.score for hit in group), reverse=True)
+    return tuple(
+        DocumentRef(id=best.document_id, filename=best.filename, page=best.page)
+        for best in (max(group, key=lambda hit: hit.score) for group in qualifying)
+    )
+
+
+@dataclass(frozen=True)
 class TurnOutcome:
     """How the conversation stands after a turn; the escalation fields are set only on escalation.
 
     question is how the chat surface learns, without inspecting the reply text, both that the turn
     asked a plain yes/no question it can offer Yes/No buttons for, and where that question sits in
     the reply so it can be emphasised.
+
+    sources are the documents retrieval matched strongly enough to offer the customer, best match
+    first; empty when the turn was answered without the knowledge base covering it.
     """
 
     status: ConversationStatus
     service_call_id: uuid.UUID | None = None
     service_call_description: str | None = None
     question: QuestionSpan | None = None
+    sources: tuple[DocumentRef, ...] = ()
 
 
 def _visible_prefix(text: str) -> str:
@@ -131,6 +184,7 @@ class TriageService:
         self._photos = photos
         self._photo_store = photo_store
         self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
+        self._sources: tuple[DocumentRef, ...] = ()
         # Object keys an ending has discarded; their store deletion is deferred until the
         # transaction that recorded the ending has committed.
         self._discarded_keys: list[str] = []
@@ -187,8 +241,12 @@ class TriageService:
         return self._conversations.list_ended(customer_id, HISTORY_LENGTH)
 
     def outcome(self) -> TurnOutcome:
-        """Where the last streamed turn left the conversation; valid once reply is exhausted."""
-        return self._outcome
+        """Where the last streamed turn left the conversation; valid once reply is exhausted.
+
+        The turn's sources are carried here rather than on the outcome an ending builds, so every
+        ending reports them without each having to thread them through.
+        """
+        return replace(self._outcome, sources=self._sources)
 
     def reply(
         self,
@@ -208,6 +266,7 @@ class TriageService:
         conversation = self._conversations.get(conversation_id, customer_id)
         conversation.require_open()
         self._outcome = TurnOutcome(status=ConversationStatus.ACTIVE)
+        self._sources = ()
         attached: tuple[Photo, ...] = ()
         if photo_ids:
             assert self._photos is not None, "photo turn without a photo repository"
@@ -230,6 +289,7 @@ class TriageService:
             return
 
         hits = self._document_index.search(text, GROUNDING_HITS) if self._document_index else []
+        self._sources = cited_sources(hits)
         system = build_system_prompt(hits)
 
         fragments: list[str] = []

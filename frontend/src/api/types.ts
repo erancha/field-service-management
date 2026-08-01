@@ -210,4 +210,17 @@ export interface TriageTurnResult {
    */
   question: QuestionSpan | null
   service_call: { id: string; description: string } | null
+  /**
+   * Knowledge-base documents retrieval matched strongly enough to offer the customer, best match
+   * first; empty when nothing uploaded covers what they asked.
+   */
+  sources: SourceRef[]
+}
+
+/** A knowledge-base document the customer can open, by id and by the name to show. */
+export interface SourceRef {
+  id: string
+  filename: string
+  /** The page its best-matching passage starts on; null for a document with no pages. */
+  page: number | null
 }

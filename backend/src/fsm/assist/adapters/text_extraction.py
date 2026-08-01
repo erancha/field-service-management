@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from pathlib import PurePosixPath
 
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
+from fsm.assist.domain.document import ExtractedText
 from fsm.assist.domain.errors import UnsupportedDocumentType
 from fsm.assist.ports.progress import ProgressCallback, progress_step
 
@@ -30,10 +32,15 @@ class CompositeTextExtractor:
         media_type: str,
         content: bytes,
         on_progress: ProgressCallback | None = None,
-    ) -> str:
-        return _without_nul(self._decode(filename, content, on_progress))
+    ) -> ExtractedText:
+        extracted = self._decode(filename, content, on_progress)
+        # NUL is replaced by a single space rather than dropped, so normalization cannot shift the
+        # page starts measured during decoding.
+        return replace(extracted, text=_without_nul(extracted.text))
 
-    def _decode(self, filename: str, content: bytes, on_progress: ProgressCallback | None) -> str:
+    def _decode(
+        self, filename: str, content: bytes, on_progress: ProgressCallback | None
+    ) -> ExtractedText:
         """Text as each format yields it, before the normalization extract applies to all of them.
 
         PDF page reads dominate ingest latency for large manuals, so that path reports progress;
@@ -48,15 +55,22 @@ class CompositeTextExtractor:
                 if on_progress is not None:
                     on_progress(0, total)
                 parts = []
+                starts = []
+                offset = 0
                 for number, page in enumerate(reader.pages, start=1):
-                    parts.append(page.extract_text() or "")
+                    part = page.extract_text() or ""
+                    starts.append(offset)
+                    parts.append(part)
+                    # The extra character is the newline the join puts between pages, so the
+                    # next page starts after it.
+                    offset += len(part) + 1
                     if on_progress is not None and (number % step == 0 or number == total):
                         on_progress(number, total)
-                return "\n".join(parts)
+                return ExtractedText(text="\n".join(parts), page_starts=tuple(starts))
             except PyPdfError as exc:
                 raise UnsupportedDocumentType(
                     f'"{filename}" could not be read as a PDF (corrupt or unsupported format)'
                 ) from exc
         if extension in {".md", ".txt"}:
-            return content.decode("utf-8")
+            return ExtractedText(text=content.decode("utf-8"))
         raise UnsupportedDocumentType(f'"{filename}" is not a supported document type (pdf, md, txt)')

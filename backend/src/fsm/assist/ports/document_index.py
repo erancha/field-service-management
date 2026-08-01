@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from fsm.assist.domain.document import ExtractedText
 from fsm.assist.ports.progress import ProgressCallback
 
 
@@ -19,6 +20,8 @@ class SearchHit:
     filename: str
     content: str
     score: float
+    page: int | None = None
+    """The page this chunk starts on, or None for a document indexed without pages."""
 
 
 @runtime_checkable
@@ -29,10 +32,13 @@ class DocumentIndex(Protocol):
         self,
         document_id: uuid.UUID,
         filename: str,
-        text: str,
+        extracted: ExtractedText,
         on_progress: ProgressCallback | None = None,
     ) -> int:
-        """Split text into chunks and index them; returns the number of chunks written.
+        """Split the text into chunks and index them; returns the number of chunks written.
+
+        Chunking runs over the whole text and a chunk's page comes from where it starts, so page
+        starts change what a hit reports, never how the text is split.
 
         on_progress, when given, is called as batches land with (chunks written so far, total).
         The total is only known once splitting finishes, so no progress is reported before then.
