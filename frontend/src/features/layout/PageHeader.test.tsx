@@ -1,40 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
-import type { ReactElement } from 'react'
 import { PageHeader } from './PageHeader.tsx'
-import { AuthContext } from '../auth/authContext.ts'
-
-function renderHeader(ui: ReactElement) {
-  render(
-    <MemoryRouter>
-      <AuthContext.Provider value={{ auth: { status: 'loading' }, refresh: vi.fn() }}>
-        {ui}
-      </AuthContext.Provider>
-    </MemoryRouter>,
-  )
-}
 
 describe('PageHeader', () => {
-  it('renders the title, email, profile link, and sign-out button', () => {
-    renderHeader(<PageHeader title="Customer Dashboard" email="jane@example.com" />)
+  it('renders the title with the account id as its tooltip', () => {
+    render(<PageHeader title="Customer Dashboard" accountId="c-42" />)
 
-    expect(screen.getByRole('heading', { name: 'Customer Dashboard' })).toBeInTheDocument()
-    expect(screen.getByText('jane@example.com')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    const heading = screen.getByRole('heading', { name: 'Customer Dashboard' })
+    expect(heading).toHaveAttribute('title', 'c-42')
   })
 
-  it('omits the email when none is provided', () => {
-    renderHeader(<PageHeader title="Back office" />)
+  it('renders only the title — user controls live in the app shell', () => {
+    render(<PageHeader title="Back office" />)
 
-    expect(document.querySelector('.page__email')).toBeNull()
-  })
-
-  it('omits the profile link when profileLink is false', () => {
-    renderHeader(<PageHeader title="Your profile" email="jane@example.com" profileLink={false} />)
-
-    expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull()
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Back office' })).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })

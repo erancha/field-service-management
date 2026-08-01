@@ -7,18 +7,17 @@ import { useUpcomingAppointments } from '../hooks/useUpcomingAppointments.ts'
 
 interface TechnicianPageProps {
   technicianId: string
-  email?: string
 }
 
 const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/'
 
-export function TechnicianPage({ technicianId, email }: TechnicianPageProps) {
+export function TechnicianPage({ technicianId }: TechnicianPageProps) {
   const { state, refresh } = useCalendarStatus()
   const upcoming = useUpcomingAppointments(5, state.status === 'connected')
 
   return (
     <div className="page">
-      <PageHeader title="Technician Dashboard" email={email} accountId={technicianId} />
+      <PageHeader title="Technician Dashboard" accountId={technicianId} />
 
       {state.status === 'connected' && (
         <p className="page__calendar-status">

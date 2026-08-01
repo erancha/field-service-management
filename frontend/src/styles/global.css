@@ -171,6 +171,49 @@ body {
   outline-offset: 1px;
 }
 
+/* App shell — the brand bar rendered once above every page. Same width as .page so the brand
+   aligns with the page content below it. */
+.app-shell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem 1rem 0;
+}
+
+/* Brand lockup: the mark is decorative and carries no alt text, and the name is set quieter than
+   the page title so each page has one dominant heading rather than two competing ones. */
+.app-shell__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.app-shell__brand span {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+}
+
+.app-shell__logo {
+  width: 1.75rem;
+  height: auto;
+}
+
+.app-shell__user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-shell__email {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
 /* Pages */
 .page {
   max-width: 720px;
@@ -181,7 +224,6 @@ body {
 .page__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 1rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--color-border);
@@ -189,17 +231,6 @@ body {
 
 .page__header h2 {
   margin: 0;
-}
-
-.page__header-right {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.page__email {
-  font-size: 0.875rem;
-  color: var(--color-text-muted);
 }
 
 .page__calendar-status {
@@ -271,13 +302,9 @@ body {
   padding: 0 1rem;
 }
 
-.home-page__hero {
+.home-page__tagline {
   text-align: center;
-  margin-bottom: 2rem;
-}
-
-.home-page__hero h1 {
-  margin: 0 0 0.5rem;
+  margin: 0 0 2rem;
 }
 
 .home-page__auth {
@@ -788,27 +815,6 @@ body {
 }
 
 /* Assistant disclaimer, shown once per customer before the dashboard */
-
-/* Brand lockup: the mark is decorative and carries no alt text, and the name is set quieter than
-   the page title so the page has one dominant heading rather than two competing ones. */
-.assist-disclaimer__brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.assist-disclaimer__brand span {
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-text-muted);
-}
-
-.assist-disclaimer__logo {
-  width: 1.75rem;
-  height: auto;
-}
 
 .assist-disclaimer .page__header h1 {
   margin: 0;

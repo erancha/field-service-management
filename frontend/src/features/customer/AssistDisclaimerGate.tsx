@@ -3,7 +3,6 @@ import { acceptAssistDisclaimer } from '../../api/auth.ts'
 import type { CurrentUser } from '../../api/types.ts'
 import { Button } from '../../components/Button.tsx'
 import { ErrorBanner } from '../../components/ErrorBanner.tsx'
-import { BRAND } from '../../constants.ts'
 
 interface AssistDisclaimerGateProps {
   user: CurrentUser
@@ -95,11 +94,6 @@ export function AssistDisclaimerGate({ user, children }: AssistDisclaimerGatePro
 
   return (
     <div className="page assist-disclaimer">
-      <div className="assist-disclaimer__brand">
-        <img className="assist-disclaimer__logo" src="/favicon.svg" alt="" />
-        <span>{BRAND}</span>
-      </div>
-
       <header className="page__header">
         <h1>Before you start</h1>
       </header>

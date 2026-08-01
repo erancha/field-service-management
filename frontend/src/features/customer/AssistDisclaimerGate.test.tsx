@@ -42,7 +42,8 @@ describe('AssistDisclaimerGate', () => {
   it('holds a customer who has never accepted, showing the limits and the safety boundary', () => {
     renderGate(user())
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/before you start/i)
-    expect(screen.getByText(BRAND)).toBeInTheDocument()
+    // The brand comes from the AppShell around every page, not from the gate itself.
+    expect(screen.queryByText(BRAND)).toBeNull()
     expect(screen.getByText(/knowledge base first/i)).toBeInTheDocument()
     expect(screen.getByText(/cut-off date/i)).toBeInTheDocument()
     expect(screen.getByText(/anything risky/i)).toBeInTheDocument()

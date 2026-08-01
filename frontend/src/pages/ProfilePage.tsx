@@ -17,7 +17,7 @@ export function ProfilePage() {
   const { user } = auth
   return (
     <div className="page">
-      <PageHeader title="Your profile" email={user.email} profileLink={false} />
+      <PageHeader title="Your profile" />
       <ProfileForm user={user} onSaved={() => navigate('/')} />
       <div className="page__nav">
         <Link to="/" className="btn btn-secondary">

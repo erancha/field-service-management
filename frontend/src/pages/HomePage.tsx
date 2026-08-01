@@ -7,7 +7,6 @@ import { TechnicianWaiting } from '../features/technician/TechnicianWaiting.tsx'
 import { TechnicianDeclined } from '../features/technician/TechnicianDeclined.tsx'
 import { OnboardingGate } from '../features/profile/OnboardingGate.tsx'
 import { AssistDisclaimerGate } from '../features/customer/AssistDisclaimerGate.tsx'
-import { BRAND } from '../constants.ts'
 
 export function HomePage() {
   const { auth, refresh } = useAuth()
@@ -28,27 +27,27 @@ export function HomePage() {
     const { user } = auth
 
     if (user.role === 'ADMIN') {
-      return <AdminPage email={user.email} />
+      return <AdminPage />
     }
 
     if (user.role === 'TECHNICIAN') {
       if (user.role_status === 'APPROVED') {
         return (
           <OnboardingGate user={user}>
-            <TechnicianPage technicianId={user.user_id} email={user.email} />
+            <TechnicianPage technicianId={user.user_id} />
           </OnboardingGate>
         )
       }
       if (user.role_status === 'REJECTED') {
-        return <TechnicianDeclined email={user.email} />
+        return <TechnicianDeclined />
       }
-      return <TechnicianWaiting userId={user.user_id} email={user.email} onDecided={refresh} />
+      return <TechnicianWaiting userId={user.user_id} onDecided={refresh} />
     }
 
     return (
       <AssistDisclaimerGate user={user}>
         <OnboardingGate user={user}>
-          <CustomerPage customerId={user.user_id} email={user.email} />
+          <CustomerPage customerId={user.user_id} />
         </OnboardingGate>
       </AssistDisclaimerGate>
     )
@@ -56,10 +55,7 @@ export function HomePage() {
 
   return (
     <div className="home-page">
-      <div className="home-page__hero">
-        <h1>{BRAND}</h1>
-        <p>Schedule and manage field service appointments.</p>
-      </div>
+      <p className="home-page__tagline">Schedule and manage field service appointments.</p>
       <div className="home-page__auth">
         <SignInWithGoogle />
       </div>

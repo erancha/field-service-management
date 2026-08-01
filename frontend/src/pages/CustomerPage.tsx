@@ -10,14 +10,13 @@ import { useAssistStatus } from '../hooks/useAssistStatus.ts'
 
 interface CustomerPageProps {
   customerId: string
-  email?: string
 }
 
 type Phase = 'open-sc' | 'book'
 
 const UPCOMING_LIMIT = 3
 
-export function CustomerPage({ customerId, email }: CustomerPageProps) {
+export function CustomerPage({ customerId }: CustomerPageProps) {
   const [phase, setPhase] = useState<Phase>('open-sc')
   const [serviceCall, setServiceCall] = useState<ServiceCall | null>(null)
   // assist.enabled reports startup configuration, not provider health, so a chat that cannot
@@ -45,7 +44,7 @@ export function CustomerPage({ customerId, email }: CustomerPageProps) {
 
   return (
     <div className="page">
-      <PageHeader title="Customer Dashboard" email={email} accountId={customerId} />
+      <PageHeader title="Customer Dashboard" accountId={customerId} />
 
       <UpcomingAppointments
         items={upcoming.items}

@@ -4,16 +4,12 @@ import { KnowledgeBasePanel } from '../features/backoffice/KnowledgeBasePanel.ts
 import { UpcomingAppointments } from '../features/appointments/UpcomingAppointments.tsx'
 import { useUpcomingAppointments } from '../hooks/useUpcomingAppointments.ts'
 
-interface AdminPageProps {
-  email?: string
-}
-
-export function AdminPage({ email }: AdminPageProps) {
+export function AdminPage() {
   const upcoming = useUpcomingAppointments(10)
 
   return (
     <div className="page">
-      <PageHeader title="Back office" email={email} />
+      <PageHeader title="Back office" />
 
       <UpcomingAppointments
         items={upcoming.items}
