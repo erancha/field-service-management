@@ -1,8 +1,8 @@
 # Architecture
 
-Detail behind the [root README's summary](../README.md#architecture): what each package owns, the
-exact import rules, how contexts integrate without knowing each other, how CI enforces all of it,
-and how authentication and live communication work at runtime.
+Detail behind the [root README's summary](../README.md#architecture) of how the system is built.
+
+**Contents:** [Bounded contexts](#bounded-contexts) · [Import rules](#import-rules) · [How contexts integrate](#how-contexts-integrate) · [Enforcement in CI](#enforcement-in-ci) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema)
 
 ## Bounded contexts
 
@@ -97,3 +97,11 @@ sign-in, technician calendar-connect, and the back office approving a technician
 and closed) — with the CSRF, PKCE, and token-encryption properties they rely on and what scaling a
 role to several replicas requires. Per-key configuration lives inline in
 [`backend/.env.example`](../backend/.env.example).
+
+## Database schema
+
+PostgreSQL is the source of truth; Google Calendar is a downstream projection. The
+entity-relationship diagram and the integrity guarantees (database-enforced no-double-booking, the
+transactional calendar outbox, the append-only appointment audit) are in [data.md](data.md), which
+also traces the two-way [calendar sync](data.md#calendar-sync) — outbound projection and inbound
+reconciliation — end to end.

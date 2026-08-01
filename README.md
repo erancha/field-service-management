@@ -4,7 +4,7 @@
 
 A service-call management platform for agencies like elevator or appliance maintenance companies.
 
-**Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [Database schema](#database-schema) · [License](#license)
+**Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [License](#license)
 
 ## Features & roadmap
 
@@ -99,25 +99,23 @@ Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker
 
 ## Architecture
 
-- **Backend** (`backend/`): Python 3.12+, FastAPI, SQLAlchemy 2.x + PostgreSQL, Alembic.
-- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app.
-
 The backend is a **modular monolith**: bounded contexts (`assist`, `identity`, `scheduling`,
 `google_calendar`, `notifications`) under a single `fsm` package, each layered ports-and-adapters
 style and composed by `fsm.platform`. Contexts never import each other — each declares the ports it
-needs and `platform` injects implementations that bridge to the others — and the import rules are
-enforced in CI by import-linter. [docs/architecture.md](docs/architecture.md) picks up from here:
-each package's responsibility, the full import-rule diagram, the context-integration pattern, how
-CI enforces the rules, and the authentication & live-communication model (Google OIDC sign-in,
-role-scoped sessions, and SSE updates fanned out over Redis pub/sub).
+needs and `platform` injects implementations that bridge to the others.
+[docs/architecture.md](docs/architecture.md) picks up from here:
 
-## Database schema
+- each package's responsibility, the full import-rule diagram, the context-integration pattern, and
+  how CI enforces the rules with import-linter
+- authentication & live communication — Google OIDC sign-in, role-scoped sessions, and SSE updates
+  fanned out over Redis pub/sub
+- the database schema — PostgreSQL as the source of truth, database-enforced no-double-booking, and
+  the transactional outbox behind the two-way Google Calendar sync
 
-PostgreSQL is the source of truth; Google Calendar is a downstream projection. The entity-relationship
-diagram and the integrity guarantees (database-enforced no-double-booking, the transactional
-calendar outbox, the append-only appointment audit) are in [docs/data.md](docs/data.md), which also
-traces the two-way [calendar sync](docs/data.md#calendar-sync) — outbound projection and inbound
-reconciliation — end to end.
+### Tech stack
+
+- **Backend** (`backend/`): Python 3.12+, FastAPI, SQLAlchemy 2.x + PostgreSQL, Alembic.
+- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app.
 
 ## License
 
