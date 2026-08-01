@@ -10,9 +10,11 @@ import pytest
 from fsm.assist.application.prompts import (
     CLOSED_MARKER,
     ESCALATE_MARKER,
+    QUESTION_CLOSE,
+    QUESTION_OPEN,
     SOLVED_MARKER,
     TRIAGE_SYSTEM_PROMPT,
-    YES_NO_MARKER,
+    QuestionSpan,
 )
 from fsm.assist.application.triage import (
     GROUNDING_HITS,
@@ -303,32 +305,56 @@ def test_closed_marker_abandons_the_conversation_without_a_service_call() -> Non
     assert service.outcome() == TurnOutcome(status=ConversationStatus.ABANDONED)
 
 
-def test_a_yes_no_question_flags_the_offer_and_keeps_the_conversation_active() -> None:
+def test_a_wrapped_question_reports_its_span_and_keeps_the_conversation_active() -> None:
     service, conversations, _, openers = make_service(
-        replies=[f"Is the breaker on? {YES_NO_MARKER}"]
+        replies=[f"Power is fine. {QUESTION_OPEN}Is the breaker on?{QUESTION_CLOSE}"]
     )
     convo = service.start(CUSTOMER)
 
     fragments = list(service.reply(convo.id, CUSTOMER, "The oven will not heat."))
 
     assert all("[[" not in fragment for fragment in fragments)
-    assert "".join(fragments).strip() == "Is the breaker on?"
+    answer = "".join(fragments).strip()
+    assert answer == "Power is fine. Is the breaker on?"
     stored = conversations.rows[convo.id]
     assert stored.status is ConversationStatus.ACTIVE
-    assert stored.messages[-1].text == "Is the breaker on?"
+    assert stored.messages[-1].text == answer
     assert openers.opened == []
-    assert service.outcome() == TurnOutcome(
-        status=ConversationStatus.ACTIVE, offer_yes_no=True
+    outcome = service.outcome()
+    assert outcome == TurnOutcome(
+        status=ConversationStatus.ACTIVE, question=QuestionSpan(15, 33)
     )
+    assert answer[outcome.question.start:outcome.question.end] == "Is the breaker on?"
 
 
-def test_an_open_question_offers_no_yes_no_buttons() -> None:
+def test_the_question_streams_out_before_its_closing_delimiter_arrives() -> None:
+    """The wrapper sits mid-reply, so holding back from it would stall most of the message."""
+    conversations = FakeConversationRepository()
+    service = TriageService(
+        conversations=conversations,
+        chat_model=ExactFragmentChatModel(
+            ["Power is fine. ", QUESTION_OPEN, "Is the breaker", " on?", QUESTION_CLOSE]
+        ),
+        service_calls=FakeServiceCallOpener(),
+        clock=lambda: NOW,
+    )
+    convo = service.start(CUSTOMER)
+
+    fragments = [f for f in service.reply(convo.id, CUSTOMER, "It will not heat.") if f]
+
+    assert "".join(fragments) == "Power is fine. Is the breaker on?"
+    # The question reached the customer while the closing delimiter was still unwritten.
+    assert "Is the breaker" in "".join(fragments[:-1])
+    assert service.outcome().question == QuestionSpan(15, 33)
+
+
+def test_an_open_question_reports_no_span() -> None:
     service, _, _, _ = make_service(replies=["What is the model number?"])
     convo = service.start(CUSTOMER)
 
     drain(service, convo.id, "The oven will not heat.")
 
-    assert service.outcome().offer_yes_no is False
+    assert service.outcome().question is None
 
 
 def test_end_abandons_an_open_conversation() -> None:

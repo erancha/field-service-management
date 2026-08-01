@@ -6,12 +6,15 @@ import uuid
 from fsm.assist.application.prompts import (
     CLOSED_MARKER,
     ESCALATE_MARKER,
+    QUESTION_CLOSE,
+    QUESTION_OPEN,
     SOLVED_MARKER,
     SUMMARY_SYSTEM_PROMPT,
     TRIAGE_SYSTEM_PROMPT,
-    YES_NO_MARKER,
+    ParsedReply,
+    QuestionSpan,
     build_system_prompt,
-    strip_markers,
+    parse_reply,
 )
 from fsm.assist.ports.document_index import SearchHit
 
@@ -39,7 +42,8 @@ def test_prompt_documents_every_control_marker() -> None:
     assert SOLVED_MARKER in TRIAGE_SYSTEM_PROMPT
     assert ESCALATE_MARKER in TRIAGE_SYSTEM_PROMPT
     assert CLOSED_MARKER in TRIAGE_SYSTEM_PROMPT
-    assert YES_NO_MARKER in TRIAGE_SYSTEM_PROMPT
+    assert QUESTION_OPEN in TRIAGE_SYSTEM_PROMPT
+    assert QUESTION_CLOSE in TRIAGE_SYSTEM_PROMPT
 
 
 def test_prompt_requires_the_customers_agreement_before_escalating() -> None:
@@ -84,10 +88,15 @@ def test_grounded_prompt_asks_for_a_citation_and_allows_a_fallback() -> None:
 
 
 def test_triage_prompt_fixes_how_a_step_s_result_is_asked_for() -> None:
-    """Wording that drifts between turns leaves the customer answering about the wrong attempt."""
+    """A step left with nothing to answer, or asked after vaguely, costs the customer a turn.
+
+    Vague wording that drifts between turns leaves them answering about the wrong attempt; a
+    message trailing off after the instruction leaves them typing what a tap would have said.
+    """
     prompt = TRIAGE_SYSTEM_PROMPT.lower()
 
-    assert "naming the step" in prompt
+    assert "as a yes or no naming the step" in prompt
+    assert "never leave the instruction standing on its own" in prompt
     assert "which attempt you mean" in prompt
 
 
@@ -117,40 +126,95 @@ def test_summary_prompt_bounds_each_field_and_separates_what_is_read_when() -> N
     assert "before setting out" in prompt
 
 
-def test_strip_markers_returns_plain_text_when_no_marker_is_present() -> None:
-    assert strip_markers("Try switching it off and on.") == ("Try switching it off and on.", None)
+def test_prompt_prefers_a_closed_question_but_not_where_the_answer_is_a_value() -> None:
+    """Naming the suspicion beats sending the customer off to observe: it answers with one tap."""
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
+
+    assert "whenever a yes or no tells you what you need" in prompt
+    assert "leave a question open only when no yes or no could carry the answer" in prompt
+    assert "an error code" in prompt
 
 
-def test_strip_markers_extracts_and_removes_the_solved_marker() -> None:
-    text, marker = strip_markers(f"Glad that worked.\n{SOLVED_MARKER}")
+def test_prompt_tells_the_model_to_wrap_the_question_and_nothing_else() -> None:
+    prompt = TRIAGE_SYSTEM_PROMPT.lower()
 
-    assert text == "Glad that worked."
-    assert marker == SOLVED_MARKER
-
-
-def test_strip_markers_extracts_and_removes_the_escalate_marker() -> None:
-    text, marker = strip_markers(f"A technician should look at this.\n{ESCALATE_MARKER}\n")
-
-    assert text == "A technician should look at this."
-    assert marker == ESCALATE_MARKER
+    assert "wrap that question" in prompt
+    assert "and nothing else, not around the whole message" in prompt
 
 
-def test_strip_markers_extracts_and_removes_the_closed_marker() -> None:
-    text, marker = strip_markers(f"No problem — closing this off.\n{CLOSED_MARKER}")
+def test_parse_reply_returns_plain_text_when_no_marker_is_present() -> None:
+    parsed = parse_reply("Try switching it off and on.")
 
-    assert text == "No problem — closing this off."
-    assert marker == CLOSED_MARKER
-
-
-def test_strip_markers_extracts_and_removes_the_yes_no_marker() -> None:
-    text, marker = strip_markers(f"Is the breaker on?\n{YES_NO_MARKER}")
-
-    assert text == "Is the breaker on?"
-    assert marker == YES_NO_MARKER
+    assert parsed == ParsedReply(text="Try switching it off and on.", marker=None, question=None)
 
 
-def test_strip_markers_finds_a_marker_written_inline() -> None:
-    text, marker = strip_markers(f"Booking a visit. {ESCALATE_MARKER}")
+def test_parse_reply_extracts_and_removes_the_solved_marker() -> None:
+    parsed = parse_reply(f"Glad that worked.\n{SOLVED_MARKER}")
 
-    assert text == "Booking a visit."
-    assert marker == ESCALATE_MARKER
+    assert parsed.text == "Glad that worked."
+    assert parsed.marker == SOLVED_MARKER
+
+
+def test_parse_reply_extracts_and_removes_the_escalate_marker() -> None:
+    parsed = parse_reply(f"A technician should look at this.\n{ESCALATE_MARKER}\n")
+
+    assert parsed.text == "A technician should look at this."
+    assert parsed.marker == ESCALATE_MARKER
+
+
+def test_parse_reply_extracts_and_removes_the_closed_marker() -> None:
+    parsed = parse_reply(f"No problem — closing this off.\n{CLOSED_MARKER}")
+
+    assert parsed.text == "No problem — closing this off."
+    assert parsed.marker == CLOSED_MARKER
+
+
+def test_parse_reply_finds_a_marker_written_inline() -> None:
+    parsed = parse_reply(f"Booking a visit. {ESCALATE_MARKER}")
+
+    assert parsed.text == "Booking a visit."
+    assert parsed.marker == ESCALATE_MARKER
+
+
+def test_parse_reply_unwraps_a_question_and_reports_where_it_landed() -> None:
+    parsed = parse_reply(f"That rules out the supply. {QUESTION_OPEN}Is the stop out?{QUESTION_CLOSE}")
+
+    assert parsed.text == "That rules out the supply. Is the stop out?"
+    assert parsed.marker is None
+    assert parsed.question == QuestionSpan(27, 43)
+    assert parsed.text[parsed.question.start:parsed.question.end] == "Is the stop out?"
+
+
+def test_parse_reply_spans_a_question_that_is_the_whole_reply() -> None:
+    parsed = parse_reply(f"{QUESTION_OPEN}Is the display lit?{QUESTION_CLOSE}")
+
+    assert parsed.text == "Is the display lit?"
+    assert parsed.question == QuestionSpan(0, 19)
+
+
+def test_parse_reply_offsets_survive_leading_whitespace_the_model_wrote() -> None:
+    parsed = parse_reply(f"\n\nGood. {QUESTION_OPEN}Is it lit?{QUESTION_CLOSE}\n")
+
+    assert parsed.text == "Good. Is it lit?"
+    assert parsed.text[parsed.question.start:parsed.question.end] == "Is it lit?"
+
+
+def test_parse_reply_excludes_whitespace_the_model_left_inside_the_wrapper() -> None:
+    parsed = parse_reply(f"Good. {QUESTION_OPEN} Is it lit? {QUESTION_CLOSE}")
+
+    assert parsed.text == "Good.  Is it lit?"
+    assert parsed.text[parsed.question.start:parsed.question.end] == "Is it lit?"
+
+
+def test_parse_reply_drops_an_unclosed_wrapper_without_reporting_a_question() -> None:
+    parsed = parse_reply(f"Good. {QUESTION_OPEN}Is it lit?")
+
+    assert parsed.text == "Good. Is it lit?"
+    assert parsed.question is None
+
+
+def test_parse_reply_carries_both_an_ending_and_no_question() -> None:
+    parsed = parse_reply(f"Opening the service call now.\n{ESCALATE_MARKER}")
+
+    assert parsed.marker == ESCALATE_MARKER
+    assert parsed.question is None

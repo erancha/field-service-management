@@ -35,6 +35,10 @@ const EMPTY_CONVERSATION: TriageConversation = {
   pending_photos: [],
 }
 
+/** A reply asking a yes/no question, and the span the backend reports bounding that question. */
+const YES_NO_REPLY = 'Power is fine. Is the breaker on?'
+const YES_NO_SPAN = { start: 15, end: 33 }
+
 beforeEach(() => {
   vi.mocked(startConversation).mockReset()
   vi.mocked(streamAssistReply).mockReset()
@@ -46,6 +50,17 @@ beforeEach(() => {
   vi.mocked(deleteTriagePhoto).mockReset()
   vi.mocked(deleteTriagePhoto).mockResolvedValue(undefined)
 })
+
+/**
+ * The file input sits behind the composer's Attach photos toggle, which starts closed. Callers
+ * that attach twice in one test find it already open the second time, so this reveals rather than
+ * toggles.
+ */
+async function openAttach() {
+  const toggle = screen.getByRole('button', { name: /attach photos/i })
+  if (toggle.getAttribute('aria-expanded') === 'false') await userEvent.click(toggle)
+  return screen.getByLabelText(/attach photos/i)
+}
 
 describe('TriageChat', () => {
   it('rehydrates the stored conversation on mount', async () => {
@@ -65,7 +80,7 @@ describe('TriageChat', () => {
 
   it('holds focus in the composer on arrival and again after a send', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
 
     const composer = await screen.findByRole('textbox')
@@ -82,7 +97,7 @@ describe('TriageChat', () => {
     vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
       onToken('Is ')
       onToken('it lit?')
-      return { status: 'ACTIVE', service_call: null, offer_yes_no: false }
+      return { status: 'ACTIVE', service_call: null, question: null }
     })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -99,7 +114,7 @@ describe('TriageChat', () => {
     vi.mocked(streamAssistReply).mockResolvedValue({
       status: 'ESCALATED',
       service_call: { id: 'sc-1', description: 'Equipment: Oven' },
-      offer_yes_no: false,
+      question: null,
     })
     const onEscalated = vi.fn()
     render(<TriageChat onEscalated={onEscalated} onGiveUp={() => {}} />)
@@ -113,14 +128,53 @@ describe('TriageChat', () => {
     ))
   })
 
-  it('offers tappable Yes/No answers when the assistant asks a yes/no question', async () => {
+  it('emphasises the question the buttons answer, at the offsets the backend reported', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, offer_yes_no: true })
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockImplementation(async (_id, _text, _photoIds, onToken) => {
+      onToken(YES_NO_REPLY)
+      return { status: 'ACTIVE', service_call: null, question: YES_NO_SPAN }
+    })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
+    await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    const question = await screen.findByText('Is the breaker on?')
+    expect(question.tagName).toBe('STRONG')
+    expect(screen.getByText(/Power is fine\./)).toBeInTheDocument()
+  })
+
+  it('drops the emphasis once the question has been answered', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply)
+      .mockImplementationOnce(async (_id, _text, _photoIds, onToken) => {
+        onToken(YES_NO_REPLY)
+        return { status: 'ACTIVE', service_call: null, question: YES_NO_SPAN }
+      })
+      .mockImplementationOnce(async (_id, _text, _photoIds, onToken) => {
+        onToken('Then the fault is downstream.')
+        return { status: 'ACTIVE', service_call: null, question: null }
+      })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+    await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    expect((await screen.findByText('Is the breaker on?')).tagName).toBe('STRONG')
+
+    await userEvent.click(screen.getByRole('button', { name: /^yes$/i }))
+
+    await screen.findByText('Then the fault is downstream.')
+    expect(screen.queryByText('Is the breaker on?')).toBeNull()
+  })
+
+  it('sends a tapped answer as its own turn, the one-tap path', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply)
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
     await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
     await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
 
@@ -128,33 +182,74 @@ describe('TriageChat', () => {
 
     expect(streamAssistReply).toHaveBeenLastCalledWith('c1', 'Yes', [], expect.any(Function))
     expect(await screen.findByText('Yes', { selector: 'li' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^yes$/i })).toBeNull())
-    expect(screen.queryByRole('button', { name: /^no$/i })).toBeNull()
   })
 
-  it('sends No as its own turn and leaves a typed draft untouched', async () => {
+  it('holds a tapped answer in the composer when the customer clears Send', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, offer_yes_no: true })
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+    await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    const sendOnTap = await screen.findByRole('checkbox', { name: /^send$/i })
+    expect(sendOnTap).toBeChecked()
+    await userEvent.click(sendOnTap)
+    await userEvent.click(screen.getByRole('button', { name: /^yes$/i }))
+
+    expect(streamAssistReply).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('textbox')).toHaveValue('Yes')
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveFocus())
+
+    await userEvent.type(screen.getByRole('textbox'), ', on the control box')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    expect(streamAssistReply).toHaveBeenLastCalledWith(
+      'c1', 'Yes, on the control box', [], expect.any(Function),
+    )
+  })
+
+  it('carries text typed before the tap into the answer rather than stranding it', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply)
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
     await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
     await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
     await screen.findByRole('button', { name: /^no$/i })
 
-    await userEvent.type(screen.getByRole('textbox'), 'well, sometimes')
+    await userEvent.type(screen.getByRole('textbox'), 'only the mast one is lit')
     await userEvent.click(screen.getByRole('button', { name: /^no$/i }))
 
-    expect(streamAssistReply).toHaveBeenLastCalledWith('c1', 'No', [], expect.any(Function))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^no$/i })).toBeNull())
-    expect(screen.getByRole('textbox')).toHaveValue('well, sometimes')
+    expect(streamAssistReply).toHaveBeenLastCalledWith(
+      'c1', 'No, only the mast one is lit', [], expect.any(Function),
+    )
+    expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+
+  it('retires the quick replies once one has been tapped', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(streamAssistReply)
+      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, question: YES_NO_SPAN })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+    await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    await userEvent.click(await screen.findByRole('button', { name: /^yes$/i }))
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^yes$/i })).toBeNull())
+    expect(screen.queryByRole('button', { name: /^no$/i })).toBeNull()
   })
 
   it('keeps the quick replies out of an ordinary exchange', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(streamAssistReply).mockResolvedValue(
-      { status: 'ACTIVE', service_call: null, offer_yes_no: false },
+      { status: 'ACTIVE', service_call: null, question: null },
     )
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -167,26 +262,9 @@ describe('TriageChat', () => {
     expect(screen.queryByRole('button', { name: /^no$/i })).toBeNull()
   })
 
-  it('keeps the quick replies available when a tapped answer fails to send', async () => {
-    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply)
-      .mockResolvedValueOnce({ status: 'ACTIVE', service_call: null, offer_yes_no: true })
-      .mockRejectedValueOnce(new Error('provider down'))
-    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
-    await screen.findByRole('textbox')
-    await userEvent.type(screen.getByRole('textbox'), 'It will not heat.')
-    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
-
-    await userEvent.click(await screen.findByRole('button', { name: /^yes$/i }))
-    await screen.findByRole('alert')
-
-    expect(screen.getByRole('button', { name: /^yes$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^no$/i })).toBeInTheDocument()
-  })
-
   it('closes the whole exchange down to the restart button when the problem is solved', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'SOLVED', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'SOLVED', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -271,7 +349,7 @@ describe('TriageChat', () => {
         messages: [{ id: 'm1', role: 'CUSTOMER', text: 'The oven will not heat.', created_at: '' }],
       })
       .mockResolvedValueOnce({ ...EMPTY_CONVERSATION, id: 'c2' })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'SOLVED', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'SOLVED', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -301,7 +379,7 @@ describe('TriageChat', () => {
       pending_photos: [],
     })
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
@@ -341,7 +419,7 @@ describe('TriageChat', () => {
     vi.mocked(startConversation)
       .mockResolvedValueOnce(EMPTY_CONVERSATION)
       .mockResolvedValueOnce({ ...EMPTY_CONVERSATION, id: 'c2' })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ABANDONED', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ABANDONED', service_call: null, question: null })
     const onEscalated = vi.fn()
     render(<TriageChat onEscalated={onEscalated} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
@@ -383,15 +461,33 @@ describe('TriageChat', () => {
     expect(await screen.findByRole('textbox')).toBeInTheDocument()
   })
 
+  it('keeps the file picker behind the Attach photos toggle, open and shut', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+    const toggle = screen.getByRole('button', { name: /attach photos/i })
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText(/attach photos/i)).toBeNull()
+
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText(/attach photos/i)).toBeInTheDocument()
+
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText(/attach photos/i)).toBeNull()
+  })
+
   it('uploads a valid photo and sends its id with the next turn', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
     const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+    await userEvent.upload(await openAttach(), file)
     await userEvent.type(screen.getByRole('textbox'), 'Here it is.')
     await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
 
@@ -410,7 +506,7 @@ describe('TriageChat', () => {
     await screen.findByRole('textbox')
 
     const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+    await userEvent.upload(await openAttach(), file)
 
     expect(await screen.findByText('Uploading photo…')).toBeInTheDocument()
     resolveUpload!({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
@@ -425,7 +521,7 @@ describe('TriageChat', () => {
     await screen.findByRole('textbox')
 
     const oversized = new File(['x'.repeat(5 * 1024 * 1024 + 1)], 'big.jpg', { type: 'image/jpeg' })
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), oversized)
+    await userEvent.upload(await openAttach(), oversized)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/5 MB or less/i)
     expect(uploadTriagePhoto).not.toHaveBeenCalled()
@@ -440,7 +536,7 @@ describe('TriageChat', () => {
     // filter (which user-event applies by default and would silently drop the file beforehand).
     const user = userEvent.setup({ applyAccept: false })
     const notes = new File(['x'], 'notes.txt', { type: 'text/plain' })
-    await user.upload(screen.getByLabelText(/attach photos/i), notes)
+    await user.upload(await openAttach(), notes)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/JPEG, PNG, or WebP/i)
     expect(uploadTriagePhoto).not.toHaveBeenCalled()
@@ -453,7 +549,7 @@ describe('TriageChat', () => {
 
     const files = Array.from({ length: 6 }, (_, i) =>
       new File(['x'], `photo${i}.jpg`, { type: 'image/jpeg' }))
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), files)
+    await userEvent.upload(await openAttach(), files)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/5/)
     expect(uploadTriagePhoto).not.toHaveBeenCalled()
@@ -466,7 +562,7 @@ describe('TriageChat', () => {
     await screen.findByRole('textbox')
 
     const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+    await userEvent.upload(await openAttach(), file)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('This conversation already has 5 photos.')
   })
@@ -474,12 +570,12 @@ describe('TriageChat', () => {
   it('clears pending photos after a delivered turn and keeps them on failure', async () => {
     vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
     vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('textbox')
 
     const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), file)
+    await userEvent.upload(await openAttach(), file)
     expect(await screen.findByRole('button', { name: /remove plate.jpg/i })).toBeInTheDocument()
 
     await userEvent.type(screen.getByRole('textbox'), 'Here it is.')
@@ -491,7 +587,7 @@ describe('TriageChat', () => {
     vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p2', filename: 'leak.jpg', size_bytes: 3 })
     vi.mocked(streamAssistReply).mockRejectedValue(new Error('provider down'))
     const nextPhoto = new File(['x'], 'leak.jpg', { type: 'image/jpeg' })
-    await userEvent.upload(screen.getByLabelText(/attach photos/i), nextPhoto)
+    await userEvent.upload(await openAttach(), nextPhoto)
     expect(await screen.findByRole('button', { name: /remove leak.jpg/i })).toBeInTheDocument()
 
     await userEvent.type(screen.getByRole('textbox'), 'Still leaking.')
@@ -548,7 +644,7 @@ describe('TriageChat', () => {
       ...EMPTY_CONVERSATION,
       pending_photos: [{ id: 'p1', filename: 'plate.jpg', size_bytes: 3 }],
     })
-    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, offer_yes_no: false })
+    vi.mocked(streamAssistReply).mockResolvedValue({ status: 'ACTIVE', service_call: null, question: null })
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
     await screen.findByRole('button', { name: /remove plate.jpg/i })
 

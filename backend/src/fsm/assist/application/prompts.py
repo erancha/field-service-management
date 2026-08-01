@@ -1,26 +1,59 @@
 """The assistant's instructions and the control markers it annotates its replies with.
 
 The markers are the contract between the prompt and the parser: they are the only way the model
-signals an ending or flags a plain yes/no question, so both live here and every marker is
+signals an ending or delimits a plain yes/no question, so both live here and every marker is
 stripped from the text before the customer sees it.
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from fsm.assist.ports.document_index import SearchHit
 
 SOLVED_MARKER = "[[SOLVED]]"
 ESCALATE_MARKER = "[[ESCALATE]]"
 CLOSED_MARKER = "[[CLOSED]]"
-YES_NO_MARKER = "[[YESNO]]"
 
-MARKERS = (SOLVED_MARKER, ESCALATE_MARKER, CLOSED_MARKER, YES_NO_MARKER)
-"""Every control marker, in the order a reply is searched for one.
+ENDING_MARKERS = (SOLVED_MARKER, ESCALATE_MARKER, CLOSED_MARKER)
+"""The endings, in the order a reply is searched for one. Exactly one ends a conversation."""
 
-Both the parser here and the streaming code that withholds a marker mid-flight work from this
-tuple, so a marker added to it can never be honoured by only one of them.
+QUESTION_OPEN = "[[Q]]"
+QUESTION_CLOSE = "[[/Q]]"
+"""Wrap the one question of a reply that a bare yes or no answers.
+
+The delimiters do double duty: their presence is the yes/no signal, and their positions are where
+the question sits, so the browser emphasises it without inspecting the reply text itself. Marking
+the question in place is also what keeps the signal dependable — they are written as part of the
+question, so a question the model has finished writing cannot be missing them.
 """
+
+MARKERS = (*ENDING_MARKERS, QUESTION_OPEN, QUESTION_CLOSE)
+"""Every control marker. Both the parser here and the streaming code that withholds a marker
+mid-flight work from this tuple, so a marker added to it can never be honoured by only one of them.
+"""
+
+
+@dataclass(frozen=True)
+class QuestionSpan:
+    """Where a reply's yes/no question sits, as offsets into the customer-visible text."""
+
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class ParsedReply:
+    """An assistant reply split into what the customer sees and what its markers declared."""
+
+    text: str
+    """Customer-visible text: every marker removed, surrounding whitespace trimmed."""
+
+    marker: str | None
+    """The ending marker the reply carried, or None while the conversation continues."""
+
+    question: QuestionSpan | None
+    """The wrapped yes/no question, or None when the reply asked none."""
 
 TRIAGE_SYSTEM_PROMPT = f"""\
 You are the triage assistant for a field-service company. A customer has a problem with a piece of \
@@ -29,10 +62,19 @@ safe, and to hand it to a technician when it is not.
 
 How to work:
 - Ask one focused question at a time. Do not interrogate the customer with lists.
+- Put that question as one a yes or no answers whenever a yes or no tells you what you need. When \
+you have a suspicion, ask whether it is so — "do you see anything sticky, gritty, or built up on \
+the rail?" — rather than sending the customer off to observe and report — "look at the rail and \
+tell me what you see". You already know what you are looking for, so name it and let them confirm \
+or deny it; if they deny it, that has ruled it out and you ask about the next thing.
+- Leave a question open only when no yes or no could carry the answer: a model number, an error \
+code, a reading, or which of several things happened.
 - Suggest one thing to try at a time, in plain language, and wait for the result.
-- Ask what happened when they tried that step, naming the step. Do not ask whether "the problem" \
-is fixed one turn and whether it "was" fixed the next: the customer cannot tell which attempt you \
-mean, and answers the wrong one.
+- A message that suggests a step ends by asking after that step's result, as a yes or no naming \
+the step — "did cleaning the rail stop the juddering?" Never leave the instruction standing on its \
+own with nothing to answer, and never ask vaguely whether "the problem" is fixed one turn and \
+whether it "was" fixed the next: the customer cannot tell which attempt you mean, and answers the \
+wrong one.
 - Stay with the problem. A step that changes nothing has narrowed the fault, so say what it ruled \
 out and try the next safe thing; escalate when you run out of them, not at the first setback.
 - Keep replies short. Two or three sentences is usually right.
@@ -57,15 +99,17 @@ Safety boundary — this is absolute:
 - When you are unsure whether a step is safe, it is not. Escalate.
 
 Yes/no questions:
-- When the one question your message asks is answerable with a plain yes or no, end the message \
-with {YES_NO_MARKER} on its own line. The customer is shown tappable Yes and No buttons for it, \
-so write it only when a bare "yes" or "no" is a complete answer.
-- A message that asks anything open-ended, or asks nothing, never carries {YES_NO_MARKER}.
+- When the one question your message asks is answerable with a plain yes or no, wrap that question \
+in {QUESTION_OPEN} and {QUESTION_CLOSE}. The customer is shown tappable Yes and No buttons for it, \
+and the question is emphasised where it sits in your message.
+- The wrapper goes around the question text and nothing else, not around the whole message. Write \
+it only when a bare "yes" or "no" is a complete answer.
+- A message that asks anything open-ended, or asks nothing, carries no wrapper at all.
 
 Escalation needs the customer's yes:
 - When a technician is needed — you have run out of safe things to try, or safety requires one — \
-do not open a service call unasked. First ask, as a yes/no question ending with {YES_NO_MARKER}, \
-whether to book a technician visit.
+do not open a service call unasked. First ask, as a yes/no question wrapped in {QUESTION_OPEN} and \
+{QUESTION_CLOSE}, whether to book a technician visit.
 - Only after the customer agrees do you end the conversation with {ESCALATE_MARKER}, as described \
 below.
 - If the customer declines, stay in the conversation: they may want to try one more thing or \
@@ -86,8 +130,9 @@ equipment fault. Acknowledge it in one line, without opening anything, then writ
 the visit, and only that. It is never the way to leave a conversation you cannot help with, and \
 never the way to honour a request to stop; both of those end with {CLOSED_MARKER}.
 
-Never write an ending marker before its ending actually applies. Never write more than one marker \
-in a message. Never mention the markers to the customer or explain that you are using them.
+Never write an ending marker before its ending actually applies, and never write more than one in \
+a message. A message that ends the conversation is not asking anything, so it carries no question \
+wrapper. Never mention the markers or the wrapper to the customer, or explain that you use them.
 """
 
 
@@ -135,12 +180,41 @@ list empty when nothing was tried.
 """
 
 
-def strip_markers(text: str) -> tuple[str, str | None]:
-    """Split an assistant reply into the customer-visible text and its control marker, if any.
+def _unwrap_question(text: str) -> tuple[str, tuple[int, int] | None]:
+    """Remove the question delimiters, reporting where the question they held now sits.
 
-    Only the first marker found counts; the prompt forbids writing more than one.
+    The offsets exclude whitespace the model left inside the wrapper, so they always bound the
+    question itself; the text keeps that whitespace, so unwrapping never reflows the reply.
+
+    An opening delimiter with no closing one is a reply cut short mid-question. It is dropped
+    without a span: the browser has nothing to emphasise, and the turn offers no buttons.
     """
-    for marker in MARKERS:
-        if marker in text:
-            return text.replace(marker, "").strip(), marker
-    return text.strip(), None
+    opened = text.find(QUESTION_OPEN)
+    if opened == -1:
+        return text, None
+    body_at = opened + len(QUESTION_OPEN)
+    closed = text.find(QUESTION_CLOSE, body_at)
+    if closed == -1:
+        return text[:opened] + text[body_at:], None
+    body = text[body_at:closed]
+    unwrapped = text[:opened] + body + text[closed + len(QUESTION_CLOSE):]
+    lead = len(body) - len(body.lstrip())
+    return unwrapped, (opened + lead, opened + len(body.rstrip()))
+
+
+def parse_reply(text: str) -> ParsedReply:
+    """Split an assistant reply into customer-visible text, its ending marker, and its question.
+
+    Only the first ending marker found counts; the prompt forbids writing more than one.
+    """
+    marker = next((m for m in ENDING_MARKERS if m in text), None)
+    if marker is not None:
+        text = text.replace(marker, "")
+    text, span = _unwrap_question(text)
+    # Offsets are taken before the outer trim, so both shift by the leading whitespace it removes.
+    lead = len(text) - len(text.lstrip())
+    return ParsedReply(
+        text=text.strip(),
+        marker=marker,
+        question=None if span is None else QuestionSpan(span[0] - lead, span[1] - lead),
+    )

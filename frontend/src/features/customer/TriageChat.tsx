@@ -10,6 +10,7 @@ import {
 } from '../../api/assist.ts'
 import type {
   PhotoRef,
+  QuestionSpan,
   ServiceCall,
   TriageEndedStatus,
   TriageMessage,
@@ -62,7 +63,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   const [streaming, setStreaming] = useState('')
   const [status, setStatus] = useState<TriageStatus>('ACTIVE')
   const [draft, setDraft] = useState('')
-  const [offerYesNo, setOfferYesNo] = useState(false)
+  const [questionSpan, setQuestionSpan] = useState<QuestionSpan | null>(null)
   const [sending, setSending] = useState(false)
   const [ending, setEnding] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +73,9 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   const [collapseKey, setCollapseKey] = useState(0)
   const [pendingPhotos, setPendingPhotos] = useState<PhotoRef[]>([])
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [sendOnTap, setSendOnTap] = useState(true)
+  const [attachOpen, setAttachOpen] = useState(false)
+  const [caretToEnd, setCaretToEnd] = useState(0)
   const endRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const nextLocalId = useRef(0)
@@ -98,25 +102,54 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages, streaming])
 
   // Focus belongs in the composer, and both dependencies are a moment it has to be put back: the
-  // composer mounts only once the conversation resolves, and a send leaves focus on whichever
-  // button started it — Send, or a Yes/No quick reply that may unmount with the answer.
+  // composer mounts only once the conversation resolves, and clicking Send moves focus to Send.
   useEffect(() => { if (!sending) draftRef.current?.focus() }, [conversationId, sending])
+
+  // A quick reply diverted into the composer arrives as a prefix, so the caret belongs at its end.
+  // This runs after the commit that applied that draft, which is when the caret can be placed.
+  useEffect(() => {
+    if (caretToEnd === 0) return
+    const composer = draftRef.current
+    if (composer === null) return
+    composer.focus()
+    composer.setSelectionRange(composer.value.length, composer.value.length)
+  }, [caretToEnd])
+
+  /**
+   * A tapped Yes/No sends the answer as its own turn, which is the point of the buttons: most
+   * yes/no questions need nothing more. Anything already typed is carried into the answer —
+   * "No, only the mast one is lit" — so a tap never strands the customer's own words.
+   *
+   * Clearing "Send" first diverts the answer into the composer unsent, for the question where yes
+   * or no is only the opening of the reply.
+   *
+   * The offer is spent on the first tap either way: the answer is now a turn or editable text, and
+   * a second tap would stack a second prefix onto it.
+   */
+  function handleQuickReply(answer: 'Yes' | 'No') {
+    const typed = draft.trim()
+    const answered = typed ? `${answer}, ${typed}` : answer
+    setQuestionSpan(null)
+    if (sendOnTap) {
+      void send(answered)
+      return
+    }
+    setDraft(answered)
+    setCaretToEnd((n) => n + 1)
+  }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
-    await send(draft.trim(), true)
+    await send(draft.trim())
   }
 
-  /**
-   * One customer turn through the streaming path, shared by the composer and the Yes/No quick
-   * replies. Only a composer send consumes the draft: a tapped quick reply must leave whatever
-   * the customer has typed intact, so consumesDraft also scopes the on-failure draft restore.
-   */
-  async function send(text: string, consumesDraft: boolean) {
+  async function send(text: string) {
     if (conversationId === null) return
     const sent = pendingPhotos
     setError(null)
-    if (consumesDraft) setDraft('')
+    setDraft('')
+    // Whatever the previous turn asked has now been answered, however the customer chose to.
+    setQuestionSpan(null)
     setSending(true)
     // The live exchange is what the customer is now watching; history folds out of its way.
     setCollapseKey((n) => n + 1)
@@ -142,7 +175,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
         { id: `local-${nextLocalId.current++}`, role: 'ASSISTANT', text: reply.trim(), created_at: '' },
       ])
       setStatus(result.status)
-      setOfferYesNo(result.offer_yes_no)
+      setQuestionSpan(result.question)
       setPendingPhotos([])
       // An ending moves this exchange into the customer's history.
       if (result.status !== 'ACTIVE') setHistoryKey((n) => n + 1)
@@ -159,7 +192,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     } catch (err) {
       setError(safeErrorMessage(err, 'The assistant could not answer just now. Please try again.'))
       setMessages((prior) => prior.filter((m) => m.id !== optimisticId))
-      if (consumesDraft) setDraft(text)
+      setDraft(text)
       // The ids stay unbound server-side, so a retried turn can re-send the same photos.
     } finally {
       setStreaming('')
@@ -232,7 +265,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
     setStreaming('')
     setStatus('ACTIVE')
     setDraft('')
-    setOfferYesNo(false)
+    setQuestionSpan(null)
     setError(null)
     setAttempt((n) => n + 1)
   }
@@ -269,6 +302,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
               <ChatTurns
                 messages={messages}
                 photoPreviewUrl={(photo) => triagePhotoPreviewUrl(conversationId, photo.id)}
+                questionSpan={questionSpan}
               >
                 {streaming && (
                   <li className="chat__turn chat__turn--assistant" aria-live="polite">{streaming}</li>
@@ -276,13 +310,13 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                 <div ref={endRef} />
               </ChatTurns>
 
-              {offerYesNo && (
+              {questionSpan && (
                 <div className="chat__quick-replies">
                   <Button
                     type="button"
                     variant="success"
                     disabled={sending}
-                    onClick={() => void send('Yes', false)}
+                    onClick={() => handleQuickReply('Yes')}
                   >
                     Yes
                   </Button>
@@ -290,17 +324,39 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                     type="button"
                     variant="danger"
                     disabled={sending}
-                    onClick={() => void send('No', false)}
+                    onClick={() => handleQuickReply('No')}
                   >
                     No
                   </Button>
+                  <label className="chat__quick-reply-send">
+                    <input
+                      type="checkbox"
+                      checked={sendOnTap}
+                      onChange={(e) => setSendOnTap(e.target.checked)}
+                      disabled={sending}
+                    />
+                    Send
+                  </label>
                 </div>
               )}
 
               <form onSubmit={handleSend} className="form chat__composer">
-                <label>
-                  Your message:
+                <div className="chat__composer-field">
+                  <div className="chat__composer-head">
+                    <label htmlFor="chat-draft">Your message:</label>
+                    <button
+                      type="button"
+                      className="chat__attach-toggle"
+                      aria-expanded={attachOpen}
+                      aria-controls="chat-attach"
+                      onClick={() => setAttachOpen((open) => !open)}
+                    >
+                      <span aria-hidden="true">+</span>
+                      Attach photos
+                    </button>
+                  </div>
                   <textarea
+                    id="chat-draft"
                     ref={draftRef}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
@@ -308,7 +364,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                     maxLength={MAX_MESSAGE_CHARS}
                     placeholder="Describe the problem…"
                   />
-                </label>
+                </div>
                 {(pendingPhotos.length > 0 || uploadingPhoto) && (
                   <p className="chat__attach-note">
                     {uploadingPhoto
@@ -335,16 +391,18 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                     ))}
                   </ul>
                 )}
-                <label className="chat__attach">
-                  Attach photos
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    onChange={handleAttach}
-                    disabled={sending || uploadingPhoto || attachedCount >= MAX_PHOTOS}
-                  />
-                </label>
+                {attachOpen && (
+                  <label className="chat__attach" id="chat-attach">
+                    Attach photos
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      onChange={handleAttach}
+                      disabled={sending || uploadingPhoto || attachedCount >= MAX_PHOTOS}
+                    />
+                  </label>
+                )}
                 <div className="chat__composer-actions">
                   <Button
                     type="submit"

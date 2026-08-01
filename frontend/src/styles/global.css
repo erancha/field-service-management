@@ -903,8 +903,16 @@ body {
 
 .chat__quick-replies {
   display: flex;
+  align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
+}
+
+.chat__quick-reply-send {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
 }
 
 .chat__composer textarea {
@@ -942,6 +950,41 @@ body {
   height: 3.5rem;
   border-radius: 4px;
   display: block;
+}
+
+.chat__composer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat__composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.chat__attach-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.chat__attach-toggle:hover {
+  color: var(--color-text);
+}
+
+.chat__attach-toggle span {
+  font-size: 1.05rem;
+  line-height: 1;
 }
 
 .chat__attach {

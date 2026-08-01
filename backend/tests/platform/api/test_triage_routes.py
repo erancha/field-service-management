@@ -15,7 +15,8 @@ from fsm.assist.application.prompts import (
     CLOSED_MARKER,
     ESCALATE_MARKER,
     SOLVED_MARKER,
-    YES_NO_MARKER,
+    QUESTION_CLOSE,
+    QUESTION_OPEN,
 )
 from fsm.assist.domain.conversation import MAX_PHOTOS_PER_CONVERSATION
 from fsm.identity.domain.role import Role
@@ -154,11 +155,14 @@ class TestTriageRoutes:
             ("ASSISTANT", "Is the display lit?"),
         ]
 
-    def test_a_yes_no_question_is_flagged_on_the_done_frame(
+    def test_a_wrapped_question_reports_its_span_on_the_done_frame(
         self, pg_session_factory, authenticate
     ):
         app = build_app(
-            pg_session_factory, FakeChatModel(replies=[f"Is the breaker on? {YES_NO_MARKER}"])
+            pg_session_factory,
+            FakeChatModel(
+                replies=[f"Power is fine. {QUESTION_OPEN}Is the breaker on?{QUESTION_CLOSE}"]
+            ),
         )
         authenticate(app, role=Role.CUSTOMER)
 
@@ -174,9 +178,10 @@ class TestTriageRoutes:
         assert "[[" not in tokens
         done = [payload for event, payload in frames if event == "done"][0]
         assert done["status"] == "ACTIVE"
-        assert done["offer_yes_no"] is True
+        assert done["question"] == {"start": 15, "end": 33}
+        assert tokens.strip()[15:33] == "Is the breaker on?"
 
-    def test_an_open_question_leaves_the_done_frame_unflagged(
+    def test_an_open_question_leaves_the_done_frame_without_a_span(
         self, pg_session_factory, authenticate
     ):
         app = build_app(pg_session_factory, FakeChatModel(replies=["Is the display lit?"]))
@@ -190,7 +195,7 @@ class TestTriageRoutes:
             )
 
         done = [payload for event, payload in read_sse(stream) if event == "done"][0]
-        assert done["offer_yes_no"] is False
+        assert done["question"] is None
 
     def test_a_solved_ending_creates_no_service_call(self, pg_session_factory, authenticate):
         app = build_app(

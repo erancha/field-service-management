@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { PhotoRef, TriageMessage } from '../../api/types.ts'
+import type { PhotoRef, QuestionSpan, TriageMessage } from '../../api/types.ts'
 
 interface ChatTurnsProps {
   messages: TriageMessage[]
@@ -11,15 +11,29 @@ interface ChatTurnsProps {
    * be reclaimed, so no fetch is attempted there.
    */
   photoPreviewUrl?: (photo: PhotoRef) => string
+  /**
+   * Bounds of the question in the final turn, as the backend reported it, emphasised to tie it to
+   * the Yes/No buttons below. Null once the offer is spent, and absent for history read back after
+   * a conversation ends, so neither emphasises anything.
+   */
+  questionSpan?: QuestionSpan | null
 }
 
 /** The bubbles of a conversation, whether it is the live exchange or one read back from history. */
-export function ChatTurns({ messages, children, photoPreviewUrl }: ChatTurnsProps) {
+export function ChatTurns({ messages, children, photoPreviewUrl, questionSpan }: ChatTurnsProps) {
   return (
     <ol className="chat__log">
-      {messages.map((message) => (
+      {messages.map((message, index) => (
         <li key={message.id} className={`chat__turn chat__turn--${message.role.toLowerCase()}`}>
-          {message.text}
+          {questionSpan && message.role === 'ASSISTANT' && index === messages.length - 1 ? (
+            <>
+              {message.text.slice(0, questionSpan.start)}
+              <strong>{message.text.slice(questionSpan.start, questionSpan.end)}</strong>
+              {message.text.slice(questionSpan.end)}
+            </>
+          ) : (
+            message.text
+          )}
           {message.photos && message.photos.length > 0 && (
             <ul className="chat__turn-photos">
               {message.photos.map((photo) =>

@@ -27,8 +27,9 @@ x-backend-healthcheck: &backend-healthcheck
   timeout: 3s
   retries: 20
 
-# Hard memory ceiling per backend process; without it a container may grow to all host RAM. 256M
-# comfortably covers the ~90MB resident set of a uvicorn role process.
+# Hard memory ceiling per backend process; without it a container may grow to all host RAM. A role
+# process carrying no per-request peak settles around 180MB resident, so 256M leaves it roughly a
+# third in reserve. Roles whose work has a known peak above that raise the ceiling themselves.
 x-backend-deploy: &backend-deploy
   resources:
     limits:
@@ -154,6 +155,13 @@ services:
     deploy:
       <<: *backend-deploy
       replicas: 5
+      # This role carries the assist stack, which settles ~215MB resident — already near the shared
+      # ceiling before it does any work. On top of that, a photo upload decodes here: a picture just
+      # under the 25 MP guard peaks ~135MB above that while Pillow holds the decode, the transposed
+      # copy, and the RGB conversion at once. 512M covers both together.
+      resources:
+        limits:
+          memory: 512M
     healthcheck:
       <<: *backend-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]

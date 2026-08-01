@@ -13,9 +13,10 @@ _SUPPORTED_FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/w
 _PREVIEW_LONG_EDGE = 1280
 _PREVIEW_JPEG_QUALITY = 80
 
-# Decoding happens on role processes with a 256 MB container ceiling; 25 MP decodes to ~75 MB of
-# RGB and covers phone cameras, while a decompression bomb declaring more is rejected from the
-# header alone, before any pixel is decoded.
+# Covers phone cameras, while a decompression bomb declaring more is rejected from the header
+# alone, before any pixel is decoded. Preparing a picture at this size peaks ~135 MB above the
+# process baseline — several times its raw RGB, since the decode, the transposed copy, and the RGB
+# conversion are live at once — which is what the customer role's raised ceiling accommodates.
 _MAX_PIXELS = 25_000_000
 
 

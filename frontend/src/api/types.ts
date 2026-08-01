@@ -193,9 +193,19 @@ export interface TriageConversationSummary {
   opening_line: string
 }
 
+/** Offsets bounding the yes/no question inside the reply text, as the assistant delimited it. */
+export interface QuestionSpan {
+  start: number
+  end: number
+}
+
 export interface TriageTurnResult {
   status: TriageStatus
-  /** True when the reply's one question is a plain yes/no, so the chat can offer Yes/No buttons. */
-  offer_yes_no: boolean
+  /**
+   * Where the turn's plain yes/no question sits, or null when it asked none. Its presence is what
+   * puts the Yes/No buttons up, and its offsets are what emphasise the question they answer — the
+   * chat never reads the reply text to work either out.
+   */
+  question: QuestionSpan | null
   service_call: { id: string; description: string } | null
 }

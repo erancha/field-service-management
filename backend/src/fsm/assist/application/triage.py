@@ -12,9 +12,10 @@ from fsm.assist.application.prompts import (
     MARKERS,
     SOLVED_MARKER,
     SUMMARY_SYSTEM_PROMPT,
-    YES_NO_MARKER,
+    ParsedReply,
+    QuestionSpan,
     build_system_prompt,
-    strip_markers,
+    parse_reply,
 )
 from fsm.assist.domain.conversation import (
     Conversation,
@@ -72,31 +73,38 @@ def _utc_now() -> datetime:
 class TurnOutcome:
     """How the conversation stands after a turn; the escalation fields are set only on escalation.
 
-    offer_yes_no is how the chat surface learns, without parsing the reply text, that the turn's
-    question is a plain yes/no it can answer with tappable Yes/No buttons.
+    question is how the chat surface learns, without inspecting the reply text, both that the turn
+    asked a plain yes/no question it can offer Yes/No buttons for, and where that question sits in
+    the reply so it can be emphasised.
     """
 
     status: ConversationStatus
     service_call_id: uuid.UUID | None = None
     service_call_description: str | None = None
-    offer_yes_no: bool = False
+    question: QuestionSpan | None = None
 
 
-def _safe_prefix_length(text: str) -> int:
-    """How much of the text can be sent now without risking a marker leaking.
+def _visible_prefix(text: str) -> str:
+    """What of a part-streamed reply the customer can be shown now.
 
-    A complete marker and everything after it is held back; so is any tail that is still a prefix
-    of a marker, until the stream resolves whether it becomes one.
+    Complete markers are cut out where they stand, because the question delimiters sit mid-reply:
+    withholding everything from the first marker onward would stall the bulk of the message until
+    the stream ended. Any tail that is still only a prefix of a marker is withheld until the stream
+    resolves whether it becomes one.
+
+    Successive calls return successively longer text — a withheld tail either completes into a
+    marker that is removed, or turns out to be ordinary text that is then released — so the caller
+    can treat what it has already emitted as a prefix of what this returns.
     """
     limit = len(text)
     for marker in MARKERS:
-        found = text.find(marker)
-        if found != -1:
-            limit = min(limit, found)
         for length in range(1, len(marker)):
             if text.endswith(marker[:length]):
                 limit = min(limit, len(text) - length)
-    return max(limit, 0)
+    visible = text[:limit]
+    for marker in MARKERS:
+        visible = visible.replace(marker, "")
+    return visible
 
 
 class TriageService:
@@ -214,7 +222,11 @@ class TriageService:
 
         if self._customer_turns(conversation) + 1 >= MAX_CUSTOMER_TURNS:
             yield TURN_CAP_HANDOFF
-            self._record_answer(conversation, question, TURN_CAP_HANDOFF, ESCALATE_MARKER)
+            self._record_answer(
+                conversation,
+                question,
+                ParsedReply(text=TURN_CAP_HANDOFF, marker=ESCALATE_MARKER, question=None),
+            )
             return
 
         hits = self._document_index.search(text, GROUNDING_HITS) if self._document_index else []
@@ -226,30 +238,35 @@ class TriageService:
         for fragment in self._chat_model.stream(system, history):
             fragments.append(fragment)
             # Offsets index the reply with its leading whitespace already dropped, which is how
-            # strip_markers renders the answer below; measuring both from the same text is what
+            # parse_reply renders the answer below; measuring both from the same text is what
             # lets the final flush resume exactly where the stream held back.
-            streamable = "".join(fragments).lstrip()
-            safe_upto = _safe_prefix_length(streamable)
-            if safe_upto > emitted:
-                yield streamable[emitted:safe_upto]
-                emitted = safe_upto
+            visible = _visible_prefix("".join(fragments).lstrip())
+            if len(visible) > emitted:
+                yield visible[emitted:]
+                emitted = len(visible)
 
-        answer, marker = strip_markers("".join(fragments))
-        if len(answer) > emitted:
-            yield answer[emitted:]
-        self._record_answer(conversation, question, answer, marker)
+        parsed = parse_reply("".join(fragments))
+        if len(parsed.text) > emitted:
+            yield parsed.text[emitted:]
+        self._record_answer(conversation, question, parsed)
 
     @staticmethod
     def _customer_turns(conversation: Conversation) -> int:
         return sum(1 for m in conversation.messages if m.role is MessageRole.CUSTOMER)
 
     def _record_answer(
-        self, conversation: Conversation, question: Message, answer: str, marker: str | None
+        self, conversation: Conversation, question: Message, parsed: ParsedReply
     ) -> None:
         now = self._clock()
+        marker = parsed.marker
         conversation.append(question, question.created_at)
         conversation.append(
-            Message(id=self._new_id(), role=MessageRole.ASSISTANT, text=answer, created_at=now),
+            Message(
+                id=self._new_id(),
+                role=MessageRole.ASSISTANT,
+                text=parsed.text,
+                created_at=now,
+            ),
             now,
         )
 
@@ -276,7 +293,7 @@ class TriageService:
             )
         else:
             self._outcome = TurnOutcome(
-                status=ConversationStatus.ACTIVE, offer_yes_no=marker == YES_NO_MARKER
+                status=ConversationStatus.ACTIVE, question=parsed.question
             )
 
         self._conversations.save(conversation)

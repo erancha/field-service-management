@@ -56,11 +56,32 @@ model is a change to `ASSIST_MODEL` and its key, with no code change. The assist
 steps that are safe for a customer to try — never gas, mains wiring, refrigerant, or working at
 height.
 
+The assistant is told to put its question as one a yes or no answers whenever a yes or no would
+tell it what it needs — to name the thing it suspects and let the customer confirm or deny it
+("do you see anything built up on the rail?") rather than send them off to observe and report
+("look at the rail and tell me what you see"), since a denial rules the suspicion out just as well.
+Questions stay open only where no yes or no could carry the answer: a model number, an error code,
+a reading. A message that prescribes a step closes the same way, asking after that step's result as
+a yes/no that names it ("did cleaning the rail stop the juddering?"), so a suggestion never leaves
+the customer with an instruction and nothing to answer.
+
 When the assistant's one question is a plain yes/no ("Is the breaker on?"), the chat shows tappable
-Yes and No quick-reply buttons alongside the composer, which stays available for a qualified answer.
-The assistant flags such questions explicitly — a control marker stripped server-side and carried as
-a flag on the turn's final SSE frame — so the client never guesses from the reply text, and history
-read back after a conversation ends never shows buttons.
+Yes and No quick-reply buttons. Beside them sits a Send tick-box, on by default: a tap then answers
+the question in one turn. Clearing it redirects the tap into the composer instead, unsent and ready
+to be qualified — "Yes, on the control box" — for a question where yes or no is only the opening of
+the answer. Either way a tap folds in anything already typed rather than stranding it, and
+answering retires the buttons so a second tap cannot stack a second answer.
+
+The assistant marks such a question by wrapping it in delimiters, which the server strips before
+storing the reply and reports as offsets into the visible text on the turn's final SSE frame. The
+browser therefore learns both facts from data: that buttons belong on this turn, and where the
+question they answer sits, so it bolds that question without inspecting the reply itself. History
+read back after a conversation ends carries no offsets and so shows neither buttons nor emphasis.
+
+Marking the question in place is what keeps that signal dependable: the delimiters are written as
+part of the question, so a question the model has finished writing cannot be missing them. Because
+they sit mid-reply, the stream removes each one where it stands and carries on, which is what lets
+the question reach the customer as it is written rather than in one lump when the turn ends.
 
 A conversation ends one of three ways:
 
