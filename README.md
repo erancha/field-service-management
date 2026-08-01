@@ -19,25 +19,28 @@ Prerequisites: **Python ≥3.12**, **Docker**, and **Node.js 22+ with npm**.
 ### 1. Configuration (`backend/.env`)
 
 ```bash
-./scripts/init-env.sh   # writes backend/.env from backend/.env.example, generating FSM_TOKEN_KEY + SESSION_SECRET
+./scripts/init-env.sh   # writes backend/.env from backend/.env.example and mints the local secrets
 ```
 
 Configuring the **Google Cloud Console** OAuth client is mandatory. Google is the only sign-in path,
 and every booking and scheduling action requires a signed-in session, so the app does nothing useful
-until it is set. `init-env.sh` handles the rest of the baseline — `DATABASE_URL`/`APP_ENV` default to
-the bundled Docker Postgres and the two local secrets are generated for you. Holidays and email are
-the only features that stay disabled, without error, when left unset.
+until it is set. `init-env.sh` handles the rest of the baseline: `DATABASE_URL`/`APP_ENV` default to
+the bundled Docker Postgres, and the two secrets every install must mint locally — `SESSION_SECRET`
+and `FSM_TOKEN_KEY` — are generated for you. Holidays and email are the only features that stay
+disabled, without error, when left unset.
 
-Each key — what it does, when it is required, and how to obtain it — is documented inline in
-[`backend/.env.example`](backend/.env.example), which also contains the Google Cloud Console setup
-steps. Refer to it there rather than duplicating the list here.
+Every key in `backend/.env` — what it does, when it is required, and how to obtain it — is
+documented inline in [`backend/.env.example`](backend/.env.example), which also contains the Google
+Cloud Console setup steps. Refer to it there rather than duplicating the list here.
 
 ### 2. Runtime
 
-One launcher, **one** `backend/.env`, two run modes that reach the roles at the **same URLs**, each
-completing Google sign-in. Docker is the default (a closer-to-production stack); `--host` runs the
-roles as local uvicorn processes for fast boot and debugger attach. Either way PostgreSQL and Redis
-run in Docker.
+The app runs as three role apps — technician, customer, and back office — each reached on its own
+localhost port. One launcher, `./scripts/start.sh`, starts everything from the `backend/.env`
+written in step 1 and offers two run modes; both serve the roles at the same URLs and support the
+full Google sign-in flow. Docker mode (the default) is a closer-to-production stack; `--host` runs
+the roles as local uvicorn processes for fast boot and debugger attach. Either way PostgreSQL and
+Redis run in Docker.
 
 ```bash
 # DOCKER mode (default): roles run as containers; nginx publishes one localhost port per role
@@ -49,19 +52,18 @@ run in Docker.
 ./scripts/start.sh technician --host     # one role (alias tec) -> http://localhost:8001
 ```
 
-The launcher is idempotent and requires `backend/.env` (step 1) — it aborts with instructions if
-that file is missing. Docker mode builds the backend image and brings the roles up as compose
-services; `--host` provisions the virtualenv, builds the frontend, and runs one uvicorn per role.
-Each mode starts PostgreSQL and Redis via Docker and applies migrations first. Edit `backend/.env`
-and re-run to pick up changes. In either mode every role serves its React UI at `/`, API docs at
-`/docs`, and `/health` + `/ready` for liveness and readiness. Bring the stack down or tail logs with
-`./scripts/docker-helper.sh --stop` / `--logs`.
+The launcher is idempotent and aborts with instructions if `backend/.env` is missing. Docker mode
+builds the backend image and brings the roles up as compose services; `--host` provisions the
+virtualenv, builds the frontend, and runs one uvicorn per role. Each mode starts PostgreSQL and
+Redis via Docker and applies migrations first. Edit `backend/.env` and re-run to pick up changes. In
+either mode every role serves its React UI at `/`, API docs at `/docs`, and `/health` + `/ready` for
+liveness and readiness. Bring the stack down or tail logs with `./scripts/docker-helper.sh --stop` /
+`--logs`.
 
 #### Open a UI in your browser
 
-Each role is reached on its own `localhost` port — the same in either mode. In Docker mode nginx
-serves the SPA and proxies the API per port; in host mode the uvicorn process serves the SPA and API
-directly.
+In Docker mode nginx serves the SPA and proxies the API per port; in host mode the uvicorn process
+serves the SPA and API directly.
 
 | App | URL |
 |---|---|
