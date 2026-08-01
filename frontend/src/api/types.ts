@@ -80,6 +80,8 @@ export interface CurrentUser {
   display_name: string | null
   address: string | null
   phone: string | null
+  /** When the user accepted the assistant disclaimer; null until they have. */
+  assist_disclaimer_accepted_at: string | null
 }
 
 export interface ProfileUpdate {

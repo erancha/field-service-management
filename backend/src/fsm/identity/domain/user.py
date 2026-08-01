@@ -28,6 +28,9 @@ class User:
 
     display_name, address, and phone are self-service profile fields; sign-in reconciliation
     syncs only email and name from Google claims, so these survive every re-sign-in.
+
+    assist_disclaimer_accepted_at records when the user confirmed they understand what the triage
+    assistant is; None until they do.
     """
 
     id: uuid.UUID
@@ -41,6 +44,7 @@ class User:
     display_name: str | None = None
     address: str | None = None
     phone: str | None = None
+    assist_disclaimer_accepted_at: dt.datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.google_sub:
@@ -59,6 +63,15 @@ class User:
         """True when the user holds an APPROVED TECHNICIAN role — the only users who may be
         offered in customer-facing availability or targeted by a booking."""
         return self.role is Role.TECHNICIAN and self.role_status is RoleStatus.APPROVED
+
+    def accept_assist_disclaimer(self, at: dt.datetime) -> None:
+        """Record that the user accepted the assistant disclaimer, keeping the first acceptance.
+
+        assist_disclaimer_accepted_at answers when the user first agreed, so a repeated
+        acceptance — a reload, a second tab — must not move it forward.
+        """
+        if self.assist_disclaimer_accepted_at is None:
+            self.assist_disclaimer_accepted_at = at
 
     def grant_role(self, role: Role) -> None:
         """Assign a role with immediate effect, clearing any prior decision.

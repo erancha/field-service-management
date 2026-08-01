@@ -787,6 +787,55 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Assistant disclaimer, shown once per customer before the dashboard */
+
+/* Brand lockup: the mark is decorative and carries no alt text, and the name is set quieter than
+   the page title so the page has one dominant heading rather than two competing ones. */
+.assist-disclaimer__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.assist-disclaimer__brand span {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+}
+
+.assist-disclaimer__logo {
+  width: 1.75rem;
+  height: auto;
+}
+
+.assist-disclaimer .page__header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.assist-disclaimer__point {
+  margin: 0 0 1rem;
+}
+
+/* The two points about physical risk are set apart so they are not read as more of the same. */
+.assist-disclaimer__point--risk {
+  background: var(--color-error-bg);
+  border-left: 3px solid var(--color-error-border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.75rem 1rem;
+}
+
+.assist-disclaimer__confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 1.5rem 0 1rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
 /* Customer triage chat */
 .chat h3 {
   margin: 0 0 0.5rem;

@@ -45,6 +45,7 @@ def _row_to_user(row: UserRow) -> User:
         display_name=row.display_name,
         address=row.address,
         phone=row.phone,
+        assist_disclaimer_accepted_at=row.assist_disclaimer_accepted_at,
     )
 
 
@@ -61,6 +62,7 @@ def _user_to_row(user: User) -> UserRow:
         display_name=user.display_name,
         address=user.address,
         phone=user.phone,
+        assist_disclaimer_accepted_at=user.assist_disclaimer_accepted_at,
     )
 
 
@@ -107,6 +109,7 @@ class SqlAlchemyUserRepository:
         row.display_name = user.display_name
         row.address = user.address
         row.phone = user.phone
+        row.assist_disclaimer_accepted_at = user.assist_disclaimer_accepted_at
         self._session.flush()
 
     def get(self, user_id: uuid.UUID) -> User:

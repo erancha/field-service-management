@@ -6,6 +6,7 @@ import { AdminPage } from './AdminPage.tsx'
 import { TechnicianWaiting } from '../features/technician/TechnicianWaiting.tsx'
 import { TechnicianDeclined } from '../features/technician/TechnicianDeclined.tsx'
 import { OnboardingGate } from '../features/profile/OnboardingGate.tsx'
+import { AssistDisclaimerGate } from '../features/customer/AssistDisclaimerGate.tsx'
 import { BRAND } from '../constants.ts'
 
 export function HomePage() {
@@ -45,9 +46,11 @@ export function HomePage() {
     }
 
     return (
-      <OnboardingGate user={user}>
-        <CustomerPage customerId={user.user_id} email={user.email} />
-      </OnboardingGate>
+      <AssistDisclaimerGate user={user}>
+        <OnboardingGate user={user}>
+          <CustomerPage customerId={user.user_id} email={user.email} />
+        </OnboardingGate>
+      </AssistDisclaimerGate>
     )
   }
 

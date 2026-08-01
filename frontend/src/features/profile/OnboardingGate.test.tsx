@@ -19,6 +19,7 @@ function user(overrides: Partial<CurrentUser> = {}): CurrentUser {
     display_name: null,
     address: null,
     phone: null,
+    assist_disclaimer_accepted_at: null,
     ...overrides,
   }
 }

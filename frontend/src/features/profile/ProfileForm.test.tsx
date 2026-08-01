@@ -19,6 +19,7 @@ const baseUser: CurrentUser = {
   display_name: null,
   address: '12 Main St',
   phone: null,
+  assist_disclaimer_accepted_at: null,
 }
 
 function renderForm(

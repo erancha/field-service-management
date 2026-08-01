@@ -36,6 +36,9 @@ class UserRow(Base):
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     address: Mapped[str | None] = mapped_column(String, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    assist_disclaimer_accepted_at: Mapped[dt.datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index("ix_app_user_google_sub", "google_sub"),

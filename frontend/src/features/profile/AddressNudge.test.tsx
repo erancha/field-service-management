@@ -16,6 +16,7 @@ function renderNudge(address: string | null, phone: string | null = '054-1234567
     display_name: null,
     address,
     phone,
+    assist_disclaimer_accepted_at: null,
   }
   render(
     <AuthContext.Provider value={{ auth: { status: 'authenticated', user }, refresh: vi.fn() }}>

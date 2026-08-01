@@ -5,6 +5,7 @@ Wiring:
 - GET  /auth/google/callback → exchange code, verify ID token, upsert user, set session
 - GET  /auth/me              → return current session user or 401
 - PATCH /auth/me             → update the caller's own profile (display_name, address, phone)
+- POST /auth/me/assist-disclaimer → record that the caller accepted the assistant disclaimer
 - POST /auth/logout          → clear the session
 
 Injectable seams on app.state allow tests to bypass real Google without patching globals:
@@ -12,6 +13,8 @@ Injectable seams on app.state allow tests to bypass real Google without patching
   app.state.auth_adapter_override    — AuthPort used instead of building GoogleOidcAuthAdapter
 """
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -171,6 +174,11 @@ def _me_payload(user) -> dict:
         "display_name": user.display_name,
         "address": user.address,
         "phone": user.phone,
+        "assist_disclaimer_accepted_at": (
+            user.assist_disclaimer_accepted_at.isoformat()
+            if user.assist_disclaimer_accepted_at
+            else None
+        ),
     }
 
 
@@ -220,6 +228,26 @@ def update_me(
                 value = getattr(body, field)
                 cleaned = value.strip() if value else ""
                 setattr(user, field, cleaned or None)
+        repo.save(user)
+        session.commit()
+    return JSONResponse(_me_payload(user))
+
+
+@router.post("/me/assist-disclaimer")
+def accept_assist_disclaimer(
+    request: Request,
+    session_user: SessionUser = Depends(require_user),
+):
+    """Record that the caller accepted the assistant disclaimer.
+
+    Idempotent: a caller who already accepted gets the same payload back with the original
+    timestamp, so a reload or a second tab cannot restate when they agreed.
+    """
+    factory = get_session_factory(request.app)
+    with factory() as session:
+        repo = SqlAlchemyUserRepository(session)
+        user = repo.get(session_user.id)
+        user.accept_assist_disclaimer(datetime.now(timezone.utc))
         repo.save(user)
         session.commit()
     return JSONResponse(_me_payload(user))

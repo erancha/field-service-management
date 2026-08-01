@@ -56,6 +56,14 @@ model is a change to `ASSIST_MODEL` and its key, with no code change. The assist
 steps that are safe for a customer to try — never gas, mains wiring, refrigerant, or working at
 height.
 
+Before a customer first reaches their dashboard, a disclaimer states what the assistant is: it
+answers from the uploaded knowledge base and names the document, falls back on the model's training
+data where no document covers the question, and is to be checked rather than followed. Nothing it
+suggests is a reason to work on gas, mains wiring, refrigerant, or at height. Continuing needs a
+ticked confirmation, recorded on the account as a timestamp
+(`app_user.assist_disclaimer_accepted_at`) rather than in browser storage, so a customer is asked
+once rather than once per device — and is asked even where `ASSIST_MODEL` is unset.
+
 The assistant is told to put its question as one a yes or no answers whenever a yes or no would
 tell it what it needs — to name the thing it suspects and let the customer confirm or deny it
 ("do you see anything built up on the rail?") rather than send them off to observe and report

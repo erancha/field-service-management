@@ -50,6 +50,7 @@ function renderBookFlow() {
     display_name: null,
     address: '12 Main St',
     phone: '054-1234567',
+    assist_disclaimer_accepted_at: null,
   }
   const onBooked = vi.fn()
   render(

@@ -490,3 +490,29 @@ class TestProfileEndpoints:
         resp = client.patch("/auth/me", json={"phone": "+1-202-555-0143"})
         assert resp.status_code == 200
         assert resp.json()["phone"] == "+1-202-555-0143"
+
+
+class TestAssistDisclaimer:
+    def test_requires_authentication(self, pg_session_factory):
+        settings = _settings_with_google(os.environ["DATABASE_URL"])
+        app = create_app(session_factory=pg_session_factory, settings=settings)
+        client = TestClient(app)
+        assert client.post("/auth/me/assist-disclaimer").status_code == 401
+
+    def test_a_new_user_has_not_accepted(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        assert client.get("/auth/me").json()["assist_disclaimer_accepted_at"] is None
+
+    def test_acceptance_is_stamped_and_returned_by_me(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        resp = client.post("/auth/me/assist-disclaimer")
+        assert resp.status_code == 200
+        accepted_at = resp.json()["assist_disclaimer_accepted_at"]
+        assert accepted_at is not None
+        assert client.get("/auth/me").json()["assist_disclaimer_accepted_at"] == accepted_at
+
+    def test_repeated_acceptance_keeps_the_first_timestamp(self, pg_session_factory):
+        client = _signed_in_client(pg_session_factory)
+        first = client.post("/auth/me/assist-disclaimer").json()
+        second = client.post("/auth/me/assist-disclaimer").json()
+        assert second["assist_disclaimer_accepted_at"] == first["assist_disclaimer_accepted_at"]

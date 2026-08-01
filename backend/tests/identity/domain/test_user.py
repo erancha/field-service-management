@@ -121,6 +121,22 @@ def test_profile_fields_default_to_none() -> None:
     assert user.display_name is None
     assert user.address is None
     assert user.phone is None
+    assert user.assist_disclaimer_accepted_at is None
+
+
+def test_accepting_the_assist_disclaimer_stamps_the_moment() -> None:
+    user = _make_user()
+    at = dt.datetime(2026, 8, 1, 9, 0, tzinfo=dt.timezone.utc)
+    user.accept_assist_disclaimer(at)
+    assert user.assist_disclaimer_accepted_at == at
+
+
+def test_accepting_the_assist_disclaimer_again_keeps_the_first_moment() -> None:
+    user = _make_user()
+    first = dt.datetime(2026, 8, 1, 9, 0, tzinfo=dt.timezone.utc)
+    user.accept_assist_disclaimer(first)
+    user.accept_assist_disclaimer(first + dt.timedelta(days=30))
+    assert user.assist_disclaimer_accepted_at == first
 
 
 def test_preferred_name_prefers_display_name() -> None:
