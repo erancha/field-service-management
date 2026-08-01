@@ -84,7 +84,7 @@ describe('TriageChat', () => {
     render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
 
     const composer = await screen.findByRole('textbox')
-    expect(composer).toHaveFocus()
+    await waitFor(() => expect(composer).toHaveFocus())
 
     await userEvent.type(composer, 'It will not heat.')
     await userEvent.click(screen.getByRole('button', { name: /send/i }))
