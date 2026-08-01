@@ -4,7 +4,7 @@
 
 A service-call management platform for agencies like elevator or appliance maintenance companies.
 
-**Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema) · [License](#license)
+**Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [Database schema](#database-schema) · [License](#license)
 
 ## Features & roadmap
 
@@ -107,21 +107,9 @@ The backend is a **modular monolith**: bounded contexts (`assist`, `identity`, `
 style and composed by `fsm.platform`. Contexts never import each other — each declares the ports it
 needs and `platform` injects implementations that bridge to the others — and the import rules are
 enforced in CI by import-linter. [docs/architecture.md](docs/architecture.md) picks up from here:
-each package's responsibility, the full import-rule diagram, the context-integration pattern, and
-how CI enforces the rules.
-
-## Authentication & live communication
-
-Google OIDC is the only sign-in path, and every booking and scheduling route requires a signed-in
-session; the session is a signed cookie and a role is assigned from the role of the process that
-completes the sign-in (the per-role edge), never from client input. Once signed in, the frontend drives
-the system with REST calls and receives live updates over a single Server-Sent Events stream, fanned
-out across the per-role processes by Redis pub/sub.
-[docs/auth-and-communication.md](docs/auth-and-communication.md) traces the main flows end-to-end —
-Google sign-in, technician calendar-connect, and the back office approving a technician (dashboard open
-and closed) — with the CSRF, PKCE, and token-encryption properties they rely on and what scaling a role
-to several replicas requires. Per-key configuration lives inline in
-[`backend/.env.example`](backend/.env.example).
+each package's responsibility, the full import-rule diagram, the context-integration pattern, how
+CI enforces the rules, and the authentication & live-communication model (Google OIDC sign-in,
+role-scoped sessions, and SSE updates fanned out over Redis pub/sub).
 
 ## Database schema
 

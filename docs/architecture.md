@@ -1,8 +1,8 @@
 # Architecture
 
 Detail behind the [root README's summary](../README.md#architecture): what each package owns, the
-exact import rules, how contexts integrate without knowing each other, and how CI enforces all of
-it.
+exact import rules, how contexts integrate without knowing each other, how CI enforces all of it,
+and how authentication and live communication work at runtime.
 
 ## Bounded contexts
 
@@ -84,3 +84,16 @@ The import rules are executable: the import-linter contracts in `backend/pyproje
 (`[tool.importlinter]`, run as `lint-imports` or via `backend/tests/test_architecture.py`) fail
 the build on any import outside this shape — including one reached transitively through another
 module.
+
+## Authentication & live communication
+
+Google OIDC is the only sign-in path, and every booking and scheduling route requires a signed-in
+session; the session is a signed cookie and a role is assigned from the role of the process that
+completes the sign-in (the per-role edge), never from client input. Once signed in, the frontend
+drives the system with REST calls and receives live updates over a single Server-Sent Events
+stream, fanned out across the per-role processes by Redis pub/sub.
+[auth-and-communication.md](auth-and-communication.md) traces the main flows end-to-end — Google
+sign-in, technician calendar-connect, and the back office approving a technician (dashboard open
+and closed) — with the CSRF, PKCE, and token-encryption properties they rely on and what scaling a
+role to several replicas requires. Per-key configuration lives inline in
+[`backend/.env.example`](../backend/.env.example).
