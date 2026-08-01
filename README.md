@@ -2,23 +2,15 @@
 
 [![CI](https://github.com/erancha/field-service-management/actions/workflows/ci.yml/badge.svg)](https://github.com/erancha/field-service-management/actions/workflows/ci.yml)
 
-A platform for service agencies (think elevator or appliance maintenance) that runs the whole job
-lifecycle from a single source of truth.
+A service-call management platform for agencies like elevator or appliance maintenance companies.
 
-**Contents:** [Features & roadmap](#features--roadmap) · [Overview](#overview) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema) · [License](#license)
+**Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema) · [License](#license)
 
 ## Features & roadmap
 
 [docs/features.md](docs/features.md) covers what's running today — sign-in and roles, booking and
 scheduling, two-way Google Calendar sync, notifications, the customer's triage assistant and its
 photo handling, the knowledge base, and deployment — plus the roadmap tracked in issues.
-
-## Overview
-
-- **Backend** (`backend/`): Python 3.12+, FastAPI, SQLAlchemy 2.x + PostgreSQL, Alembic.
-- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app.
-- **Source of truth** is the Postgres database; external systems (Google Calendar) are downstream
-  projections reached through ports, never imported by the core.
 
 ## Getting started
 
@@ -105,83 +97,16 @@ Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker
 
 ## Architecture
 
-A **modular monolith** organized as bounded contexts under a single `fsm` package, following
-ports-and-adapters (hexagonal) design:
+- **Backend** (`backend/`): Python 3.12+, FastAPI, SQLAlchemy 2.x + PostgreSQL, Alembic.
+- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app.
 
-| Package | Responsibility |
-|---|---|
-| `assist` | knowledge base and AI triage chat for the customer channel (LangChain/pgvector behind ports) |
-| `identity` | Google OIDC sign-in, users, roles |
-| `scheduling` | service calls, appointments, availability, lifecycle — the core domain (no external I/O) |
-| `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
-| `notifications` | in-app feed for both parties + technician email behind `NotificationPort` |
-| `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the google_calendar context's client) |
-| `shared` | shared kernel: the declarative ORM `Base`, Google OAuth endpoint URIs, and product identity constants (the brand name) — the only package a context may import from outside itself |
-
-### Import rules
-
-Arrows read **may import**. There are no arrows between contexts — none may import another — and
-none from a context up to `platform`:
-
-```mermaid
-flowchart TD
-    platform["fsm.platform:<br/>composition root — web wiring, workers, calendar_bridge"]
-
-    subgraph assist["fsm.assist"]
-        direction TB
-        a_adapters[adapters] --> a_application[application] --> a_ports[ports] --> a_domain[domain]
-    end
-
-    subgraph notifications["fsm.notifications"]
-        direction TB
-        n_adapters[adapters] --> n_application[application] --> n_ports[ports] --> n_domain[domain]
-    end
-
-    subgraph google_calendar["fsm.google_calendar"]
-        direction TB
-        c_adapters[adapters] --> c_application[application] --> c_ports[ports] --> c_domain[domain]
-    end
-
-    subgraph scheduling["fsm.scheduling"]
-        direction TB
-        s_adapters[adapters] --> s_application[application] --> s_ports[ports] --> s_domain[domain]
-    end
-
-    subgraph identity["fsm.identity"]
-        direction TB
-        i_adapters[adapters] --> i_application[application] --> i_ports[ports] --> i_domain[domain]
-    end
-
-    shared["fsm.shared:<br/>ORM Base, Google OAuth endpoint URIs"]
-
-    platform --> assist
-    platform --> notifications
-    platform --> google_calendar
-    platform --> scheduling
-    platform --> identity
-    platform --> shared
-
-    a_adapters --> shared
-    n_adapters --> shared
-    c_adapters --> shared
-    s_adapters --> shared
-    i_adapters --> shared
-```
-
-The three inner layers (`application`, `ports`, `domain`) use only their own context, the standard
-library, and `shared.constants` (the product brand). Only `adapters` may import the rest of `shared`
-(the ORM `Base`, OAuth URIs) and infrastructure libraries (SQLAlchemy, Google clients).
-
-Contexts therefore integrate without knowing each other. The consumer declares an interface in
-its own `ports` package (`scheduling.ports.CalendarPort`), and `platform` builds and injects the
-implementation (`platform.calendar_bridge.GoogleCalendarAdapter`, written against the
-google_calendar context's `GoogleCalendarClient` port). Application code receives its dependencies as constructor
-arguments and names only these interfaces, never concrete adapters.
-
-These rules are **enforced in CI**: the import-linter contracts in `backend/pyproject.toml`
-(`[tool.importlinter]`, run as `lint-imports` or via `backend/tests/test_architecture.py`) fail
-the build on any import outside this shape — including one reached transitively through another
-module.
+The backend is a **modular monolith**: bounded contexts (`assist`, `identity`, `scheduling`,
+`google_calendar`, `notifications`) under a single `fsm` package, each layered ports-and-adapters
+style and composed by `fsm.platform`. Contexts never import each other — each declares the ports it
+needs and `platform` injects implementations that bridge to the others — and the import rules are
+enforced in CI by import-linter. [docs/architecture.md](docs/architecture.md) picks up from here:
+each package's responsibility, the full import-rule diagram, the context-integration pattern, and
+how CI enforces the rules.
 
 ## Authentication & live communication
 
