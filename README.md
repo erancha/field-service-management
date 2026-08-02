@@ -13,9 +13,9 @@ scheduling, two-way Google Calendar sync, notifications, the customer's triage a
 photo handling, the knowledge base, and deployment — plus the roadmap tracked in issues.
 
 The [**visual walkthrough**](https://erancha.github.io/field-service-management/samples/walkthrough/)
-shows most of that list actually running, without deploying anything: twenty-five annotated
-screenshots from one uninterrupted session, starting on an empty database and ending with a booked
-appointment in two Google Calendars.
+shows most of that list actually running, without deploying anything: annotated screenshots from one
+uninterrupted session, starting on an empty database and ending with a booked appointment in two
+Google Calendars.
 
 ## Getting started
 

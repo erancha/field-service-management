@@ -7,6 +7,8 @@
 <meta name="description" content="A screenshot walkthrough of one end-to-end run: back office sign-in, knowledge base ingest, technician approval, calendar connection, customer triage, booking, and the resulting Google Calendar invites.">
 <style>
   :root {
+    /* Content width, shared by the page body and the sticky chapter nav so they stay aligned. */
+    --page: 1200px;
     --bg: #f7f7fb;
     --surface: #ffffff;
     --text: #16161d;
@@ -44,13 +46,20 @@
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent); }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  .wrap { max-width: var(--page); margin: 0 auto; padding: 0 20px; }
 
   /* ---- masthead ---- */
   header.masthead { padding: 56px 0 32px; border-bottom: 1px solid var(--line); }
-  .bolt { color: var(--accent); font-size: 30px; line-height: 1; }
-  h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.15; margin: 12px 0 16px; letter-spacing: -.02em; }
-  .lede { font-size: 18px; color: var(--muted); max-width: 68ch; margin: 0 0 16px; }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 19px; font-weight: 600; color: var(--muted);
+  }
+  .bolt { color: var(--accent); font-size: 26px; line-height: 1; }
+  h1 {
+    font-size: clamp(28px, 4vw, 40px); line-height: 1.15;
+    margin: 14px 0 16px; letter-spacing: -.02em; text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--muted); margin: 0 0 16px; text-wrap: pretty; }
   .lede strong { color: var(--text); font-weight: 600; }
 
   .roles { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 4px; }
@@ -72,10 +81,18 @@
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
   }
+  .toc-inner {
+    display: flex; align-items: center; gap: 14px;
+    max-width: var(--page); margin: 0 auto; padding: 10px 20px;
+  }
+  .toc-label {
+    flex: none; font-size: 12px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    border-right: 1px solid var(--line); padding-right: 14px;
+  }
   nav.toc ol {
     display: flex; gap: 6px; overflow-x: auto; list-style: none;
-    margin: 0 auto; padding: 10px 20px; max-width: 1100px;
-    scrollbar-width: thin;
+    margin: 0; padding: 0; scrollbar-width: thin;
   }
   nav.toc a {
     display: block; white-space: nowrap; text-decoration: none;
@@ -86,13 +103,13 @@
 
   /* ---- chapters & steps ---- */
   section.chapter { padding: 56px 0 8px; scroll-margin-top: 64px; }
-  .chapter-head { max-width: 72ch; margin-bottom: 8px; }
+  .chapter-head { margin-bottom: 8px; }
   .chapter-num {
     font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
     color: var(--accent); font-weight: 600;
   }
-  h2 { font-size: clamp(22px, 3vw, 28px); margin: 6px 0 10px; letter-spacing: -.01em; }
-  .chapter-head p { color: var(--muted); margin: 0; }
+  h2 { font-size: clamp(22px, 3vw, 28px); margin: 6px 0 10px; letter-spacing: -.01em; text-wrap: balance; }
+  .chapter-head p { color: var(--muted); margin: 0; text-wrap: pretty; }
 
   figure.step {
     margin: 32px 0 0; background: var(--surface);
@@ -110,9 +127,11 @@
     border-radius: 6px; padding: 2px 8px; flex: none;
   }
   .step-title { font-weight: 600; flex: 1 1 auto; min-width: 200px; }
+  /* Uniform width so the role reads as a column down the page and the titles start on one line. */
   .tag {
     font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-    padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; flex: none;
+    padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor;
+    flex: none; min-width: 132px; text-align: center;
   }
   .tag.bo { color: var(--backoffice); }
   .tag.tech { color: var(--technician); }
@@ -124,7 +143,7 @@
     border-bottom: 1px solid var(--line); background: #fff;
   }
   figcaption { padding: 18px 20px 22px; }
-  figcaption p { margin: 0; max-width: 78ch; }
+  figcaption p { margin: 0; text-wrap: pretty; }
   figcaption p + p { margin-top: 10px; }
   figcaption .note { color: var(--muted); font-size: 14px; }
 
@@ -133,7 +152,7 @@
     margin-top: 64px; padding: 32px 0 64px;
     border-top: 1px solid var(--line); color: var(--muted); font-size: 14px;
   }
-  footer p { max-width: 78ch; }
+  footer p { text-wrap: pretty; }
   footer h3 { color: var(--text); font-size: 15px; margin: 24px 0 6px; }
 
   @media (max-width: 640px) {
@@ -146,17 +165,19 @@
 
 <header class="masthead">
   <div class="wrap">
-    <div class="bolt">⚡</div>
-    <h1>Field Service Management — a walkthrough of one real run</h1>
+    <div class="brand"><span class="bolt">⚡</span> Field Service Management</div>
+    <h1>A walkthrough of one real run</h1>
     <p class="lede">
-      Twenty-five screenshots from a single uninterrupted session, in the order they were taken.
-      It starts with an empty database and ends with a booked appointment sitting in two Google
-      Calendars. <strong>Nothing here is a mockup</strong> — every screen is the running stack, which
-      is why the browser chrome and the localhost ports are left in view.
+      Field Service Management books maintenance visits for agencies — elevators, appliances,
+      anything with a technician and a van. What follows is one uninterrupted session with it
+      running: an empty database at the start, a booked appointment sitting in two Google Calendars
+      at the end, and every screen in between in the order it happened.
     </p>
     <p class="lede">
-      Three roles run as three separate apps, each on its own port, driven from three browser
-      profiles signed in as three different Google accounts.
+      <strong>Nothing here is a mockup.</strong> Every screen is the running stack, which is why the
+      browser chrome and the localhost ports are left in view. Three roles — back office, technician
+      and customer — run as three separate apps on three ports, and three different people sign in
+      over the course of the run.
     </p>
     <div class="roles">
       <span class="role bo"><b>Back office</b> <code>localhost:8003</code></span>
@@ -166,15 +187,18 @@
   </div>
 </header>
 
-<nav class="toc">
-  <ol>
-    <li><a href="#ch1"><span class="n">1</span>Back office &amp; knowledge base</a></li>
-    <li><a href="#ch2"><span class="n">2</span>Technician access</a></li>
-    <li><a href="#ch3"><span class="n">3</span>Calendar connection</a></li>
-    <li><a href="#ch4"><span class="n">4</span>Customer triage</a></li>
-    <li><a href="#ch5"><span class="n">5</span>Booking</a></li>
-    <li><a href="#ch6"><span class="n">6</span>Where it lands</a></li>
-  </ol>
+<nav class="toc" aria-label="Jump to a stage of the flow">
+  <div class="toc-inner">
+    <span class="toc-label">Jump to</span>
+    <ol>
+      <li><a href="#ch1"><span class="n">1</span>Back office &amp; knowledge base</a></li>
+      <li><a href="#ch2"><span class="n">2</span>Technician access</a></li>
+      <li><a href="#ch3"><span class="n">3</span>Calendar connection</a></li>
+      <li><a href="#ch4"><span class="n">4</span>Customer triage</a></li>
+      <li><a href="#ch5"><span class="n">5</span>Booking</a></li>
+      <li><a href="#ch6"><span class="n">6</span>Where it lands</a></li>
+    </ol>
+  </div>
 </nav>
 
 <main class="wrap">
@@ -191,71 +215,65 @@
   <figure class="step" id="s1">
     <div class="step-bar">
       <span class="step-n">01</span>
-      <span class="step-title">The only way in is Google</span>
       <span class="tag bo">Back office</span>
+      <span class="step-title">Google is the only way in, so no password is ever stored</span>
     </div>
     <img src="images/01-backoffice-signin.png" alt="Back office landing page with a single Sign in with Google button" loading="lazy" width="1856" height="717">
     <figcaption>
-      <p>Every role app serves the same landing page. Google is the only sign-in path, so the
-         system never stores, resets, or leaks a password, and every scheduling action downstream
-         happens against a signed-in session rather than an anonymous form post.</p>
+      <p>Every role app serves this same landing page, and every scheduling action downstream runs
+         against a signed-in session.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s2">
     <div class="step-bar">
       <span class="step-n">02</span>
-      <span class="step-title">Handoff to Google's account chooser</span>
       <span class="tag google">Google</span>
+      <span class="step-title">Credentials are entered on Google's domain, never on ours</span>
     </div>
     <img src="images/02-backoffice-account-chooser.png" alt="Google account chooser offering accounts to continue to Field Service Management" loading="lazy" width="1853" height="720">
     <figcaption>
-      <p>The button leaves the app entirely. Credentials are entered on Google's domain and the app
-         gets back an identity assertion, never a secret it has to protect.</p>
-      <p class="note">Accounts unrelated to this demo, and the OAuth client id in the address bar,
-         are pixelated throughout.</p>
+      <p>The app gets back an identity assertion, not a secret it has to protect.</p>
+      <p class="note">Accounts unrelated to this walkthrough, and the OAuth client id in the address
+         bar, are pixelated throughout.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s3">
     <div class="step-bar">
       <span class="step-n">03</span>
-      <span class="step-title">Identity now, calendar later</span>
       <span class="tag google">Google</span>
+      <span class="step-title">The first consent asks for identity only; calendar access comes later</span>
     </div>
     <img src="images/03-backoffice-consent.png" alt="Google consent screen requesting personal info, email address, and account association" loading="lazy" width="1856" height="717">
     <figcaption>
-      <p>The first consent asks for identity only — name, email, profile. Calendar access is a
-         separate grant, requested later and only from technicians (step 12). The back office and
-         the customer never hand over their calendars.</p>
+      <p>Name, email, profile. Calendar is a separate grant, requested in step 12 and only from
+         technicians — the back office and the customer never hand over theirs.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s4">
     <div class="step-bar">
       <span class="step-n">04</span>
-      <span class="step-title">A completely empty system</span>
       <span class="tag bo">Back office</span>
+      <span class="step-title">The back office starts empty: no appointments, technicians or documents</span>
     </div>
     <img src="images/04-backoffice-empty.png" alt="Back office dashboard with no appointments, no pending requests, and no knowledge base documents" loading="lazy" width="1850" height="726">
     <figcaption>
-      <p>The back office dashboard against a clean database: no appointments, no technicians
-         waiting, no documents. Worth remembering — step 25 is this same screen at the end of the
-         run. Everything in between is the system filling itself in.</p>
+      <p>Step 25 is this same screen at the end of the run.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s5">
     <div class="step-bar">
       <span class="step-n">05</span>
-      <span class="step-title">Ingesting a 414-page equipment manual</span>
       <span class="tag bo">Back office</span>
+      <span class="step-title">A 414-page equipment manual goes into the knowledge base</span>
     </div>
     <img src="images/05-kb-extracting.png" alt="Knowledge base upload showing a progress bar reading Extracting 189 of 414 pages" loading="lazy" width="1855" height="708">
     <figcaption>
-      <p>An elevator controller manual is uploaded to the knowledge base. Extraction and indexing
-         run as a tracked job reporting live progress rather than holding a request open, because a
-         few hundred pages is not something to do inside an HTTP timeout.</p>
+      <p>Extraction and indexing run as a tracked job reporting live progress, because a few hundred
+         pages is not something to do inside an HTTP timeout.</p>
     </figcaption>
   </figure>
 </section>
@@ -271,74 +289,68 @@
   <figure class="step" id="s6">
     <div class="step-bar">
       <span class="step-n">06</span>
-      <span class="step-title">The technician app, on its own port</span>
       <span class="tag tech">Technician</span>
+      <span class="step-title">The technician app answers on its own port, 8001</span>
     </div>
     <img src="images/06-technician-signin.png" alt="Technician app landing page on localhost:8001 with the Google login link visible in the status bar" loading="lazy" width="1920" height="982">
     <figcaption>
-      <p>A second browser profile opens port 8001. Each role is deployed as its own app rather than
-         one app branching on a role flag, so a customer session and a back-office session never
-         share a process.</p>
+      <p>Each role is deployed as its own app rather than one app branching on a role flag, so a
+         customer session and a back-office session never share a process.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s7">
     <div class="step-bar">
       <span class="step-n">07</span>
-      <span class="step-title">A different person, a different account</span>
       <span class="tag google">Google</span>
+      <span class="step-title">Signing in as the technician</span>
     </div>
     <img src="images/07-technician-account-chooser.png" alt="Google account chooser with the technician account highlighted" loading="lazy" width="1918" height="976">
     <figcaption>
-      <p>The technician signs in as themselves. From here on the run involves three genuinely
-         distinct identities, not one account wearing three hats.</p>
+      <p>The highlighted account is the technician for this walkthrough.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s8">
     <div class="step-bar">
       <span class="step-n">08</span>
-      <span class="step-title">Held at the door</span>
       <span class="tag tech">Technician</span>
+      <span class="step-title">A valid Google account is not access — the back office must grant it</span>
     </div>
     <img src="images/08-awaiting-approval.png" alt="Technician screen reading Awaiting approval, request pending review by the back office" loading="lazy" width="1920" height="977">
     <figcaption>
-      <p>A valid Google account is not an authorisation. First sign-in files an access request and
-         parks the technician here — anyone who finds the URL gets exactly this screen and nothing
-         else.</p>
-      <p>The wait is live: the page says it updates itself when a decision is made, so there is no
-         refreshing and no email round-trip.</p>
+      <p>First sign-in files a request and parks the technician here; anyone who finds the URL gets
+         this screen and nothing else. The wait is live, so there is no refreshing and no email
+         round-trip.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s9">
     <div class="step-bar">
       <span class="step-n">09</span>
-      <span class="step-title">Approve or reject — and the manual has finished indexing</span>
       <span class="tag bo">Back office</span>
+      <span class="step-title">The back office approves or rejects the request, against a named human</span>
     </div>
     <img src="images/09-backoffice-approve.png" alt="Back office showing a pending technician request with Approve and Reject buttons, and knowledge base timings" loading="lazy" width="1856" height="715">
     <figcaption>
-      <p>Back on port 8003 the request has appeared with an Approve / Reject decision attached to a
-         named human.</p>
-      <p>The knowledge base upload from step 5 has also landed, with its cost itemised:
-         <strong>38.3 s total — 1.9 s network, 12.0 s extract, 24.3 s index</strong> for 414 pages.
-         Publishing the breakdown makes the slow stage obvious instead of leaving "it took a while".</p>
+      <p class="note">Incidentally, unrelated to the approval but visible in the same screenshot:
+         the knowledge base upload from step 5 has finished, with its cost itemised — <strong>38.3 s
+         total, of which 1.9 s network, 12.0 s extract, 24.3 s index</strong> for 414 pages.
+         Publishing the breakdown makes the slow stage obvious instead of leaving "it took a
+         while".</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s10">
     <div class="step-bar">
       <span class="step-n">10</span>
-      <span class="step-title">Details the job actually needs</span>
       <span class="tag tech">Technician</span>
+      <span class="step-title">Technician profile: the phone reaches customers, the address never does</span>
     </div>
     <img src="images/10-technician-profile.png" alt="Technician profile prompt asking for preferred name, base address, and phone" loading="lazy" width="1917" height="976">
     <figcaption>
-      <p>Approval flips the technician's screen straight to a short profile prompt. Each field is
-         justified in the copy: the phone is so a customer can be told you are running late, and the
-         base address is for dispatch and is <strong>never shown to customers</strong>. The
-         visibility rule is stated where the data is collected, not buried in a privacy policy.</p>
+      <p>Approval flips the technician's screen straight to this prompt, and each field is justified
+         where it is collected rather than in a privacy policy.</p>
     </figcaption>
   </figure>
 </section>
@@ -354,40 +366,38 @@
   <figure class="step" id="s11">
     <div class="step-bar">
       <span class="step-n">11</span>
-      <span class="step-title">Connect Google Calendar</span>
       <span class="tag tech">Technician</span>
+      <span class="step-title">Scheduling runs off the technician's real Google Calendar</span>
     </div>
     <img src="images/11-connect-calendar.png" alt="Technician dashboard with a Google Calendar Integration card and Connect Google Calendar button" loading="lazy" width="1920" height="977">
     <figcaption>
-      <p>The technician dashboard leads with the calendar connection, because without it the
-         scheduler has no idea what else is already in the day. Booking against the technician's own
-         calendar means a dentist appointment blocks a service call for free.</p>
+      <p>Booking against it means anything already in their day blocks a service call, with no
+         internal availability table to keep in sync.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s12">
     <div class="step-bar">
       <span class="step-n">12</span>
-      <span class="step-title">A second, separate consent</span>
       <span class="tag google">Google</span>
+      <span class="step-title">Calendar access is a second consent, asked only of the technician</span>
     </div>
     <img src="images/12-calendar-consent-chooser.png" alt="Google account chooser shown again for the calendar authorisation" loading="lazy" width="1920" height="981">
     <figcaption>
-      <p>Calendar access is asked for here, at the moment it is needed, and only of the role that
-         needs it — the pay-off for keeping step 3 down to identity scopes.</p>
+      <p>Requested here, at the moment it is needed — the pay-off for keeping step 3 down to
+         identity scopes.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s13">
     <div class="step-bar">
       <span class="step-n">13</span>
-      <span class="step-title">Connected — with a way out</span>
       <span class="tag tech">Technician</span>
+      <span class="step-title">Connected, and revocable from the same screen</span>
     </div>
     <img src="images/13-calendar-connected.png" alt="Technician dashboard showing Google Calendar connected with a Disconnect link" loading="lazy" width="1917" height="983">
     <figcaption>
-      <p>Confirmed state, plus a visible <em>Disconnect</em>. Access that can be granted in the UI
-         can be revoked in the UI. The appointment list is still empty — nothing has been booked yet.</p>
+      <p>The appointment list is still empty; nothing has been booked yet.</p>
     </figcaption>
   </figure>
 </section>
@@ -403,91 +413,84 @@
   <figure class="step" id="s14">
     <div class="step-bar">
       <span class="step-n">14</span>
-      <span class="step-title">The customer app</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">The customer app answers on port 8002</span>
     </div>
     <img src="images/14-customer-signin.png" alt="Customer app landing page on localhost:8002" loading="lazy" width="1918" height="980">
     <figcaption>
-      <p>Third browser profile, port 8002, same front door.</p>
+      <p>The same front door the other two roles came through, with no separate customer portal to
+         maintain.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s15">
     <div class="step-bar">
       <span class="step-n">15</span>
-      <span class="step-title">Signed in as the customer</span>
       <span class="tag google">Google</span>
+      <span class="step-title">Signing in as the customer</span>
     </div>
     <img src="images/15-customer-account-chooser.png" alt="Google account chooser with the customer account selected" loading="lazy" width="1917" height="975">
     <figcaption>
-      <p>A third distinct Google identity. The appointment produced later in this run will be tied
-         to it, which is what makes the calendar invite in step 23 land in the right inbox.</p>
+      <p>The appointment booked later is tied to this account, which is what puts the calendar
+         invite in step 23 in the right inbox.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s16">
     <div class="step-bar">
       <span class="step-n">16</span>
-      <span class="step-title">What the assistant is, before it says anything</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">The assistant declares its limits before the customer can use it</span>
     </div>
     <img src="images/16-ai-disclosure.png" alt="Before you start screen explaining knowledge base first, model second, that it can be wrong, and safety limits" loading="lazy" width="1918" height="973">
     <figcaption>
-      <p>A required acknowledgement stands between the customer and the chat, and it is unusually
-         blunt about its own limits: <strong>knowledge base first</strong> with the source cited,
-         <strong>model second</strong> where the documentation is silent — with the warning that an
-         answer citing no document is that second kind — and <strong>it can be wrong</strong>.</p>
+      <p><strong>Knowledge base first</strong> with the source cited, <strong>model second</strong>
+         where the documentation is silent — an answer citing no document is that second kind — and
+         <strong>it can be wrong</strong>.</p>
       <p>Then the hard boundaries: only checks that are safe to do yourself, never a sealed panel,
-         never gas, mains wiring, refrigerant, or working at height. Emergencies — gas smell, smoke,
-         sparks, water near electrics — leave the building and call an emergency number, not a chat
-         box.</p>
+         gas, mains wiring, refrigerant or work at height. Emergencies leave the building and call
+         an emergency number, not a chat box.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s17">
     <div class="step-bar">
       <span class="step-n">17</span>
-      <span class="step-title">A photo, a hypothesis, and a citation</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">A photo names the equipment, and the answer cites the manual from step 5</span>
     </div>
     <img src="images/17-triage-first-answer.png" alt="Customer chat: the lift is slow on the way up, with a photo; assistant replies and cites a knowledge base page" loading="lazy" width="1920" height="977">
     <figcaption>
-      <p>The customer says <em>"The lift is slow on the way up"</em> and attaches a photo. The
-         assistant reads the photo well enough to name the equipment class — a vertical platform
-         lift — narrows the cause to the drive or its power supply, and asks a single diagnostic
-         question rather than a form's worth of them.</p>
-      <p>The line underneath is the important one: <strong>From the knowledge base:
-         mce-icontrol-ac-elevators-r3.4.pdf, page 84</strong> — the document uploaded in step 5.
-         The answer is traceable to material the agency chose to stand behind.</p>
+      <p>The assistant identifies a vertical platform lift, narrows the cause to the drive or its
+         power supply, and asks a single diagnostic question.</p>
+      <p><strong>From the knowledge base: mce-icontrol-ac-elevators-r3.4.pdf, page 84</strong> — the
+         answer is traceable to material the agency chose to stand behind.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s18">
     <div class="step-bar">
       <span class="step-n">18</span>
-      <span class="step-title">One question at a time</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">Triage narrows in single questions a non-expert can answer</span>
     </div>
     <img src="images/18-triage-followup.png" alt="Continued triage conversation narrowing toward a weak battery or charger" loading="lazy" width="1912" height="981">
     <figcaption>
-      <p>Triage advances in Yes / No steps a non-expert can actually answer. Each answer visibly
-         changes the hypothesis — here, that only the upward direction draws real power, which makes
-         the battery or charger the first thing to rule out.</p>
+      <p>Each answer visibly changes the hypothesis: only the upward direction draws real power,
+         which makes the battery or charger the first thing to rule out.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s19">
     <div class="step-bar">
       <span class="step-n">19</span>
-      <span class="step-title">Reaching the limit of self-service</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">The assistant stops at the limit of safe self-service and offers a visit</span>
     </div>
     <img src="images/19-triage-diagnosis.png" alt="Assistant concludes the batteries need replacing and offers to book a technician visit" loading="lazy" width="1915" height="971">
     <figcaption>
-      <p>The unloaded-versus-loaded test and an overnight charge rule out the easy explanations, and
-         the assistant concludes the batteries are no longer holding charge. It then stops:
-         <em>"which isn't something to do yourself on a lift drive unit"</em>, and offers to book a
-         visit. Escalation is the designed ending, not a failure state.</p>
+      <p>An unloaded-versus-loaded test and an overnight charge rule out the easy explanations.
+         Escalation is the designed ending, not a failure state.</p>
     </figcaption>
   </figure>
 </section>
@@ -503,46 +506,39 @@
   <figure class="step" id="s20">
     <div class="step-bar">
       <span class="step-n">20</span>
-      <span class="step-title">A structured service call, and real slots</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">The chat becomes a service call, including the steps already ruled out</span>
     </div>
     <img src="images/20-booking-slots.png" alt="Next available slots with a generated service call summary and five bookable time slots" loading="lazy" width="1920" height="976">
     <figcaption>
-      <p>The chat is distilled into a service call with four parts: the <strong>problem</strong>,
-         the <strong>action items</strong> (load test the batteries, bring replacements, check
-         charger output), a <strong>triage summary</strong>, and — the part that pays for the whole
-         conversation — the <strong>steps ruled out</strong>. The technician arrives knowing the
-         lift is plugged in, descends normally, and runs fine unloaded, and does not repeat any of it.</p>
-      <p>Below it, five bookable hours on the named technician's calendar, straight from the
-         connection made in step 13.</p>
+      <p>The technician arrives knowing the lift is plugged in, descends normally and runs fine
+         unloaded, and repeats none of it.</p>
+      <p>The five bookable hours come straight from the calendar connected in step 13.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s21">
     <div class="step-bar">
       <span class="step-n">21</span>
-      <span class="step-title">Booked</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">Booked, and leading the customer's dashboard</span>
     </div>
     <img src="images/21-customer-dashboard.png" alt="Customer dashboard listing the booked appointment" loading="lazy" width="1918" height="980">
     <figcaption>
-      <p>The customer's dashboard, which was empty a few minutes ago, now leads with the
-         appointment: date, time, the fault in the customer's own words, the technician, and the
-         address.</p>
+      <p>Date, time, the fault in the customer's own words, the technician and the address.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s22">
     <div class="step-bar">
       <span class="step-n">22</span>
-      <span class="step-title">The whole triage record travels with it</span>
       <span class="tag cust">Customer</span>
+      <span class="step-title">The whole triage record and the photo travel with the appointment</span>
     </div>
     <img src="images/22-appointment-details.png" alt="Expanded appointment showing status, parties, problem, action items, triage summary, ruled-out steps, the photo, and reschedule or cancel actions" loading="lazy" width="1916" height="977">
     <figcaption>
-      <p>Expanded: status <strong>SCHEDULED</strong>, both parties, the address, and the full triage
-         record including the photo the customer sent. Reschedule, add details, and cancel are all
-         self-service — the booking does not become a phone call the moment anything changes.</p>
+      <p>Reschedule, add details and cancel are self-service, so the booking does not become a phone
+         call the moment anything changes.</p>
     </figcaption>
   </figure>
 </section>
@@ -558,46 +554,38 @@
   <figure class="step" id="s23">
     <div class="step-bar">
       <span class="step-n">23</span>
-      <span class="step-title">On the customer's Google Calendar</span>
       <span class="tag google">Google Calendar</span>
+      <span class="step-title">A real calendar invite reaches the customer, carrying the technician's phone</span>
     </div>
     <img src="images/23-calendar-customer.png" alt="Google Calendar in the customer's account showing the Field Service Management event with technician details and problem summary" loading="lazy" width="1918" height="1027">
     <figcaption>
-      <p>Not a notification — a real calendar invite in the customer's own Google Calendar, carrying
-         the technician's name and phone number, the address, and the problem summary. It will
-         remind them without the app being involved at all.</p>
+      <p>It will remind them without the app being involved at all.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s24">
     <div class="step-bar">
       <span class="step-n">24</span>
-      <span class="step-title">And on the technician's</span>
       <span class="tag google">Google Calendar</span>
+      <span class="step-title">And the technician's, in a dedicated calendar carrying the on-site action items</span>
     </div>
     <img src="images/24-calendar-technician.png" alt="Google Calendar in the technician's account showing the same event in a dedicated Field Service Management calendar" loading="lazy" width="1917" height="976">
     <figcaption>
-      <p>The same event on the technician's side, filed in a dedicated <em>Field Service
-         Management</em> calendar that can be toggled independently of their personal one, with the
-         customer attached as a guest and the on-site action items in the body.</p>
-      <p>This is also what closes the loop on chapter 3: the calendar the scheduler read
-         availability from is the calendar the booking is written back to.</p>
+      <p>The calendar the scheduler read availability from is the calendar the booking is written
+         back to.</p>
     </figcaption>
   </figure>
 
   <figure class="step" id="s25">
     <div class="step-bar">
       <span class="step-n">25</span>
-      <span class="step-title">Back where it started</span>
       <span class="tag bo">Back office</span>
+      <span class="step-title">The loop closes: appointment listed, queue empty, manual still indexed</span>
     </div>
     <img src="images/25-backoffice-appointment.png" alt="Back office dashboard listing the upcoming appointment, an empty technician request queue, and the indexed knowledge base document" loading="lazy" width="1857" height="727">
     <figcaption>
-      <p>The back office screen from step 4, one workflow later: the appointment is on the board,
-         the technician queue is empty because that request was handled, and the manual is still
-         indexed and serving citations.</p>
-      <p>Twenty minutes of wall-clock time, three people who never spoke to each other, and no
-         dispatcher in the middle.</p>
+      <p>Compare with step 4 — the same screen, an entire workflow later. Three people who never
+         spoke to each other, and no dispatcher in the middle.</p>
     </figcaption>
   </figure>
 </section>
@@ -614,10 +602,10 @@
      shown are demo data.</p>
 
   <h3>Going deeper</h3>
-  <p>The <a href="../../README.md">README</a> covers running the stack yourself,
-     <a href="../../docs/architecture.md">docs/architecture.md</a> covers how it is put together,
-     and <a href="../../docs/features.md">docs/features.md</a> covers what is shipped and what is
-     still on the roadmap.</p>
+  <p>The <a href="../../README.md">README</a> covers running the stack yourself, <a
+     href="../../docs/architecture.md">docs/architecture.md</a> covers how it is put together, and
+     <a href="../../docs/features.md">docs/features.md</a> covers what is shipped and what is still
+     on the roadmap.</p>
 </footer>
 
 </body>
