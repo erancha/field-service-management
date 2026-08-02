@@ -142,10 +142,32 @@
     display: block; width: 100%; height: auto;
     border-bottom: 1px solid var(--line); background: #fff;
   }
-  figcaption { padding: 18px 20px 22px; }
-  figcaption p { margin: 0; text-wrap: pretty; }
-  figcaption p + p { margin-top: 10px; }
+  /* Captions collapse by default so the headers alone can be scanned at speed. */
+  figcaption summary {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    padding: 12px 20px; font-size: 13px; font-weight: 600; color: var(--accent);
+    list-style: none;
+  }
+  figcaption summary::-webkit-details-marker { display: none; }
+  figcaption summary::before {
+    content: ""; flex: none;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .15s ease;
+  }
+  figcaption details[open] summary::before { transform: rotate(90deg); }
+  figcaption summary:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  figcaption .less { display: none; }
+  figcaption details[open] .more { display: none; }
+  figcaption details[open] .less { display: inline; }
+
+  figcaption p { margin: 0 20px 12px; text-wrap: pretty; }
+  figcaption details > p:last-child { margin-bottom: 20px; }
   figcaption .note { color: var(--muted); font-size: 14px; }
+  figcaption code {
+    font-size: .9em; padding: 1px 5px; border-radius: 4px;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
 
   /* ---- footer ---- */
   footer {
@@ -220,8 +242,11 @@
     </div>
     <img src="images/01-backoffice-signin.png" alt="Back office landing page with a single Sign in with Google button" loading="lazy" width="1856" height="717">
     <figcaption>
-      <p>Every role app serves this same landing page, and every scheduling action downstream runs
-         against a signed-in session.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Every role app serves this same landing page, and every scheduling action downstream runs
+           against a signed-in session.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -233,9 +258,12 @@
     </div>
     <img src="images/02-backoffice-account-chooser.png" alt="Google account chooser offering accounts to continue to Field Service Management" loading="lazy" width="1853" height="720">
     <figcaption>
-      <p>The app gets back an identity assertion, not a secret it has to protect.</p>
-      <p class="note">Accounts unrelated to this walkthrough, and the OAuth client id in the address
-         bar, are pixelated throughout.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The app gets back an identity assertion, not a secret it has to protect.</p>
+        <p class="note">Accounts unrelated to this walkthrough, and the OAuth client id in the
+           address bar, are pixelated throughout.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -247,8 +275,11 @@
     </div>
     <img src="images/03-backoffice-consent.png" alt="Google consent screen requesting personal info, email address, and account association" loading="lazy" width="1856" height="717">
     <figcaption>
-      <p>Name, email, profile. Calendar is a separate grant, requested in step 12 and only from
-         technicians — the back office and the customer never hand over theirs.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Name, email, profile. Calendar is a separate grant, requested in step 12 and only from
+           technicians — the back office and the customer never hand over theirs.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -260,7 +291,10 @@
     </div>
     <img src="images/04-backoffice-empty.png" alt="Back office dashboard with no appointments, no pending requests, and no knowledge base documents" loading="lazy" width="1850" height="726">
     <figcaption>
-      <p>Step 25 is this same screen at the end of the run.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Step 25 is this same screen at the end of the run.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -272,8 +306,11 @@
     </div>
     <img src="images/05-kb-extracting.png" alt="Knowledge base upload showing a progress bar reading Extracting 189 of 414 pages" loading="lazy" width="1855" height="708">
     <figcaption>
-      <p>Extraction and indexing run as a tracked job reporting live progress, because a few hundred
-         pages is not something to do inside an HTTP timeout.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Extraction and indexing run as a tracked job reporting live progress, because a few
+           hundred pages is not something to do inside an HTTP timeout.</p>
+      </details>
     </figcaption>
   </figure>
 </section>
@@ -294,8 +331,11 @@
     </div>
     <img src="images/06-technician-signin.png" alt="Technician app landing page on localhost:8001 with the Google login link visible in the status bar" loading="lazy" width="1920" height="982">
     <figcaption>
-      <p>Each role is deployed as its own app rather than one app branching on a role flag, so a
-         customer session and a back-office session never share a process.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Each role is deployed as its own app rather than one app branching on a role flag, so a
+           customer session and a back-office session never share a process.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -307,7 +347,10 @@
     </div>
     <img src="images/07-technician-account-chooser.png" alt="Google account chooser with the technician account highlighted" loading="lazy" width="1918" height="976">
     <figcaption>
-      <p>The highlighted account is the technician for this walkthrough.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The highlighted account is the technician for this walkthrough.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -319,9 +362,12 @@
     </div>
     <img src="images/08-awaiting-approval.png" alt="Technician screen reading Awaiting approval, request pending review by the back office" loading="lazy" width="1920" height="977">
     <figcaption>
-      <p>First sign-in files a request and parks the technician here; anyone who finds the URL gets
-         this screen and nothing else. The wait is live, so there is no refreshing and no email
-         round-trip.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>First sign-in files a request and parks the technician here; anyone who finds the URL
+           gets this screen and nothing else. The wait is live, so there is no refreshing and no
+           email round-trip.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -333,11 +379,14 @@
     </div>
     <img src="images/09-backoffice-approve.png" alt="Back office showing a pending technician request with Approve and Reject buttons, and knowledge base timings" loading="lazy" width="1856" height="715">
     <figcaption>
-      <p class="note">Incidentally, unrelated to the approval but visible in the same screenshot:
-         the knowledge base upload from step 5 has finished, with its cost itemised — <strong>38.3 s
-         total, of which 1.9 s network, 12.0 s extract, 24.3 s index</strong> for 414 pages.
-         Publishing the breakdown makes the slow stage obvious instead of leaving "it took a
-         while".</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p class="note">Incidentally, unrelated to the approval but visible in the same screenshot:
+           the knowledge base upload from step 5 has finished, with its cost itemised — <strong>38.3
+           s total, of which 1.9 s network, 12.0 s extract, 24.3 s index</strong> for 414 pages.
+           Publishing the breakdown makes the slow stage obvious instead of leaving "it took a
+           while".</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -349,8 +398,11 @@
     </div>
     <img src="images/10-technician-profile.png" alt="Technician profile prompt asking for preferred name, base address, and phone" loading="lazy" width="1917" height="976">
     <figcaption>
-      <p>Approval flips the technician's screen straight to this prompt, and each field is justified
-         where it is collected rather than in a privacy policy.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Approval flips the technician's screen straight to this prompt, and each field is
+           justified where it is collected rather than in a privacy policy.</p>
+      </details>
     </figcaption>
   </figure>
 </section>
@@ -359,20 +411,26 @@
 <section class="chapter" id="ch3">
   <div class="chapter-head">
     <div class="chapter-num">Chapter 3</div>
-    <h2>Scheduling runs against a real calendar</h2>
-    <p>Availability is not a table the app maintains and hopes is accurate.</p>
+    <h2>The app gets its own calendar, and reads the rest as busy or free</h2>
+    <p>Availability is not a table the app maintains and hopes is accurate — but it never opens a
+       technician's personal calendar either.</p>
   </div>
 
   <figure class="step" id="s11">
     <div class="step-bar">
       <span class="step-n">11</span>
       <span class="tag tech">Technician</span>
-      <span class="step-title">Scheduling runs off the technician's real Google Calendar</span>
+      <span class="step-title">Connecting provisions a dedicated calendar for this technician</span>
     </div>
     <img src="images/11-connect-calendar.png" alt="Technician dashboard with a Google Calendar Integration card and Connect Google Calendar button" loading="lazy" width="1920" height="977">
     <figcaption>
-      <p>Booking against it means anything already in their day blocks a service call, with no
-         internal availability table to keep in sync.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>On first connect the app creates a "Field Service Management" calendar in the
+           technician's account and writes bookings only there. Conflicts are checked separately,
+           through Google's free/busy lookup, which returns opaque busy intervals — so a private
+           appointment blocks a slot without the app ever seeing what it is.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -380,12 +438,17 @@
     <div class="step-bar">
       <span class="step-n">12</span>
       <span class="tag google">Google</span>
-      <span class="step-title">Calendar access is a second consent, asked only of the technician</span>
+      <span class="step-title">Two narrow calendar scopes, asked only of the technician</span>
     </div>
     <img src="images/12-calendar-consent-chooser.png" alt="Google account chooser shown again for the calendar authorisation" loading="lazy" width="1920" height="981">
     <figcaption>
-      <p>Requested here, at the moment it is needed — the pay-off for keeping step 3 down to
-         identity scopes.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The grant is deliberately not the broad calendar scope. It is
+           <code>calendar.app.created</code>, which confines the app to calendars it created itself,
+           plus <code>calendar.freebusy</code>, which returns busy intervals and nothing else. Even
+           fully authorised, the app cannot read a technician's existing events.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -397,7 +460,10 @@
     </div>
     <img src="images/13-calendar-connected.png" alt="Technician dashboard showing Google Calendar connected with a Disconnect link" loading="lazy" width="1917" height="983">
     <figcaption>
-      <p>The appointment list is still empty; nothing has been booked yet.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The appointment list is still empty; nothing has been booked yet.</p>
+      </details>
     </figcaption>
   </figure>
 </section>
@@ -418,8 +484,11 @@
     </div>
     <img src="images/14-customer-signin.png" alt="Customer app landing page on localhost:8002" loading="lazy" width="1918" height="980">
     <figcaption>
-      <p>The same front door the other two roles came through, with no separate customer portal to
-         maintain.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The same front door the other two roles came through, with no separate customer portal to
+           maintain.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -431,8 +500,11 @@
     </div>
     <img src="images/15-customer-account-chooser.png" alt="Google account chooser with the customer account selected" loading="lazy" width="1917" height="975">
     <figcaption>
-      <p>The appointment booked later is tied to this account, which is what puts the calendar
-         invite in step 23 in the right inbox.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The appointment booked later is tied to this account, which is what puts the calendar
+           invite in step 23 in the right inbox.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -444,12 +516,15 @@
     </div>
     <img src="images/16-ai-disclosure.png" alt="Before you start screen explaining knowledge base first, model second, that it can be wrong, and safety limits" loading="lazy" width="1918" height="973">
     <figcaption>
-      <p><strong>Knowledge base first</strong> with the source cited, <strong>model second</strong>
-         where the documentation is silent — an answer citing no document is that second kind — and
-         <strong>it can be wrong</strong>.</p>
-      <p>Then the hard boundaries: only checks that are safe to do yourself, never a sealed panel,
-         gas, mains wiring, refrigerant or work at height. Emergencies leave the building and call
-         an emergency number, not a chat box.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p><strong>Knowledge base first</strong> with the source cited, <strong>model
+           second</strong> where the documentation is silent — an answer citing no document is that
+           second kind — and <strong>it can be wrong</strong>.</p>
+        <p>Then the hard boundaries: only checks that are safe to do yourself, never a sealed panel,
+           gas, mains wiring, refrigerant or work at height. Emergencies leave the building and call
+           an emergency number, not a chat box.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -461,10 +536,13 @@
     </div>
     <img src="images/17-triage-first-answer.png" alt="Customer chat: the lift is slow on the way up, with a photo; assistant replies and cites a knowledge base page" loading="lazy" width="1920" height="977">
     <figcaption>
-      <p>The assistant identifies a vertical platform lift, narrows the cause to the drive or its
-         power supply, and asks a single diagnostic question.</p>
-      <p><strong>From the knowledge base: mce-icontrol-ac-elevators-r3.4.pdf, page 84</strong> — the
-         answer is traceable to material the agency chose to stand behind.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The assistant identifies a vertical platform lift, narrows the cause to the drive or its
+           power supply, and asks a single diagnostic question.</p>
+        <p><strong>From the knowledge base: mce-icontrol-ac-elevators-r3.4.pdf, page 84</strong> —
+           the answer is traceable to material the agency chose to stand behind.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -476,8 +554,11 @@
     </div>
     <img src="images/18-triage-followup.png" alt="Continued triage conversation narrowing toward a weak battery or charger" loading="lazy" width="1912" height="981">
     <figcaption>
-      <p>Each answer visibly changes the hypothesis: only the upward direction draws real power,
-         which makes the battery or charger the first thing to rule out.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Each answer visibly changes the hypothesis: only the upward direction draws real power,
+           which makes the battery or charger the first thing to rule out.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -489,8 +570,11 @@
     </div>
     <img src="images/19-triage-diagnosis.png" alt="Assistant concludes the batteries need replacing and offers to book a technician visit" loading="lazy" width="1915" height="971">
     <figcaption>
-      <p>An unloaded-versus-loaded test and an overnight charge rule out the easy explanations.
-         Escalation is the designed ending, not a failure state.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>An unloaded-versus-loaded test and an overnight charge rule out the easy explanations.
+           Escalation is the designed ending, not a failure state.</p>
+      </details>
     </figcaption>
   </figure>
 </section>
@@ -511,9 +595,13 @@
     </div>
     <img src="images/20-booking-slots.png" alt="Next available slots with a generated service call summary and five bookable time slots" loading="lazy" width="1920" height="976">
     <figcaption>
-      <p>The technician arrives knowing the lift is plugged in, descends normally and runs fine
-         unloaded, and repeats none of it.</p>
-      <p>The five bookable hours come straight from the calendar connected in step 13.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The technician arrives knowing the lift is plugged in, descends normally and runs fine
+           unloaded, and repeats none of it.</p>
+        <p>The five bookable hours are what is left once the technician's busy intervals, read in
+           step 12's free/busy scope, are subtracted.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -525,7 +613,10 @@
     </div>
     <img src="images/21-customer-dashboard.png" alt="Customer dashboard listing the booked appointment" loading="lazy" width="1918" height="980">
     <figcaption>
-      <p>Date, time, the fault in the customer's own words, the technician and the address.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Date, time, the fault in the customer's own words, the technician and the address.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -537,8 +628,11 @@
     </div>
     <img src="images/22-appointment-details.png" alt="Expanded appointment showing status, parties, problem, action items, triage summary, ruled-out steps, the photo, and reschedule or cancel actions" loading="lazy" width="1916" height="977">
     <figcaption>
-      <p>Reschedule, add details and cancel are self-service, so the booking does not become a phone
-         call the moment anything changes.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Reschedule, add details and cancel are self-service, so the booking does not become a
+           phone call the moment anything changes.</p>
+      </details>
     </figcaption>
   </figure>
 </section>
@@ -559,7 +653,10 @@
     </div>
     <img src="images/23-calendar-customer.png" alt="Google Calendar in the customer's account showing the Field Service Management event with technician details and problem summary" loading="lazy" width="1918" height="1027">
     <figcaption>
-      <p>It will remind them without the app being involved at all.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>It will remind them without the app being involved at all.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -571,8 +668,12 @@
     </div>
     <img src="images/24-calendar-technician.png" alt="Google Calendar in the technician's account showing the same event in a dedicated Field Service Management calendar" loading="lazy" width="1917" height="976">
     <figcaption>
-      <p>The calendar the scheduler read availability from is the calendar the booking is written
-         back to.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>This is the "Field Service Management" calendar provisioned back in step 11 — the only
+           one the app can write to. It sits alongside the technician's own calendars in the
+           sidebar and can be toggled off independently of them.</p>
+      </details>
     </figcaption>
   </figure>
 
@@ -584,8 +685,11 @@
     </div>
     <img src="images/25-backoffice-appointment.png" alt="Back office dashboard listing the upcoming appointment, an empty technician request queue, and the indexed knowledge base document" loading="lazy" width="1857" height="727">
     <figcaption>
-      <p>Compare with step 4 — the same screen, an entire workflow later. Three people who never
-         spoke to each other, and no dispatcher in the middle.</p>
+      <details>
+        <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>Compare with step 4 — the same screen, an entire workflow later. Three people who never
+           spoke to each other, and no dispatcher in the middle.</p>
+      </details>
     </figcaption>
   </figure>
 </section>
