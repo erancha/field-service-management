@@ -50,10 +50,13 @@
 
   /* ---- masthead ---- */
   header.masthead { padding: 56px 0 32px; border-bottom: 1px solid var(--line); }
+  /* Inline-flex keeps the hit area on the wordmark rather than the full column width. */
   .brand {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 19px; font-weight: 600; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 19px; font-weight: 600; color: var(--muted); text-decoration: none;
   }
+  .brand:hover { color: var(--text); }
+  .brand:hover .bolt { filter: brightness(1.15); }
   .bolt { color: var(--accent); font-size: 26px; line-height: 1; }
   h1 {
     font-size: clamp(28px, 4vw, 40px); line-height: 1.15;
@@ -187,7 +190,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <div class="brand"><span class="bolt">⚡</span> Field Service Management</div>
+    <a class="brand" href="https://github.com/erancha/field-service-management"><span class="bolt">⚡</span> Field Service Management</a>
     <h1>A walkthrough of one real run</h1>
     <p class="lede">
       Field Service Management books maintenance visits for agencies — elevators, appliances,
@@ -238,7 +241,7 @@
     <div class="step-bar">
       <span class="step-n">01</span>
       <span class="tag bo">Back office</span>
-      <span class="step-title">Google is the only way in, so no password is ever stored</span>
+      <span class="step-title">Google is the only way to sign in (i.e. no password is ever required)</span>
     </div>
     <img src="images/01-backoffice-signin.png" alt="Back office landing page with a single Sign in with Google button" loading="lazy" width="1856" height="717">
     <figcaption>
@@ -254,13 +257,14 @@
     <div class="step-bar">
       <span class="step-n">02</span>
       <span class="tag google">Google</span>
-      <span class="step-title">Credentials are entered on Google's domain, never on ours</span>
+      <span class="step-title">Signing in as the back office</span>
     </div>
     <img src="images/02-backoffice-account-chooser.png" alt="Google account chooser offering accounts to continue to Field Service Management" loading="lazy" width="1853" height="720">
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
-        <p>The app gets back an identity assertion, not a secret it has to protect.</p>
+        <p>Credentials are entered on Google's domain, and the app gets back an identity assertion
+           rather than a secret it would have to protect.</p>
         <p class="note">Accounts unrelated to this walkthrough, and the OAuth client id in the
            address bar, are pixelated throughout.</p>
       </details>
@@ -271,14 +275,17 @@
     <div class="step-bar">
       <span class="step-n">03</span>
       <span class="tag google">Google</span>
-      <span class="step-title">The first consent asks for identity only; calendar access comes later</span>
+      <span class="step-title">This consent only establishes who the user is</span>
     </div>
     <img src="images/03-backoffice-consent.png" alt="Google consent screen requesting personal info, email address, and account association" loading="lazy" width="1856" height="717">
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
-        <p>Name, email, profile. Calendar is a separate grant, requested in step 12 and only from
-           technicians — the back office and the customer never hand over theirs.</p>
+        <p>All three lines on the screen are read-only identification: see the profile, see the
+           email address, associate the two. None of them lets the app act on the account or reach
+           anything stored in it — this grant answers "who is this person" and stops there.
+           Permissions that do allow the app to act are asked for separately, at the point they are
+           needed.</p>
       </details>
     </figcaption>
   </figure>
@@ -302,14 +309,17 @@
     <div class="step-bar">
       <span class="step-n">05</span>
       <span class="tag bo">Back office</span>
-      <span class="step-title">A 414-page equipment manual goes into the knowledge base</span>
+      <span class="step-title">The agency uploads a document to answer customers from</span>
     </div>
     <img src="images/05-kb-extracting.png" alt="Knowledge base upload showing a progress bar reading Extracting 189 of 414 pages" loading="lazy" width="1855" height="708">
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
-        <p>Extraction and indexing run as a tracked job reporting live progress, because a few
-           hundred pages is not something to do inside an HTTP timeout.</p>
+        <p>The knowledge base takes the agency's own service documentation and the manuals its
+           equipment suppliers publish; this upload is one of the latter, an elevator controller
+           manual running to 414 pages. Extraction and indexing run as a tracked job reporting live
+           progress, because a document that size is not something to process inside an HTTP
+           timeout.</p>
       </details>
     </figcaption>
   </figure>
@@ -319,7 +329,7 @@
 <section class="chapter" id="ch2">
   <div class="chapter-head">
     <div class="chapter-num">Chapter 2</div>
-    <h2>A technician asks for access, and the back office grants it</h2>
+    <h2>A technician signs in, and is held until the back office admits them</h2>
     <p>Signing in with Google proves who you are. It does not, on its own, make you staff.</p>
   </div>
 
@@ -327,7 +337,7 @@
     <div class="step-bar">
       <span class="step-n">06</span>
       <span class="tag tech">Technician</span>
-      <span class="step-title">The technician app answers on its own port, 8001</span>
+      <span class="step-title">The technician app is available on another port, 8001</span>
     </div>
     <img src="images/06-technician-signin.png" alt="Technician app landing page on localhost:8001 with the Google login link visible in the status bar" loading="lazy" width="1920" height="982">
     <figcaption>
@@ -364,9 +374,9 @@
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
-        <p>First sign-in files a request and parks the technician here; anyone who finds the URL
-           gets this screen and nothing else. The wait is live, so there is no refreshing and no
-           email round-trip.</p>
+        <p>Authenticating is all the technician did. The system turns that first sign-in into a
+           pending approval and parks them here, so anyone who finds the URL gets this screen and
+           nothing else. The wait is live, so there is no refreshing and no email round-trip.</p>
       </details>
     </figcaption>
   </figure>
@@ -375,12 +385,15 @@
     <div class="step-bar">
       <span class="step-n">09</span>
       <span class="tag bo">Back office</span>
-      <span class="step-title">The back office approves or rejects the request, against a named human</span>
+      <span class="step-title">The back office sees who signed in, and admits a known employee</span>
     </div>
     <img src="images/09-backoffice-approve.png" alt="Back office showing a pending technician request with Approve and Reject buttons, and knowledge base timings" loading="lazy" width="1856" height="715">
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
+        <p>The pending card carries the name and email from the Google account, so the back office
+           is deciding about a person it already knows — someone it employs — rather than waving
+           through an anonymous request.</p>
         <p class="note">Incidentally, unrelated to the approval but visible in the same screenshot:
            the knowledge base upload from step 5 has finished, with its cost itemised — <strong>38.3
            s total, of which 1.9 s network, 12.0 s extract, 24.3 s index</strong> for 414 pages.
@@ -411,7 +424,7 @@
 <section class="chapter" id="ch3">
   <div class="chapter-head">
     <div class="chapter-num">Chapter 3</div>
-    <h2>The app gets its own calendar, and reads the rest as busy or free</h2>
+    <h2>The app creates a calendar of its own for each technician</h2>
     <p>Availability is not a table the app maintains and hopes is accurate — but it never opens a
        technician's personal calendar either.</p>
   </div>
@@ -420,7 +433,7 @@
     <div class="step-bar">
       <span class="step-n">11</span>
       <span class="tag tech">Technician</span>
-      <span class="step-title">Connecting provisions a dedicated calendar for this technician</span>
+      <span class="step-title">Connecting is what lets other commitments block a slot</span>
     </div>
     <img src="images/11-connect-calendar.png" alt="Technician dashboard with a Google Calendar Integration card and Connect Google Calendar button" loading="lazy" width="1920" height="977">
     <figcaption>
@@ -480,7 +493,7 @@
     <div class="step-bar">
       <span class="step-n">14</span>
       <span class="tag cust">Customer</span>
-      <span class="step-title">The customer app answers on port 8002</span>
+      <span class="step-title">The customer app is available on another port, 8002</span>
     </div>
     <img src="images/14-customer-signin.png" alt="Customer app landing page on localhost:8002" loading="lazy" width="1918" height="980">
     <figcaption>
@@ -532,14 +545,16 @@
     <div class="step-bar">
       <span class="step-n">17</span>
       <span class="tag cust">Customer</span>
-      <span class="step-title">A photo names the equipment, and the answer cites the manual from step 5</span>
+      <span class="step-title">The first answer cites the document uploaded in step 5</span>
     </div>
     <img src="images/17-triage-first-answer.png" alt="Customer chat: the lift is slow on the way up, with a photo; assistant replies and cites a knowledge base page" loading="lazy" width="1920" height="977">
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
-        <p>The assistant identifies a vertical platform lift, narrows the cause to the drive or its
-           power supply, and asks a single diagnostic question.</p>
+        <p>The customer describes the fault in their own words and may attach photos alongside the
+           text. Here one is attached, and it is enough for the assistant to place the equipment as
+           a vertical platform lift; it then narrows the cause to the drive or its power supply and
+           asks a single diagnostic question.</p>
         <p><strong>From the knowledge base: mce-icontrol-ac-elevators-r3.4.pdf, page 84</strong> —
            the answer is traceable to material the agency chose to stand behind.</p>
       </details>
@@ -566,14 +581,16 @@
     <div class="step-bar">
       <span class="step-n">19</span>
       <span class="tag cust">Customer</span>
-      <span class="step-title">The assistant stops at the limit of safe self-service and offers a visit</span>
+      <span class="step-title">When the safe checks run out, the assistant offers to book a visit</span>
     </div>
     <img src="images/19-triage-diagnosis.png" alt="Assistant concludes the batteries need replacing and offers to book a technician visit" loading="lazy" width="1915" height="971">
     <figcaption>
       <details>
         <summary><span class="more">Show more</span><span class="less">Show less</span></summary>
-        <p>An unloaded-versus-loaded test and an overnight charge rule out the easy explanations.
-           Escalation is the designed ending, not a failure state.</p>
+        <p>Riding the lift empty and leaving it on charge overnight have ruled out the easy
+           explanations, and replacing batteries on a lift drive unit is not a job for the customer.
+           Handing the work to a technician is how this conversation is meant to end, not a sign
+           that it failed.</p>
       </details>
     </figcaption>
   </figure>
@@ -584,7 +601,8 @@
   <div class="chapter-head">
     <div class="chapter-num">Chapter 5</div>
     <h2>The conversation becomes a service call</h2>
-    <p>Everything the customer just established is carried forward instead of being asked again.</p>
+    <p>Everything the customer just established is attached to the job, so the technician does not
+       ask for it again during the visit.</p>
   </div>
 
   <figure class="step" id="s20">
@@ -609,7 +627,7 @@
     <div class="step-bar">
       <span class="step-n">21</span>
       <span class="tag cust">Customer</span>
-      <span class="step-title">Booked, and leading the customer's dashboard</span>
+      <span class="step-title">Booked — the appointment now appears on the customer's dashboard</span>
     </div>
     <img src="images/21-customer-dashboard.png" alt="Customer dashboard listing the booked appointment" loading="lazy" width="1918" height="980">
     <figcaption>
@@ -624,7 +642,7 @@
     <div class="step-bar">
       <span class="step-n">22</span>
       <span class="tag cust">Customer</span>
-      <span class="step-title">The whole triage record and the photo travel with the appointment</span>
+      <span class="step-title">The whole triage record and the photo are attached to the appointment</span>
     </div>
     <img src="images/22-appointment-details.png" alt="Expanded appointment showing status, parties, problem, action items, triage summary, ruled-out steps, the photo, and reschedule or cancel actions" loading="lazy" width="1916" height="977">
     <figcaption>
@@ -642,7 +660,8 @@
   <div class="chapter-head">
     <div class="chapter-num">Chapter 6</div>
     <h2>Where the appointment actually lands</h2>
-    <p>An appointment that only exists inside the app is an appointment people miss.</p>
+    <p>The appointment has to reach both sides where they already look, rather than wait inside an
+       app they would have to remember to open.</p>
   </div>
 
   <figure class="step" id="s23">
@@ -681,7 +700,7 @@
     <div class="step-bar">
       <span class="step-n">25</span>
       <span class="tag bo">Back office</span>
-      <span class="step-title">The loop closes: appointment listed, queue empty, manual still indexed</span>
+      <span class="step-title">The loop closes: the appointment is in both calendars, and the customer's, technician's and back office's dashboards</span>
     </div>
     <img src="images/25-backoffice-appointment.png" alt="Back office dashboard listing the upcoming appointment, an empty technician request queue, and the indexed knowledge base document" loading="lazy" width="1857" height="727">
     <figcaption>
@@ -704,12 +723,6 @@
   <p>Pixelated regions are unrelated Google accounts that happened to be signed in on the machine,
      the OAuth client id, and a consent session token. Customer names, addresses and phone numbers
      shown are demo data.</p>
-
-  <h3>Going deeper</h3>
-  <p>The <a href="../../README.md">README</a> covers running the stack yourself, <a
-     href="../../docs/architecture.md">docs/architecture.md</a> covers how it is put together, and
-     <a href="../../docs/features.md">docs/features.md</a> covers what is shipped and what is still
-     on the roadmap.</p>
 </footer>
 
 </body>
