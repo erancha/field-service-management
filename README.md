@@ -12,6 +12,11 @@ A service-call management platform for agencies like elevator or appliance maint
 scheduling, two-way Google Calendar sync, notifications, the customer's triage assistant and its
 photo handling, the knowledge base, and deployment — plus the roadmap tracked in issues.
 
+The [**visual walkthrough**](https://erancha.github.io/field-service-management/samples/walkthrough/)
+shows most of that list actually running, without deploying anything: twenty-five annotated
+screenshots from one uninterrupted session, starting on an empty database and ending with a booked
+appointment in two Google Calendars.
+
 ## Getting started
 
 Prerequisites: **Python ≥3.12**, **Docker**, and **Node.js 22+ with npm**.

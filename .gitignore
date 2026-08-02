@@ -21,8 +21,11 @@ CLAUDE.md
 
 # Third-party documents fetched to exercise the knowledge base locally. Real equipment manuals are
 # copyrighted, so they are kept out of this public repository rather than redistributed with it; #73
-# tracks fetching them on demand instead.
-/samples/
+# tracks fetching them on demand instead. The contents are excluded rather than the directory
+# itself, because git cannot re-include a path underneath an excluded directory — and the published
+# walkthrough below has to stay tracked.
+/samples/*
+!/samples/walkthrough/
 
 /scripts/aws-config.sh
 /scripts/domain-contact.json
