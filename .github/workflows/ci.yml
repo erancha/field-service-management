@@ -31,3 +31,19 @@ jobs:
       # typecheck (tsc), lint (oxlint), production build (vite).
       - name: Frontend checks
         run: bash scripts/test.sh frontend
+
+  # Turns a `v*` tag pushed by scripts/release.sh into a GitHub Release. Depending on both test
+  # jobs is what keeps a red commit from ever being published under a version. Notes are composed
+  # server-side from the commits since the previous release, so no checkout is needed.
+  release:
+    needs: [backend, frontend]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
