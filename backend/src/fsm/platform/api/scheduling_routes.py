@@ -18,14 +18,14 @@ import logging
 import zoneinfo
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from fsm.assist.ports.chat_model import TriageSummary
-from fsm.assist.ports.photo_store import original_key, preview_key
+from fsm.assist.ports.photo_store import PhotoVariant, variant_object
 from fsm.scheduling.application.appointment_service import AppointmentService
 from fsm.scheduling.application.service_call_service import ServiceCallService
 from fsm.scheduling.domain.booking_rate_limit import CancellationRateLimit
@@ -292,7 +292,7 @@ def download_service_call_photo(
     service_call_id: UUID,
     photo_id: UUID,
     request: Request,
-    variant: Literal["original", "preview"] = "original",
+    variant: PhotoVariant = "original",
     user: SessionUser = Depends(require_user),
 ) -> Response:
     """Serve one photo from the call, streaming the stored object through the session check."""
@@ -303,23 +303,16 @@ def download_service_call_photo(
         if attachment.service_call_id != service_call_id:
             raise HTTPException(status_code=404, detail="No such photo on this service call")
 
+    key, media_type = variant_object(attachment.object_key, attachment.media_type, variant)
     # Both variants are served inline: the links in calendar events and the web app's thumbnail
     # clicks must display the image in the browser, and the header's filename still names a
     # save-as for anyone downloading.
-    if variant == "original":
-        key, media_type, disposition = (
-            original_key(attachment.object_key), attachment.media_type, "inline"
-        )
-    else:
-        key, media_type, disposition = (
-            preview_key(attachment.object_key), "image/jpeg", "inline"
-        )
     return Response(
         content=_photo_store(request).get(key),
         media_type=media_type,
         headers={
             "Content-Disposition": content_disposition(
-                disposition, attachment.filename, fallback="photo"
+                "inline", attachment.filename, fallback="photo"
             )
         },
     )

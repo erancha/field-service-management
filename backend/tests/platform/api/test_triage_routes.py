@@ -810,7 +810,8 @@ class TestTriageRoutes:
             photo = _upload_photo(client, conversation_id, _jpeg_bytes()).json()
 
             preview = client.get(
-                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}/preview"
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}",
+                params={"variant": "preview"},
             )
 
         assert preview.status_code == 200
@@ -818,6 +819,26 @@ class TestTriageRoutes:
         assert preview.content == app.state.photo_store.objects[
             f"photos/{photo['id']}/preview"
         ][0]
+
+    def test_original_variant_returns_the_bytes_as_uploaded(
+        self, pg_session_factory, authenticate
+    ):
+        app = build_app(pg_session_factory, FakeChatModel())
+        authenticate(app, role=Role.CUSTOMER)
+        content = _jpeg_bytes()
+
+        with TestClient(app) as client:
+            conversation_id = client.post("/api/assist/conversations").json()["id"]
+            photo = _upload_photo(client, conversation_id, content).json()
+
+            original = client.get(
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}",
+                params={"variant": "original"},
+            )
+
+        assert original.status_code == 200
+        assert original.headers["content-type"] == "image/jpeg"
+        assert original.content == content
 
     def test_preview_returns_the_preview_bytes_for_a_sent_photo(
         self, pg_session_factory, authenticate
@@ -834,7 +855,8 @@ class TestTriageRoutes:
             )
 
             preview = client.get(
-                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}/preview"
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}",
+                params={"variant": "preview"},
             )
 
         assert preview.status_code == 200
@@ -853,7 +875,8 @@ class TestTriageRoutes:
         authenticate(app, user_id=uuid.uuid4(), role=Role.CUSTOMER)
         with TestClient(app) as client:
             rejected = client.get(
-                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}/preview"
+                f"/api/assist/conversations/{conversation_id}/photos/{photo['id']}",
+                params={"variant": "preview"},
             )
 
         assert rejected.status_code == 404

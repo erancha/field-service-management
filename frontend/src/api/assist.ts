@@ -2,6 +2,7 @@ import { ApiException, apiDelete, apiGet, apiPost, apiUpload } from './client.ts
 import type {
   AssistStatus,
   PhotoRef,
+  PhotoVariant,
   TriageConversation,
   TriageConversationSummary,
   TriageTurnResult,
@@ -47,9 +48,13 @@ export async function deleteTriagePhoto(conversationId: string, photoId: string)
   return apiDelete<void>(`${BASE}/conversations/${conversationId}/photos/${photoId}`)
 }
 
-/** Where a photo's downscaled preview is served from, for both pending and sent photos. */
-export function triagePhotoPreviewUrl(conversationId: string, photoId: string): string {
-  return `${BASE}/conversations/${conversationId}/photos/${photoId}/preview`
+/** Where one rendition of a photo is served from, for both pending and sent photos. */
+export function triagePhotoUrl(
+  conversationId: string,
+  photoId: string,
+  variant: PhotoVariant,
+): string {
+  return `${BASE}/conversations/${conversationId}/photos/${photoId}?variant=${variant}`
 }
 
 interface SseFrame {

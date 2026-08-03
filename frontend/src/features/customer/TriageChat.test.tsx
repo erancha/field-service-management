@@ -13,8 +13,8 @@ vi.mock('../../api/assist.ts', () => ({
   fetchConversation: vi.fn(),
   uploadTriagePhoto: vi.fn(),
   deleteTriagePhoto: vi.fn(),
-  triagePhotoPreviewUrl: (conversationId: string, photoId: string) =>
-    `/api/assist/conversations/${conversationId}/photos/${photoId}/preview`,
+  triagePhotoUrl: (conversationId: string, photoId: string, variant: string) =>
+    `/api/assist/conversations/${conversationId}/photos/${photoId}?variant=${variant}`,
 }))
 
 const {
@@ -534,7 +534,31 @@ describe('TriageChat', () => {
 
     expect(streamAssistReply).toHaveBeenCalledWith('c1', 'Here it is.', ['p1'], expect.any(Function))
     const sentPhoto = await screen.findByAltText('plate.jpg')
-    expect(sentPhoto).toHaveAttribute('src', '/api/assist/conversations/c1/photos/p1/preview')
+    expect(sentPhoto).toHaveAttribute(
+      'src',
+      '/api/assist/conversations/c1/photos/p1?variant=preview',
+    )
+  })
+
+  it('opens the full-resolution photo in a new tab when its thumbnail is clicked', async () => {
+    vi.mocked(startConversation).mockResolvedValue(EMPTY_CONVERSATION)
+    vi.mocked(uploadTriagePhoto).mockResolvedValue({ id: 'p1', filename: 'plate.jpg', size_bytes: 3 })
+    vi.mocked(streamAssistReply).mockResolvedValue({ sources: [], status: 'ACTIVE', service_call: null, question: null })
+    render(<TriageChat onEscalated={() => {}} onGiveUp={() => {}} />)
+    await screen.findByRole('textbox')
+
+    const file = new File(['x'], 'plate.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(await openAttach(), file)
+    await userEvent.type(screen.getByRole('textbox'), 'Here it is.')
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    const link = (await screen.findByAltText('plate.jpg')).closest('a')
+    expect(link).toHaveAttribute(
+      'href',
+      '/api/assist/conversations/c1/photos/p1?variant=original',
+    )
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   it('shows an upload note while a photo is uploading and a sent-with-next note once it lands', async () => {

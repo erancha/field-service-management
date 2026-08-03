@@ -8,6 +8,7 @@ import type {
   RescheduleRequest,
   AddDetailsRequest,
   UpcomingAppointmentsResponse,
+  PhotoVariant,
 } from './types.ts'
 import { apiPost, apiGet } from './client.ts'
 
@@ -96,7 +97,7 @@ export async function fetchUpcomingAppointments(
 export function servicePhotoUrl(
   serviceCallId: string,
   photoId: string,
-  variant: 'original' | 'preview',
+  variant: PhotoVariant,
 ): string {
   return `/api/service-calls/${serviceCallId}/photos/${photoId}?variant=${variant}`
 }

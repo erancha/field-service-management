@@ -5,7 +5,7 @@ import {
   endConversation,
   startConversation,
   streamAssistReply,
-  triagePhotoPreviewUrl,
+  triagePhotoUrl,
   uploadTriagePhoto,
 } from '../../api/assist.ts'
 import type {
@@ -310,7 +310,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
             <>
               <ChatTurns
                 messages={messages}
-                photoPreviewUrl={(photo) => triagePhotoPreviewUrl(conversationId, photo.id)}
+                photoUrl={(photo, variant) => triagePhotoUrl(conversationId, photo.id, variant)}
                 questionSpan={questionSpan}
                 sourcesByMessage={sourcesByMessage}
               >
@@ -387,7 +387,7 @@ export function TriageChat({ onEscalated, onGiveUp }: TriageChatProps) {
                     {pendingPhotos.map((photo) => (
                       <li key={photo.id}>
                         <img
-                          src={triagePhotoPreviewUrl(conversationId, photo.id)}
+                          src={triagePhotoUrl(conversationId, photo.id, 'preview')}
                           alt={photo.filename}
                         />
                         <button

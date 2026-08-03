@@ -9,8 +9,8 @@ vi.mock('../../api/assist.ts', () => ({
   fetchConversation: vi.fn(),
   uploadTriagePhoto: vi.fn(),
   deleteTriagePhoto: vi.fn(),
-  triagePhotoPreviewUrl: (conversationId: string, photoId: string) =>
-    `/api/assist/conversations/${conversationId}/photos/${photoId}/preview`,
+  triagePhotoUrl: (conversationId: string, photoId: string, variant: string) =>
+    `/api/assist/conversations/${conversationId}/photos/${photoId}?variant=${variant}`,
 }))
 
 const { listPastConversations, fetchConversation } = await import('../../api/assist.ts')

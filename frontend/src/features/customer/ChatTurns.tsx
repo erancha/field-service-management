@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react'
-import type { PhotoRef, QuestionSpan, SourceRef, TriageMessage } from '../../api/types.ts'
+import type {
+  PhotoRef,
+  PhotoVariant,
+  QuestionSpan,
+  SourceRef,
+  TriageMessage,
+} from '../../api/types.ts'
 import { kbDocumentUrl } from '../../api/kb.ts'
 
 interface ChatTurnsProps {
@@ -7,11 +13,12 @@ interface ChatTurnsProps {
   /** Appended after the stored turns: the live chat adds its streaming bubble and scroll anchor. */
   children?: ReactNode
   /**
-   * Renders each turn's photos as thumbnails fetched from this URL instead of a filename chip.
-   * Omitted for history read back after the conversation ended, whose photo objects may already
-   * be reclaimed, so no fetch is attempted there.
+   * Resolves a turn's photo to the URL serving one of its renditions, which turns the filename
+   * chip into a preview thumbnail linking to the original. Omitted for history read back after
+   * the conversation ended, whose photo objects may already be reclaimed, so nothing is fetched
+   * there.
    */
-  photoPreviewUrl?: (photo: PhotoRef) => string
+  photoUrl?: (photo: PhotoRef, variant: PhotoVariant) => string
   /**
    * Bounds of the question in the final turn, as the backend reported it, emphasised to tie it to
    * the Yes/No buttons below. Null once the offer is spent, and absent for history read back after
@@ -29,7 +36,7 @@ interface ChatTurnsProps {
 export function ChatTurns({
   messages,
   children,
-  photoPreviewUrl,
+  photoUrl,
   questionSpan,
   sourcesByMessage,
 }: ChatTurnsProps) {
@@ -49,14 +56,20 @@ export function ChatTurns({
           {message.photos && message.photos.length > 0 && (
             <ul className="chat__turn-photos">
               {message.photos.map((photo) =>
-                photoPreviewUrl ? (
+                photoUrl ? (
                   <li key={photo.id}>
-                    <img
-                      className="chat__turn-photo"
-                      src={photoPreviewUrl(photo)}
-                      alt={photo.filename}
-                      loading="lazy"
-                    />
+                    <a
+                      href={photoUrl(photo, 'original')}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <img
+                        className="chat__turn-photo"
+                        src={photoUrl(photo, 'preview')}
+                        alt={photo.filename}
+                        loading="lazy"
+                      />
+                    </a>
                   </li>
                 ) : (
                   <li key={photo.id}>📷 {photo.filename}</li>

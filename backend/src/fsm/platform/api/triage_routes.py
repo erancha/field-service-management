@@ -15,7 +15,7 @@ from fsm.assist.adapters.image_processing import PillowPreviewMaker
 from fsm.assist.application.photos import PhotoService
 from fsm.assist.application.triage import TriageService
 from fsm.assist.domain.conversation import MAX_PHOTOS_PER_CONVERSATION, Conversation, Photo
-from fsm.assist.ports.photo_store import preview_key
+from fsm.assist.ports.photo_store import PhotoVariant, variant_object
 from fsm.identity.domain.role import Role
 from fsm.platform.api.auth_deps import SessionUser, require_role, require_user
 
@@ -233,21 +233,23 @@ async def upload_photo(
     return await run_in_threadpool(_attach)
 
 
-@router.get("/conversations/{conversation_id}/photos/{photo_id}/preview")
-def photo_preview(
+@router.get("/conversations/{conversation_id}/photos/{photo_id}")
+def download_photo(
     conversation_id: uuid.UUID,
     photo_id: uuid.UUID,
     request: Request,
+    variant: PhotoVariant = "original",
     user: SessionUser = Depends(require_role(Role.CUSTOMER)),
 ) -> Response:
-    """The downscaled preview of one of the caller's own photos, bound or still pending."""
+    """One variant of one of the caller's own photos, whether bound to a turn or still pending."""
     from fsm.assist.adapters.photo_repository import SqlAlchemyPhotoRepository
 
     with _session_factory(request)() as session:
         _service(request, session).get(conversation_id, user.id)
         photo = SqlAlchemyPhotoRepository(session).get(conversation_id, photo_id)
-        content = _photo_store(request).get(preview_key(photo.object_key))
-    return Response(content=content, media_type="image/jpeg")
+        key, media_type = variant_object(photo.object_key, photo.media_type, variant)
+        content = _photo_store(request).get(key)
+    return Response(content=content, media_type=media_type)
 
 
 @router.delete("/conversations/{conversation_id}/photos/{photo_id}", status_code=204)

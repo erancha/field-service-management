@@ -6,7 +6,7 @@ vi.mock('./client.ts', async (importOriginal) => {
   return { ...actual, apiUpload: vi.fn() }
 })
 
-const { listPastConversations, streamAssistReply, uploadTriagePhoto, deleteTriagePhoto, triagePhotoPreviewUrl } =
+const { listPastConversations, streamAssistReply, uploadTriagePhoto, deleteTriagePhoto, triagePhotoUrl } =
   await import('./assist.ts')
 
 function sseResponse(frames: string[]): Response {
@@ -127,9 +127,14 @@ describe('deleteTriagePhoto', () => {
   })
 })
 
-describe('triagePhotoPreviewUrl', () => {
-  it('builds the preview path for a conversation and photo', () => {
-    expect(triagePhotoPreviewUrl('c1', 'p1')).toBe('/api/assist/conversations/c1/photos/p1/preview')
+describe('triagePhotoUrl', () => {
+  it('builds the photo path for a conversation, naming the variant it wants', () => {
+    expect(triagePhotoUrl('c1', 'p1', 'preview')).toBe(
+      '/api/assist/conversations/c1/photos/p1?variant=preview',
+    )
+    expect(triagePhotoUrl('c1', 'p1', 'original')).toBe(
+      '/api/assist/conversations/c1/photos/p1?variant=original',
+    )
   })
 })
 

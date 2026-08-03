@@ -168,6 +168,8 @@ export interface PhotoRef {
   size_bytes: number
 }
 
+export type PhotoVariant = 'original' | 'preview'
+
 export interface TriageMessage {
   id: string
   role: 'CUSTOMER' | 'ASSISTANT'
