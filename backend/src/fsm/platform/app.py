@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable
@@ -25,9 +24,8 @@ from fsm.platform.api.scheduling_routes import handle_scheduling_error
 from fsm.platform.api.scheduling_routes import router as scheduling_router
 from fsm.platform.api.triage_routes import router as triage_router
 from fsm.platform.assist_factory import build_chat_model, build_kb_index, build_photo_store
-from fsm.platform.events import publish_appointment_changed
 from fsm.platform.logging import configure_logging
-from fsm.platform.roles import DEPLOYMENTS, Worker
+from fsm.platform.roles import SERVING_ROLES
 from fsm.scheduling.domain.errors import SchedulingError
 from fsm.shared.constants import BRAND
 
@@ -36,8 +34,7 @@ def create_app(
     session_factory: Callable[[], Session] | sessionmaker[Session] | None = None,
     settings=None,
 ) -> FastAPI:
-    """Compose the process FSM_ROLE selects: routes, landing, /health and /ready, and the
-    background workers that role's deployment declares.
+    """Compose the process FSM_ROLE selects: its routes, landing page, /health and /ready.
 
     session_factory: SQLAlchemy session factory injected for testing. When absent,
     the factory is built lazily from the process-wide settings on the first /ready call.
@@ -50,23 +47,17 @@ def create_app(
         settings = get_settings()
 
     role = settings.fsm_role
-    if role not in DEPLOYMENTS:
+    if role not in SERVING_ROLES:
         raise ValueError(
-            f"FSM_ROLE is {role!r}; expected one of {sorted(DEPLOYMENTS)}. Serving with an "
+            f"FSM_ROLE is {role!r}; expected one of {sorted(SERVING_ROLES)}. Serving with an "
             "unrecognized role would sign every user in through the customer funnel."
         )
-    deployment = DEPLOYMENTS[role]
-
-    # Stop events of the worker threads started below; the lifespan sets them all on shutdown.
-    worker_stop_events: list[threading.Event] = []
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        """Capture the serving event loop for thread-safe publishes; stop workers on shutdown."""
+        """Capture the serving loop, which is what carries publishes raised off the request path."""
         app.state.event_loop = asyncio.get_running_loop()
         yield
-        for stop_event in worker_stop_events:
-            stop_event.set()
 
     app = FastAPI(title=f"{BRAND} ({role})", lifespan=lifespan)
     app.state.session_factory = session_factory
@@ -95,9 +86,6 @@ def create_app(
             secret_key=settings.session_secret.get_secret_value(),
             https_only=settings.app_env not in ("local", "test"),
         )
-
-    for worker in deployment.workers:
-        _START_WORKER[worker](app, settings, worker_stop_events)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -132,63 +120,6 @@ def _serve_root(app: FastAPI, role: str) -> None:
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         return _landing_html(role)
-
-
-def _start_calendar_dispatch(
-    app: FastAPI, settings, stop_events: list[threading.Event]
-) -> None:
-    """Start the loop that drains the calendar outbox to Google, in a daemon thread."""
-    from fsm.platform.dispatcher_runner import require_technician_app_url, run_forever
-
-    # Checked here, before the worker thread spawns: a raise inside the thread would kill
-    # only the dispatcher while the web process kept serving, hiding the misconfiguration.
-    require_technician_app_url(settings)
-
-    # Resolve the factory the same way request handlers do: use the injected one under test,
-    # otherwise build it lazily from settings — which is what lets the worker run under
-    # uvicorn --factory, where create_app receives no session_factory.
-    stop_event = threading.Event()
-    app.state.dispatcher_stop_event = stop_event
-    stop_events.append(stop_event)
-
-    threading.Thread(
-        target=run_forever,
-        args=(_get_session_factory(app), settings, stop_event),
-        daemon=True,
-        name=Worker.CALENDAR_DISPATCH.value,
-    ).start()
-
-
-def _start_inbound_sync(app: FastAPI, settings, stop_events: list[threading.Event]) -> None:
-    """Start the loop that polls Google for technician-side edits, in a daemon thread."""
-    from fsm.platform.sync_runner import run_forever
-
-    def publish(change) -> None:
-        publish_appointment_changed(
-            app,
-            appointment_id=change.appointment_id,
-            customer_id=change.customer_id,
-            technician_id=change.technician_id,
-        )
-
-    stop_event = threading.Event()
-    app.state.sync_stop_event = stop_event
-    stop_events.append(stop_event)
-
-    threading.Thread(
-        target=run_forever,
-        args=(_get_session_factory(app), settings, stop_event, publish),
-        daemon=True,
-        name=Worker.INBOUND_SYNC.value,
-    ).start()
-
-
-# How each worker a deployment declares is brought up. Keyed so the factory composes the process
-# from the role's worker list without knowing what any individual loop needs.
-_START_WORKER = {
-    Worker.CALENDAR_DISPATCH: _start_calendar_dispatch,
-    Worker.INBOUND_SYNC: _start_inbound_sync,
-}
 
 
 def _get_session_factory(

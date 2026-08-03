@@ -208,14 +208,14 @@ authority: Google is a projection, so any conflict resolves in the database's fa
 **Outbound projection (database → Google).** A confirmed appointment change (create, reschedule,
 cancel) enqueues a `calendar_outbox` row in the same transaction as the appointment write, so a
 calendar outage can never lose a booking. `CalendarProjectionDispatcher` — run by `dispatcher_runner`
-on the backoffice deployment, every `FSM_DISPATCH_INTERVAL_SECONDS` (default 5s) — claims one
+in the worker deployment, every `FSM_DISPATCH_INTERVAL_SECONDS` (default 5s) — claims one
 `PENDING` entry at a time with `SELECT … FOR UPDATE SKIP LOCKED`, performs the Google operation,
 writes back the `external_event_id`, and commits per entry. Each event carries a deterministic
 iCalUID, so a retry after a crash re-finds the existing event (Google answers a duplicate insert with
 HTTP 409) rather than creating a second one. Transient failures keep the entry `PENDING` until
 `MAX_ATTEMPTS`, then dead-letter it to `FAILED`.
 
-**Inbound reconciliation (Google → database).** `sync_runner`, on the backoffice deployment every
+**Inbound reconciliation (Google → database).** `sync_runner`, in the worker deployment every
 `FSM_SYNC_INTERVAL_SECONDS` (default 30s), polls each technician's calendar using the stored
 `sync_token` for incremental changes. `calendar_bridge/inbound_sync` maps each raw event to an
 `InboundEventChange` and discards events whose iCalUID is not FSM-owned. `reconciliation_service` then

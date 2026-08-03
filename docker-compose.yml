@@ -3,7 +3,7 @@ x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile
 
-# Operator config (Google, SMTP, Fernet key, runner flags, ...) comes from backend/.env so the
+# Operator config (Google, SMTP, Fernet key, runner intervals, ...) comes from backend/.env so the
 # Docker path honors the same configuration as host mode. Optional: absent on a fresh checkout.
 # The inline `environment` below overrides DATABASE_URL to the in-network `db` host regardless of
 # what .env sets for the host path.
@@ -182,18 +182,9 @@ services:
     env_file: *backend-env-file
     environment:
       <<: *backend-env
-      # This role runs the background calendar workers for the whole deployment: draining the
-      # outbox to Google (outbound projection) and polling Google for technician-side edits
-      # (inbound sync). They are declared on the backoffice entry in fsm/platform/roles.py, so
-      # setting the role here is what starts them — no separate switch to keep in step.
       FSM_ROLE: backoffice
-      # The dispatcher above writes photo links into calendar events, and a link clicked from
-      # Google must be an absolute address on the technician-facing edge — nginx publishes that
-      # role on localhost:8001. Export TECHNICIAN_APP_URL before launching to point links at a
-      # public deployment instead.
-      TECHNICIAN_APP_URL: "${TECHNICIAN_APP_URL:-http://localhost:8001}"
-    # Pinned to one process because it owns the calendar workers above (exactly one may run them).
-    # Scaling this role would require moving the workers to a single dedicated process first.
+    # Serves HTTP only — the calendar loops live in the `worker` service below — so this role may
+    # run as many replicas as the back office needs.
     deploy:
       <<: *backend-deploy
       replicas: 1
@@ -223,6 +214,34 @@ services:
   # to its (internal) backend on a dedicated localhost port. localhost:8001 -> technician:8001,
   # localhost:8002 -> customer:8002, localhost:8003 -> backoffice:8003. Per-port (not per-subdomain)
   # because Google only accepts localhost:<port> as a loopback OAuth redirect URI, not *.localhost.
+  # The calendar loops, in a process of their own so no HTTP role has to stay single-replica for
+  # them: the outbound dispatcher drains the outbox to Google, the inbound poller reads technician
+  # -side edits back. Only the poller may run once at a time, and it takes a lease to decide that,
+  # so a second replica here is a warm standby rather than a misconfiguration — it idles until the
+  # holder disconnects, then takes over.
+  worker:
+    build: *backend-build
+    image: fsm-backend:local
+    command: python -m fsm.platform.worker
+    env_file: *backend-env-file
+    environment:
+      <<: *backend-env
+      FSM_ROLE: worker
+      # The dispatcher writes photo links into calendar events, and a link clicked from Google must
+      # be an absolute address on the technician-facing edge — nginx publishes that role on
+      # localhost:8001. Export TECHNICIAN_APP_URL before launching to point links at a public
+      # deployment instead.
+      TECHNICIAN_APP_URL: "${TECHNICIAN_APP_URL:-http://localhost:8001}"
+    deploy:
+      <<: *backend-deploy
+      replicas: 1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
   nginx:
     build:
       context: .

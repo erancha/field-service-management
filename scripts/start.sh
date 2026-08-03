@@ -76,14 +76,17 @@ wait_for_edge() {  # port
 }
 
 if [ "$DOCKER" -eq 1 ]; then
-  echo "Deploying [${ROLES[*]}] to Docker (db + migrations + ${ROLES[*]} + nginx edge)..."
-  # nginx fronts all roles, so it pulls all backends up via depends_on regardless of selection.
-  docker compose -f "$COMPOSE" up -d --build nginx "${ROLES[@]}"
+  echo "Deploying [${ROLES[*]}] to Docker (db + migrations + ${ROLES[*]} + worker + nginx edge)..."
+  # nginx fronts all roles, so it pulls all role backends up via depends_on regardless of selection.
+  # The worker serves no HTTP and nothing depends on it, so it is named here to be brought up too —
+  # without it nothing drains the calendar outbox or polls Google.
+  docker compose -f "$COMPOSE" up -d --build nginx worker "${ROLES[@]}"
   for role in "${ROLES[@]}"; do
     port="$(port_for "$role")"
     wait_for_edge "$port"
     echo "  FSM ($role) -> http://localhost:$port"
   done
+  echo "  worker: calendar dispatch + inbound sync (no HTTP)"
   echo "  nginx serves each role on its own localhost port (SPA at /, plus /docs /health /ready)."
   echo "  stop the stack or tail logs:  ./scripts/docker-helper.sh --stop | --logs"
   exit 0
@@ -139,27 +142,28 @@ else
 fi
 export FSM_FRONTEND_DIST="$FRONTEND/dist"
 
-# Run one uvicorn per role as a background child and wait on all of them, so a single Ctrl-C
-# (delivered to the whole process group) tears every role down together.
+# Run one uvicorn per role, plus the worker process, as background children and wait on all of
+# them, so a single Ctrl-C (delivered to the whole process group) tears the launch down together.
 pids=()
 cleanup() { [ ${#pids[@]} -gt 0 ] && kill "${pids[@]}" 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
 
-# The backoffice process additionally runs the background calendar workers — draining the outbox to
-# Google (outbound projection) and polling Google for technician-side edits (inbound sync). Exactly
-# one process may run them so a single owner drains the shared outbox and Google is polled once;
-# backoffice is that owner, so the projection only runs when this role is part of the launch.
 echo "Starting [${ROLES[*]}]  (/: React app, docs: /docs, health: /health, ready: /ready)"
 for role in "${ROLES[@]}"; do
   port="$(port_for "$role")"
   echo "  FSM ($role) -> http://localhost:$port"
-  role_env=(FSM_ROLE="$role")
-  # Backoffice owns the calendar workers by virtue of its role; the dispatcher writes photo links
-  # into events, so that role also supplies the technician edge's address the links must land on.
-  [ "$role" = backoffice ] && role_env+=(
-    TECHNICIAN_APP_URL="${TECHNICIAN_APP_URL:-http://localhost:8001}"
-  )
-  ( cd "$BACKEND" && exec env "${role_env[@]}" "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --port "$port" ) &
+  ( cd "$BACKEND" && exec env FSM_ROLE="$role" "$VENV/bin/uvicorn" fsm.platform.app:create_app --factory --port "$port" ) &
   pids+=($!)
 done
+
+# The calendar loops run in a process of their own — draining the outbox to Google (outbound
+# projection) and polling Google for technician-side edits (inbound sync) — so no role process
+# carries them. It serves no HTTP. The dispatcher writes photo links into events, so it is given
+# the technician edge's address those links must land on.
+echo "  FSM (worker) -> calendar dispatch + inbound sync"
+( cd "$BACKEND" && exec env FSM_ROLE=worker \
+    TECHNICIAN_APP_URL="${TECHNICIAN_APP_URL:-http://localhost:8001}" \
+    "$VENV/bin/python" -m fsm.platform.worker ) &
+pids+=($!)
+
 wait

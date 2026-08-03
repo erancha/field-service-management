@@ -45,18 +45,12 @@ def pg_session_factory():
         del os.environ["DATABASE_URL"]
 
 
-# The back-office role owns the calendar workers, so every app built here starts them; the loops
-# themselves belong to the runner tests.
-pytestmark = pytest.mark.usefixtures("stubbed_worker_runners")
-
-
 def _settings(pg_url: str, *, fsm_role: str = "backoffice", admin_emails: str | None = None) -> Settings:
     return Settings(
         database_url=pg_url,
         app_env="test",
         fsm_role=fsm_role,
         admin_emails=admin_emails,
-        technician_app_url="https://tech.example.com",
         google_client_id="test-client-id.apps.googleusercontent.com",
         google_client_secret="test-client-secret",
         google_redirect_uri="http://localhost:8001/auth/google/callback",

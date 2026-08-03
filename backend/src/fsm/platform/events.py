@@ -5,11 +5,12 @@ Two channel shapes exist: `user:{id}` (delivered only to that user's streams) an
 boundary — a stream only ever receives events for channels its caller may subscribe to (see
 subscribable_channels).
 
-Both the Docker and host deployments run one process per role (customer/technician/back-office), so
-an appointment change raised in one process has to reach streams held open in another: those
-deployments configure REDIS_URL and get the cross-process bus. The publish helpers here reach the
-bus and the serving loop through app.state, which is what ties them to the running application
-rather than to the transport in fsm.core.events.
+Both the Docker and host deployments run one process per role (customer/technician/back-office)
+plus a worker process, so an appointment change raised in one has to reach streams held open in
+another: those deployments configure REDIS_URL and get the cross-process bus. Most publish helpers
+here reach the bus and the serving loop through app.state, which ties them to the running
+application rather than to the transport in fsm.core.events. A process holding no application
+supplies a bus and loop of its own instead.
 """
 from __future__ import annotations
 
@@ -45,11 +46,15 @@ def subscribable_channels(user: SessionUser) -> set[str]:
     return channels
 
 
-async def publish_to_app(app, channel: str, event: dict) -> None:
-    """Publish to the app's configured event bus; a no-op when none is wired (e.g. some tests)."""
-    bus = getattr(app.state, "event_bus", None)
+async def _publish(bus, channel: str, event: dict) -> None:
+    """Publish to the given bus; a no-op when none is wired (e.g. some tests)."""
     if bus is not None:
         await bus.publish(channel, event)
+
+
+async def publish_to_app(app, channel: str, event: dict) -> None:
+    """Publish to the app's configured event bus; a no-op when none is wired (e.g. some tests)."""
+    await _publish(getattr(app.state, "event_bus", None), channel, event)
 
 
 def _log_publish_failure(event_type: str):
@@ -65,21 +70,35 @@ def _log_publish_failure(event_type: str):
     return _callback
 
 
-def _schedule_publish(app, channels, event) -> None:
+def _schedule(loop, bus, channels, event) -> None:
     """Publish event to each channel from any thread, without ever raising at the call site.
 
-    Safe to call from a sync route handler or a background worker thread: the async publish is
-    scheduled onto the server loop captured at startup (app.state.event_loop). When the loop is
-    not yet running the cue is logged and dropped, so a publish never breaks the request or the
-    sync sweep; a publish that fails after scheduling is logged via a done-callback.
+    The async publish is scheduled onto the given loop, so a sync route handler or a worker thread
+    can raise a cue without awaiting one. A cue arriving before the loop runs is logged and
+    dropped, and a publish that fails after scheduling is logged via a done-callback: SSE cues are
+    best-effort and never break the work that raised them.
     """
-    loop = getattr(app.state, "event_loop", None)
     if loop is None:
         _log.warning("event loop unavailable; dropping %s", event["type"])
         return
     for channel in channels:
-        future = asyncio.run_coroutine_threadsafe(publish_to_app(app, channel, event), loop)
+        future = asyncio.run_coroutine_threadsafe(_publish(bus, channel, event), loop)
         future.add_done_callback(_log_publish_failure(event["type"]))
+
+
+def _schedule_publish(app, channels, event) -> None:
+    """Schedule a publish onto the loop and bus the running application holds."""
+    _schedule(
+        getattr(app.state, "event_loop", None), getattr(app.state, "event_bus", None), channels, event
+    )
+
+
+def _appointment_changed(appointment_id, customer_id, technician_id):
+    """Return the channels an appointment change is addressed to, and the cue itself."""
+    return (
+        (user_channel(customer_id), user_channel(technician_id), ADMINS_CHANNEL),
+        {"type": APPOINTMENT_CHANGED, "appointment_id": str(appointment_id)},
+    )
 
 
 def publish_appointment_changed(app, *, appointment_id, customer_id, technician_id) -> None:
@@ -88,11 +107,20 @@ def publish_appointment_changed(app, *, appointment_id, customer_id, technician_
     A live-refresh cue, not a source of truth — the DB is authoritative and every list refetches
     on receipt.
     """
-    _schedule_publish(
-        app,
-        (user_channel(customer_id), user_channel(technician_id), ADMINS_CHANNEL),
-        {"type": APPOINTMENT_CHANGED, "appointment_id": str(appointment_id)},
-    )
+    channels, event = _appointment_changed(appointment_id, customer_id, technician_id)
+    _schedule_publish(app, channels, event)
+
+
+def publish_appointment_changed_on(
+    loop, bus, *, appointment_id, customer_id, technician_id
+) -> None:
+    """Raise the appointment-changed cue with a bus and loop given directly.
+
+    For a process holding no application to carry the publish, which is the only difference from
+    publish_appointment_changed.
+    """
+    channels, event = _appointment_changed(appointment_id, customer_id, technician_id)
+    _schedule(loop, bus, channels, event)
 
 
 def publish_kb_ingest_progress(

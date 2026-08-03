@@ -304,55 +304,39 @@ class TestPollOnce:
         assert published[0].technician_id == tech_id
 
 
-class TestRunForever:
-    """Singleton enforcement: only one backoffice process may run the inbound sync poller."""
+class TestPostgresAdvisoryLease:
+    """The lease adapter against real Postgres; the standby policy built on it is in test_worker."""
 
-    def test_refuses_to_start_when_lock_held_by_another_process(
-        self, pg_session_factory, pg_settings
-    ):
-        """A second poller must fail fast rather than double-poll while another process holds
-        the sync-runner lock, so a single technician-side Google edit cannot fire duplicate
-        reschedule/cancel notifications."""
-        import threading
+    def test_a_second_holder_is_refused_while_the_first_holds_it(self, pg_session_factory):
+        """Refusal is what keeps a second worker process from double-polling every technician."""
+        from fsm.core.lease import PostgresAdvisoryLease
+        from fsm.platform.worker import SYNC_LEASE_KEY
 
-        from sqlalchemy import text
+        holder = PostgresAdvisoryLease(pg_session_factory, SYNC_LEASE_KEY)
+        contender = PostgresAdvisoryLease(pg_session_factory, SYNC_LEASE_KEY)
 
-        from fsm.platform.sync_runner import _SYNC_RUNNER_LOCK_KEY, run_forever
+        assert holder.acquire() is True
+        try:
+            assert contender.acquire() is False
+        finally:
+            holder.release()
 
-        with pg_session_factory() as holder:
-            acquired = holder.execute(
-                text("SELECT pg_try_advisory_lock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
-            ).scalar()
-            holder.commit()
-            assert acquired
-            try:
-                with pytest.raises(RuntimeError, match="only one backoffice"):
-                    run_forever(pg_session_factory, pg_settings, threading.Event())
-            finally:
-                holder.execute(
-                    text("SELECT pg_advisory_unlock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
-                )
-                holder.commit()
+    def test_the_hold_passes_to_the_next_process_once_released(self, pg_session_factory):
+        """A standby takes over when the holder gives up, which is how a dead worker is replaced."""
+        from fsm.core.lease import PostgresAdvisoryLease
+        from fsm.platform.worker import SYNC_LEASE_KEY
 
-    def test_releases_lock_after_returning(self, pg_session_factory, pg_settings):
-        """After run_forever returns, the lock is free so a fresh process can acquire it."""
-        import threading
+        holder = PostgresAdvisoryLease(pg_session_factory, SYNC_LEASE_KEY)
+        standby = PostgresAdvisoryLease(pg_session_factory, SYNC_LEASE_KEY)
+        assert holder.acquire() is True
+        holder.release()
 
-        from sqlalchemy import text
+        assert standby.acquire() is True
+        standby.release()
 
-        from fsm.platform.sync_runner import _SYNC_RUNNER_LOCK_KEY, run_forever
+    def test_releasing_without_holding_is_a_contract_violation(self, pg_session_factory):
+        from fsm.core.lease import PostgresAdvisoryLease
+        from fsm.platform.worker import SYNC_LEASE_KEY
 
-        already_stopped = threading.Event()
-        already_stopped.set()
-        run_forever(pg_session_factory, pg_settings, already_stopped)
-
-        with pg_session_factory() as probe:
-            reacquired = probe.execute(
-                text("SELECT pg_try_advisory_lock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
-            ).scalar()
-            probe.commit()
-            assert reacquired
-            probe.execute(
-                text("SELECT pg_advisory_unlock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
-            )
-            probe.commit()
+        with pytest.raises(RuntimeError, match="without being held"):
+            PostgresAdvisoryLease(pg_session_factory, SYNC_LEASE_KEY).release()

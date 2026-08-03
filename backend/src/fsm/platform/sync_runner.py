@@ -1,17 +1,14 @@
 """Runner for the inbound Google Calendar sync poller.
 
-Provides poll_once (single sweep of all connected technicians) and run_forever
-(loop that polls on a configurable interval). The __main__ entry point allows
-running the poller as a standalone process:
-
-    python -m fsm.platform.sync_runner
+Provides poll_once (single sweep of all connected technicians) and run_forever (loop that polls on
+a configurable interval). Neither may run twice against one database: two sweeps read the same
+sync token and reconcile the same Google changes, firing every notification twice. Holding the
+lease that keeps the poller singular belongs to the process composing this, not here.
 """
 from __future__ import annotations
 
 import logging
 import threading
-
-from sqlalchemy import text
 
 from fsm.google_calendar.adapters.client_factory import build_calendar_client
 from fsm.platform.availability_inputs import build_availability_inputs
@@ -24,12 +21,6 @@ from fsm.scheduling.adapters.unit_of_work import SqlAlchemyUnitOfWork
 from fsm.scheduling.application.reconciliation_service import ReconciliationService
 
 _log = logging.getLogger(__name__)
-
-# Session-level Postgres advisory lock key that makes the inbound sync poll loop a singleton across
-# processes: a second poller fails to acquire it and raises rather than double-poll technicians'
-# calendars, which would fire duplicate reschedule/cancel notifications. The value is an arbitrary
-# fixed 63-bit key ("fsm_sync" in ASCII).
-_SYNC_RUNNER_LOCK_KEY = 0x66736D5F73796E63
 
 
 def _mark_disconnected(technician_id, session_factory) -> None:
@@ -153,51 +144,19 @@ def _process_connection(
 def run_forever(session_factory, settings, stop_event: threading.Event, publish=None) -> None:
     """Poll all connected technicians repeatedly until stop_event is set.
 
-    Acquires the singleton _SYNC_RUNNER_LOCK_KEY advisory lock first and holds it for the loop's
-    lifetime; if another backoffice process already holds it, this raises RuntimeError instead of
-    starting a second poller. Each iteration calls poll_once, then waits fsm_sync_interval_seconds
-    before the next iteration. Exceptions within an iteration are logged and the loop continues. The
-    loop exits cleanly when stop_event is set, releasing the lock. When publish is given, it is
-    forwarded to poll_once and invoked once for each committed inbound change, after commit.
+    Each iteration calls poll_once, then waits fsm_sync_interval_seconds before the next.
+    Exceptions within an iteration are logged and the loop continues, so one technician's failure
+    does not end the sweep. When publish is given, it is forwarded to poll_once and invoked once
+    for each committed inbound change, after commit.
+
+    Runs only while the caller holds the inbound-sync lease; taking and giving up that hold is the
+    worker composition root's job, not this loop's.
     """
-    with session_factory() as lock_session:
-        acquired = lock_session.execute(
-            text("SELECT pg_try_advisory_lock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
-        ).scalar()
-        lock_session.commit()
-        if not acquired:
-            raise RuntimeError(
-                "Inbound sync runner lock is already held; only one backoffice process may run the "
-                "sync poller. Refusing to start a second poller."
-            )
+    _log.info("Sync runner starting (interval=%.1fs)", settings.fsm_sync_interval_seconds)
+    while not stop_event.is_set():
         try:
-            _log.info("Sync runner starting (interval=%.1fs)", settings.fsm_sync_interval_seconds)
-            while not stop_event.is_set():
-                try:
-                    poll_once(session_factory, settings, publish=publish)
-                except Exception:
-                    _log.exception("Unexpected error in sync poll_once; continuing")
-                stop_event.wait(settings.fsm_sync_interval_seconds)
-            _log.info("Sync runner stopped")
-        finally:
-            lock_session.execute(
-                text("SELECT pg_advisory_unlock(:key)"), {"key": _SYNC_RUNNER_LOCK_KEY}
-            )
-            lock_session.commit()
-
-
-if __name__ == "__main__":
-    from fsm.core.db import session_factory
-    from fsm.platform.config import get_settings
-    from fsm.platform.db import create_engine_from_settings
-    from fsm.platform.logging import configure_logging
-
-    configure_logging()
-    settings = get_settings()
-    engine = create_engine_from_settings(settings)
-    factory = session_factory(engine)
-    stop = threading.Event()
-    try:
-        run_forever(factory, settings, stop)
-    except KeyboardInterrupt:
-        stop.set()
+            poll_once(session_factory, settings, publish=publish)
+        except Exception:
+            _log.exception("Unexpected error in sync poll_once; continuing")
+        stop_event.wait(settings.fsm_sync_interval_seconds)
+    _log.info("Sync runner stopped")

@@ -54,6 +54,14 @@ services:
     command: ["uvicorn", "fsm.platform.app:create_app", "--factory",
               "--host", "0.0.0.0", "--port", "8003", "--forwarded-allow-ips", "*"]
 
+  # The calendar loops, restarted like the role processes. A restart is also how a standby worker
+  # would recover the inbound-sync lease, so leaving this on the default policy would strand the
+  # poller after a crash.
+  worker:
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+
   nginx:
     restart: unless-stopped
     environment:

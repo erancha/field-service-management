@@ -21,10 +21,10 @@ class Settings(CoreSettings):
     # IANA zone the single service region operates in; appointment times are rendered in it.
     timezone: str = DEFAULT_TIMEZONE
 
-    # Which deployment this process serves: technician | customer | backoffice. Drives the
+    # Which deployment this process is, keyed into DEPLOYMENTS in fsm/platform/roles.py:
+    # technician | customer | backoffice serve HTTP, worker runs the calendar loops. Drives the
     # sign-in role assignment (see SignInHost) and the landing-page title. The default stands for
-    # "no deployment", legal only for processes that serve no sign-in — the standalone calendar
-    # workers; create_app rejects it, and anything else outside the three, before serving.
+    # "no deployment"; create_app rejects it, and any role that serves no sign-in, before serving.
     fsm_role: str = "unknown"
     # Comma-separated emails granted ADMIN on first back-office sign-in. The only path to ADMIN.
     admin_emails: str | None = None
@@ -50,6 +50,10 @@ class Settings(CoreSettings):
     technician_app_url: str | None = None
 
     fsm_sync_interval_seconds: float = 30.0
+    # How long a worker process that lost the inbound-sync lease waits before trying again. It
+    # bounds how long the poller stays down after the holder dies, so it trades takeover latency
+    # against how often standbys wake to ask.
+    fsm_sync_lease_retry_seconds: float = 30.0
 
     # Book/cancel churn limit: a customer who cancels fsm_booking_cancel_limit or more
     # appointments within the rolling window is blocked from booking until the cool-off

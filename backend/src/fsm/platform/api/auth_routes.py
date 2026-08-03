@@ -45,9 +45,13 @@ from fsm.platform.roles import DEPLOYMENTS
 
 router = APIRouter(prefix="/auth")
 
+
 def _sign_in_host(settings) -> SignInHost:
-    """Return the sign-in host of the process role, which create_app has already validated."""
-    return DEPLOYMENTS[settings.fsm_role].sign_in_host
+    """Return the sign-in funnel of the role this process serves."""
+    host = DEPLOYMENTS[settings.fsm_role].sign_in_host
+    # These routes exist only inside an app, and no app is built for a role without a funnel.
+    assert host is not None
+    return host
 
 
 _publish = publish_to_app

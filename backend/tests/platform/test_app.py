@@ -78,57 +78,19 @@ def test_session_cookie_is_not_secure_for_local_and_test(app_env):
     assert middleware.kwargs["https_only"] is False
 
 
-def _worker_settings(**overrides) -> Settings:
-    values: dict = dict(
-        fsm_role="backoffice",
-        technician_app_url="https://tech.example.com",
-    )
-    values.update(overrides)
-    return _settings(**values)
+def test_no_serving_role_runs_a_background_loop():
+    """The loops belong to the worker deployment, so scaling any HTTP role duplicates nothing."""
+    from fsm.platform.roles import DEPLOYMENTS, SERVING_ROLES, Worker
+
+    assert [DEPLOYMENTS[role].workers for role in SERVING_ROLES] == [(), (), ()]
+    assert DEPLOYMENTS["worker"].workers == (Worker.CALENDAR_DISPATCH, Worker.INBOUND_SYNC)
+    assert "worker" not in SERVING_ROLES
 
 
-def test_create_app_refuses_dispatch_without_the_technician_app_url(stubbed_worker_runners):
-    """The check runs before the worker thread spawns: a raise inside the thread would kill only
-    the dispatcher while the web process kept serving, hiding the misconfiguration."""
-    with pytest.raises(ValueError, match="technician_app_url"):
-        create_app(
-            session_factory=lambda: None,
-            settings=_worker_settings(technician_app_url=None),
-        )
-
-
-def test_create_app_with_workers_emits_no_deprecation_warnings(stubbed_worker_runners):
+def test_create_app_emits_no_deprecation_warnings():
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
-        app = create_app(session_factory=lambda: None, settings=_worker_settings())
-
-    app.state.dispatcher_stop_event.set()
-    app.state.sync_stop_event.set()
-
-
-def test_only_the_backoffice_deployment_runs_the_calendar_workers(stubbed_worker_runners):
-    """The workers belong to the role, not to flags any role's environment could switch on."""
-    backoffice = create_app(session_factory=lambda: None, settings=_worker_settings())
-    technician = create_app(session_factory=lambda: None, settings=_settings(fsm_role="technician"))
-
-    assert hasattr(backoffice.state, "dispatcher_stop_event")
-    assert hasattr(backoffice.state, "sync_stop_event")
-    assert not hasattr(technician.state, "dispatcher_stop_event")
-    assert not hasattr(technician.state, "sync_stop_event")
-
-    backoffice.state.dispatcher_stop_event.set()
-    backoffice.state.sync_stop_event.set()
-
-
-def test_shutdown_sets_worker_stop_events(stubbed_worker_runners):
-    app = create_app(session_factory=lambda: None, settings=_worker_settings())
-
-    with TestClient(app):
-        assert not app.state.dispatcher_stop_event.is_set()
-        assert not app.state.sync_stop_event.is_set()
-
-    assert app.state.dispatcher_stop_event.is_set()
-    assert app.state.sync_stop_event.is_set()
+        create_app(session_factory=lambda: None, settings=_settings())
 
 
 @pytest.fixture(scope="module")

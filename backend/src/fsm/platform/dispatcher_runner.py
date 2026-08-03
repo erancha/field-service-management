@@ -1,10 +1,10 @@
 """Runner for the calendar projection dispatcher.
 
-Provides build_dispatcher (composes UoW + resolver into a CalendarProjectionDispatcher)
-and run_forever (loop that drains the outbox on a configurable interval). The
-__main__ entry point allows running the dispatcher as a standalone process:
-
-    python -m fsm.platform.dispatcher_runner
+Provides build_dispatcher (composes UoW + resolver into a CalendarProjectionDispatcher) and
+run_forever (loop that drains the outbox on a configurable interval). Several of these may run at
+once against one database, unlike the inbound sync poller: the outbox is claimed with
+SELECT ... FOR UPDATE SKIP LOCKED, so concurrent dispatchers partition entries between them, and
+the deterministic iCalUID makes a lost race idempotent at Google.
 """
 from __future__ import annotations
 
@@ -175,20 +175,3 @@ def run_forever(session_factory, settings, stop_event: threading.Event) -> None:
             _log.exception("Unexpected error in dispatcher run_once; continuing")
         stop_event.wait(settings.fsm_dispatch_interval_seconds)
     _log.info("Dispatcher runner stopped")
-
-
-if __name__ == "__main__":
-    from fsm.core.db import session_factory
-    from fsm.platform.config import get_settings
-    from fsm.platform.db import create_engine_from_settings
-    from fsm.platform.logging import configure_logging
-
-    configure_logging()
-    settings = get_settings()
-    engine = create_engine_from_settings(settings)
-    factory = session_factory(engine)
-    stop = threading.Event()
-    try:
-        run_forever(factory, settings, stop)
-    except KeyboardInterrupt:
-        stop.set()
