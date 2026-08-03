@@ -172,9 +172,12 @@ body {
 }
 
 /* App shell — the brand bar rendered once above every page. Same width as .page so the brand
-   aligns with the page content below it. */
+   aligns with the page content below it. On viewports too narrow for the brand and the user
+   controls side by side (360px phones), the controls wrap onto their own line rather than
+   overflowing off-screen. */
 .app-shell__bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
@@ -203,15 +206,27 @@ body {
   height: auto;
 }
 
+/* Stays against the right edge whether it shares the bar's line with the brand or wraps below it. */
 .app-shell__user {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/* The buttons hold their size so a long address gives up width instead of squashing them. */
+.app-shell__user .btn {
+  flex: none;
 }
 
 .app-shell__email {
   font-size: 0.875rem;
   color: var(--color-text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Pages */
