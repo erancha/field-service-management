@@ -71,9 +71,7 @@ def pg_settings(pg_engine):
         google_client_id="fake-client-id",
         google_client_secret="fake-client-secret",
         fsm_token_key=fernet_key,
-        fsm_dispatch_enabled=False,
         fsm_dispatch_interval_seconds=0.01,
-        fsm_sync_enabled=False,
         fsm_sync_interval_seconds=0.01,
     )
 

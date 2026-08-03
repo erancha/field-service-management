@@ -41,16 +41,14 @@ class Settings(CoreSettings):
     # Calendar-connect callback URL; same blank-derives-per-host rule as google_redirect_uri.
     google_calendar_redirect_uri: str = ""
 
-    fsm_dispatch_enabled: bool = False
     fsm_dispatch_interval_seconds: float = 5.0
     # Public base URL of the technician-facing deployment (scheme + host, e.g.
     # https://tech.example.com). The calendar dispatcher builds the photo links it writes into
     # events from it — it runs outside any request, so the host cannot be derived per request.
-    # None is legal only where dispatch is off; a dispatch-enabled process refuses to start
-    # without it.
+    # None is legal only for a deployment that runs no calendar dispatch; the one that does
+    # refuses to start without it.
     technician_app_url: str | None = None
 
-    fsm_sync_enabled: bool = False
     fsm_sync_interval_seconds: float = 30.0
 
     # Book/cancel churn limit: a customer who cancels fsm_booking_cancel_limit or more

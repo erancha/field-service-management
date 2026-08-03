@@ -270,12 +270,13 @@ Two infrastructure conditions make a multi-replica role safe:
   replicas; the Redis bus carries each SSE event to subscribers on every replica, so a client
   connected to one instance still receives events published by another.
 
-One constraint is not about role funnels: the background calendar workers (`FSM_DISPATCH_ENABLED` /
-`FSM_SYNC_ENABLED`) must be owned by exactly one process. When the back office runs as several replicas,
-enable the workers on one and leave them off on the rest, or they will each drain the shared calendar
-outbox and poll Google redundantly. Customer and technician replicas never touch those flags. What
-these workers do — the outbound projection dispatcher and the inbound reconciliation poller — is
-traced in [docs/data.md](data.md#calendar-sync).
+One constraint is not about role funnels: the background calendar workers are declared on the
+backoffice deployment (`fsm/platform/roles.py`), so every process running that role starts them.
+They must be owned by exactly one process — otherwise each drains the shared calendar outbox and
+polls Google redundantly — which is why the back office is pinned to a single replica and scaling
+it requires moving the workers to a deployment of their own first. What these workers do — the
+outbound projection dispatcher and the inbound reconciliation poller — is traced in
+[docs/data.md](data.md#calendar-sync).
 
 Per-key configuration — what each secret does and how to obtain the Google credentials — lives inline
 in [`backend/.env.example`](../backend/.env.example).

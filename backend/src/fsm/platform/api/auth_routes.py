@@ -41,21 +41,13 @@ from fsm.platform.api.oauth_redirect import resolve_redirect_uri
 from fsm.platform.api.schemas import UpdateProfileRequest
 from fsm.platform.events import ADMINS_CHANNEL, publish_to_app
 from fsm.platform.notifications_factory import build_email_sender
+from fsm.platform.roles import DEPLOYMENTS
 
 router = APIRouter(prefix="/auth")
 
-# The sign-in funnel each role's deployment serves. Also the set of roles a serving process may
-# run as: create_app refuses to start when FSM_ROLE is not a key here.
-SIGN_IN_HOST_BY_ROLE = {
-    "customer": SignInHost.CUSTOMER,
-    "technician": SignInHost.TECHNICIAN,
-    "backoffice": SignInHost.BACKOFFICE,
-}
-
-
 def _sign_in_host(settings) -> SignInHost:
     """Return the sign-in host of the process role, which create_app has already validated."""
-    return SIGN_IN_HOST_BY_ROLE[settings.fsm_role]
+    return DEPLOYMENTS[settings.fsm_role].sign_in_host
 
 
 _publish = publish_to_app

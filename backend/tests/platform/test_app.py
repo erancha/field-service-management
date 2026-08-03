@@ -30,12 +30,12 @@ def _settings(**overrides) -> Settings:
 
 
 def test_landing_page_reflects_the_configured_role():
-    client = TestClient(create_app(settings=_settings(fsm_role="backoffice")))
+    client = TestClient(create_app(settings=_settings(fsm_role="customer")))
 
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "backoffice" in response.text
+    assert "customer" in response.text
 
 
 def test_role_comes_from_the_settings_not_the_process_environment(monkeypatch):
@@ -81,25 +81,10 @@ def test_session_cookie_is_not_secure_for_local_and_test(app_env):
 def _worker_settings(**overrides) -> Settings:
     values: dict = dict(
         fsm_role="backoffice",
-        fsm_dispatch_enabled=True,
-        fsm_sync_enabled=True,
         technician_app_url="https://tech.example.com",
     )
     values.update(overrides)
     return _settings(**values)
-
-
-@pytest.fixture
-def stubbed_worker_runners(monkeypatch):
-    """Replace both worker loops with an idle wait so tests exercise app wiring, not the runners."""
-    import fsm.platform.dispatcher_runner as dispatcher_runner
-    import fsm.platform.sync_runner as sync_runner
-
-    def idle_runner(session_factory, settings, stop_event, publish=None):
-        stop_event.wait()
-
-    monkeypatch.setattr(dispatcher_runner, "run_forever", idle_runner)
-    monkeypatch.setattr(sync_runner, "run_forever", idle_runner)
 
 
 def test_create_app_refuses_dispatch_without_the_technician_app_url(stubbed_worker_runners):
@@ -119,6 +104,20 @@ def test_create_app_with_workers_emits_no_deprecation_warnings(stubbed_worker_ru
 
     app.state.dispatcher_stop_event.set()
     app.state.sync_stop_event.set()
+
+
+def test_only_the_backoffice_deployment_runs_the_calendar_workers(stubbed_worker_runners):
+    """The workers belong to the role, not to flags any role's environment could switch on."""
+    backoffice = create_app(session_factory=lambda: None, settings=_worker_settings())
+    technician = create_app(session_factory=lambda: None, settings=_settings(fsm_role="technician"))
+
+    assert hasattr(backoffice.state, "dispatcher_stop_event")
+    assert hasattr(backoffice.state, "sync_stop_event")
+    assert not hasattr(technician.state, "dispatcher_stop_event")
+    assert not hasattr(technician.state, "sync_stop_event")
+
+    backoffice.state.dispatcher_stop_event.set()
+    backoffice.state.sync_stop_event.set()
 
 
 def test_shutdown_sets_worker_stop_events(stubbed_worker_runners):

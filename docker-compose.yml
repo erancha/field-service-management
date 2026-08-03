@@ -182,13 +182,11 @@ services:
     env_file: *backend-env-file
     environment:
       <<: *backend-env
+      # This role runs the background calendar workers for the whole deployment: draining the
+      # outbox to Google (outbound projection) and polling Google for technician-side edits
+      # (inbound sync). They are declared on the backoffice entry in fsm/platform/roles.py, so
+      # setting the role here is what starts them — no separate switch to keep in step.
       FSM_ROLE: backoffice
-      # This role process runs the background calendar workers for the whole deployment: it drains
-      # the outbox to Google (outbound projection) and polls Google for technician-side edits
-      # (inbound sync). Exactly one process may run them, so technician/customer leave them at the
-      # config default (off) and only backoffice turns them on.
-      FSM_DISPATCH_ENABLED: "true"
-      FSM_SYNC_ENABLED: "true"
       # The dispatcher above writes photo links into calendar events, and a link clicked from
       # Google must be an absolute address on the technician-facing edge — nginx publishes that
       # role on localhost:8001. Export TECHNICIAN_APP_URL before launching to point links at a

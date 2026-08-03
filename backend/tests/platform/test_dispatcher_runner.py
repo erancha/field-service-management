@@ -65,7 +65,6 @@ def pg_settings(pg_engine):
         google_client_id=None,
         google_client_secret=None,
         fsm_token_key=None,
-        fsm_dispatch_enabled=False,
         fsm_dispatch_interval_seconds=0.01,
         technician_app_url="https://tech.example.com",
     )
@@ -216,7 +215,6 @@ class TestAuthDisconnectOnDispatchError:
             google_client_id="fake-client-id",
             google_client_secret="fake-secret",
             fsm_token_key=fernet_key,
-            fsm_dispatch_enabled=False,
             fsm_dispatch_interval_seconds=0.01,
         )
 
