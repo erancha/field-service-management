@@ -15,6 +15,7 @@ Detail behind the [root README's summary](../README.md#architecture) of how the 
 | `notifications` | in-app feed for both parties + technician email behind `NotificationPort` |
 | `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the google_calendar context's client) |
 | `shared` | shared kernel: the declarative ORM `Base`, Google OAuth endpoint URIs, and product identity constants (the brand name) — the only package a context may import from outside itself |
+| `core` | app-agnostic plumbing any backend process needs: structured logging, engine construction, and the publish/subscribe event bus. Knows nothing of this product — the log-level environment prefix, the pool sizing, the broker URL, and the channel names all arrive from `platform` |
 
 ## Import rules
 
@@ -52,12 +53,15 @@ flowchart TD
 
     shared["fsm.shared:<br/>ORM Base, Google OAuth endpoint URIs"]
 
+    core["fsm.core:<br/>logging, engine construction, event bus"]
+
     platform --> assist
     platform --> notifications
     platform --> google_calendar
     platform --> scheduling
     platform --> identity
     platform --> shared
+    platform --> core
 
     a_adapters --> shared
     n_adapters --> shared
@@ -69,6 +73,13 @@ flowchart TD
 The three inner layers (`application`, `ports`, `domain`) use only their own context, the standard
 library, and `shared.constants` (the product brand). Only `adapters` may import the rest of `shared`
 (the ORM `Base`, OAuth URIs) and infrastructure libraries (SQLAlchemy, Google clients).
+
+`core` has no arrows out of it at all — it may import neither a context, nor `shared`, nor
+`platform`, nor the web framework — and only `platform` has an arrow into it. Both directions are
+contracts, so a context cannot grow a dependency on the plumbing either: what a context needs is
+injected through its own ports. That is what keeps the event bus a transport — it carries dicts on
+named channels and never learns that `admins` is a channel or that only an approved administrator
+may open it, which `platform.events` decides.
 
 ## How contexts integrate
 

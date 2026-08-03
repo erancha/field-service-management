@@ -11,6 +11,14 @@ def test_settings_read_from_environment(monkeypatch):
     assert settings.app_env == "test"
 
 
+def test_blank_redis_url_is_treated_as_unset(monkeypatch):
+    """The blank-to-none rule declared here also covers the fields inherited from CoreSettings."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@localhost:5432/fsm")
+    monkeypatch.setenv("REDIS_URL", "")
+
+    assert Settings(_env_file=None).redis_url is None
+
+
 def test_get_settings_is_cached(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@localhost:5432/fsm")
     get_settings.cache_clear()

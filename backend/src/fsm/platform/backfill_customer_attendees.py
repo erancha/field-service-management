@@ -34,8 +34,9 @@ def enqueue_attendee_backfill(session, *, now: datetime) -> int:
 if __name__ == "__main__":
     from datetime import timezone
 
+    from fsm.core.db import session_factory
     from fsm.platform.config import get_settings
-    from fsm.platform.db import create_engine_from_settings, session_factory
+    from fsm.platform.db import create_engine_from_settings
     from fsm.platform.logging import configure_logging
 
     configure_logging()

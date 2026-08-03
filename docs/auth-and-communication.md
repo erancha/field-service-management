@@ -296,9 +296,9 @@ in [`backend/.env.example`](../backend/.env.example).
   customer/technician funnels. There is no client-supplied role.
 - **Refresh tokens are encrypted at rest.** A technician's stored Google refresh token is encrypted
   with `FSM_TOKEN_KEY`; rotating that key makes existing calendar connections undecryptable.
-- **Live streams are entitlement-bounded.** The SSE stream subscribes a connection only to the channels
-  its caller owns (`user:{id}`, plus `admins` for an approved administrator), so a client cannot listen
-  in on back-office events by asking.
+- **Live streams carry only the caller's own channels.** The SSE stream subscribes a connection to
+  `user:{id}`, plus `admins` for an approved administrator, and to nothing else — so a client cannot
+  listen in on back-office events by asking.
 
 ## Token and session lifetimes
 

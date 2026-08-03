@@ -107,7 +107,9 @@ Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker
 The backend is a **modular monolith**: bounded contexts (`assist`, `identity`, `scheduling`,
 `google_calendar`, `notifications`) under a single `fsm` package, each layered ports-and-adapters
 style and composed by `fsm.platform`. Contexts never import each other — each declares the ports it
-needs and `platform` injects implementations that bridge to the others.
+needs and `platform` injects implementations that bridge to the others. Below all of it, `fsm.core`
+holds the plumbing any backend process would need — logging, engine construction, the event bus —
+and knows nothing of this product.
 [docs/architecture.md](docs/architecture.md) picks up from here:
 
 - each package's responsibility, the full import-rule diagram, the context-integration pattern, and

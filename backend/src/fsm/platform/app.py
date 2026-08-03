@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from fsm.assist.domain.errors import AssistError
+from fsm.core.events import build_event_bus
 from fsm.platform.api.assist_errors import handle_assist_error
 from fsm.platform.api.auth_routes import router as auth_router
 from fsm.platform.api.backoffice_routes import router as backoffice_router
@@ -24,7 +25,7 @@ from fsm.platform.api.scheduling_routes import handle_scheduling_error
 from fsm.platform.api.scheduling_routes import router as scheduling_router
 from fsm.platform.api.triage_routes import router as triage_router
 from fsm.platform.assist_factory import build_chat_model, build_kb_index, build_photo_store
-from fsm.platform.events import build_event_bus, publish_appointment_changed
+from fsm.platform.events import publish_appointment_changed
 from fsm.platform.logging import configure_logging
 from fsm.scheduling.domain.errors import SchedulingError
 from fsm.shared.constants import BRAND
@@ -73,7 +74,7 @@ def create_app(
     app.include_router(triage_router)
 
     app.state.settings = settings
-    app.state.event_bus = build_event_bus(settings)
+    app.state.event_bus = build_event_bus(settings.redis_url)
     app.state.kb_index = build_kb_index(settings)
     app.state.photo_store = build_photo_store(settings)
     app.state.assist_chat_model = build_chat_model(settings, app.state.photo_store)
@@ -176,8 +177,9 @@ def _get_session_factory(
 ) -> Callable[[], Session] | sessionmaker[Session]:
     """Return the session factory stored on the app, building it lazily if absent."""
     if app.state.session_factory is None:
+        from fsm.core.db import session_factory
         from fsm.platform.config import get_settings
-        from fsm.platform.db import create_engine_from_settings, session_factory
+        from fsm.platform.db import create_engine_from_settings
 
         engine = create_engine_from_settings(get_settings())
         app.state.session_factory = session_factory(engine)

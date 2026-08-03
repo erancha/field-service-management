@@ -178,8 +178,9 @@ def run_forever(session_factory, settings, stop_event: threading.Event) -> None:
 
 
 if __name__ == "__main__":
+    from fsm.core.db import session_factory
     from fsm.platform.config import get_settings
-    from fsm.platform.db import create_engine_from_settings, session_factory
+    from fsm.platform.db import create_engine_from_settings
     from fsm.platform.logging import configure_logging
 
     configure_logging()

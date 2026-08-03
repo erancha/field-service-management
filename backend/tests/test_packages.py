@@ -5,6 +5,7 @@ import pytest
 CONTEXTS = [
     "fsm",
     "fsm.assist",
+    "fsm.core",
     "fsm.identity",
     "fsm.scheduling",
     "fsm.google_calendar",

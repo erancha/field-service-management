@@ -7,7 +7,7 @@ export type EventHandlers = Record<string, (data: unknown) => void>
  *
  * Opens a single EventSource to /api/events (cookies sent automatically same-origin) and dispatches
  * each named event to the matching handler. The server only ever sends events for channels the
- * authenticated caller is entitled to, so a handler set is safe to register regardless of role.
+ * authenticated caller may subscribe to, so a handler set is safe to register regardless of role.
  * Handlers are read through a ref so changing them does not tear down and reopen the connection.
  * `onOpen`, if given, fires on every connect (including reconnects), letting callers resync state
  * that may have drifted while the stream was down.

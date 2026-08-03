@@ -1,12 +1,12 @@
-"""Database engine and session factory for SQLAlchemy.
+"""Engine construction for FSM processes: the pool sizing this deployment runs with.
 
-The declarative Base lives in fsm.shared.db so context adapters can register tables
-without importing platform.
+The generic builder lives in fsm.core.db, and the declarative Base in fsm.shared.db so context
+adapters can register tables without importing platform.
 """
 
-from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import Engine
 
+from fsm.core.db import build_engine
 from fsm.platform.config import Settings
 
 POOL_SIZE = 20
@@ -30,17 +30,9 @@ psql. Adding role replicas multiplies the ceiling, so max_connections must rise 
 
 
 def create_engine_from_settings(settings: Settings) -> Engine:
-    """Build a SQLAlchemy engine; pool_pre_ping validates a pooled connection before
-    use so a stale or server-dropped connection is replaced rather than erroring a query."""
-    return create_engine(
+    """Build the engine an FSM process runs on, at this deployment's pool sizing."""
+    return build_engine(
         settings.database_url.get_secret_value(),
-        pool_pre_ping=True,
         pool_size=POOL_SIZE,
         max_overflow=MAX_OVERFLOW,
     )
-
-
-def session_factory(engine: Engine) -> sessionmaker[Session]:
-    """Build a session factory; expire_on_commit is off so ORM objects stay readable
-    after commit, letting callers return persisted entities outside the transaction."""
-    return sessionmaker(bind=engine, expire_on_commit=False, class_=Session)

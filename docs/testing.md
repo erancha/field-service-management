@@ -28,7 +28,7 @@ analysis cannot follow), and the **import-linter** boundary contracts described 
 [Architecture tests](#architecture-tests).
 
 Tests mirror the source layout — one package per bounded context (`identity`, `scheduling`,
-`google_calendar`, `notifications`, `assist`) plus `platform` — and fall into five kinds.
+`google_calendar`, `notifications`, `assist`) plus `platform` and `core` — and fall into five kinds.
 
 ### Unit tests
 Pure and in-memory, no external I/O. Domain and application layers (and ports, for the contexts that
@@ -61,7 +61,8 @@ and `ServiceCallOpener` (`FakeServiceCallOpener` against the scheduling bridge).
 ### Architecture tests
 `tests/test_architecture.py` runs import-linter's boundary contracts (also runnable directly as
 `lint-imports`): the build fails if any bounded context imports across a forbidden boundary — for
-example `scheduling` importing an adapter package or a Google library. `tests/test_packages.py` asserts
+example `scheduling` importing an adapter package or a Google library, or `core` importing anything
+of this product's, including the web framework. `tests/test_packages.py` asserts
 every package is importable. These encode the hexagonal<sup>(4)</sup> boundaries as executable checks rather than
 conventions.
 

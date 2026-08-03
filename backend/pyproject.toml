@@ -87,6 +87,8 @@ include_external_packages = true
 #   each context (assist, calendar, identity, notifications, scheduling)
 #                -> itself and fsm.shared only; never another context, never fsm.platform
 #   fsm.shared   -> nothing in fsm
+#   fsm.core     -> nothing in fsm, and nothing but fsm.platform imports it: app-agnostic
+#                   plumbing the composition root wires in, never something a context reaches for
 # Within a context, layers import downward only (adapters -> application -> ports -> domain);
 # domain, application, and ports use only the context itself, the standard library, and
 # fsm.shared.constants (the product brand). Only adapters may import the rest of fsm.shared
@@ -100,6 +102,36 @@ layers = [
     "fsm.assist | fsm.google_calendar | fsm.identity | fsm.notifications | fsm.scheduling",
     "fsm.shared",
 ]
+
+# A layers contract would only stop fsm.core importing upward, leaving every context free to import
+# it. Both directions are stated instead, so the generic core stays plumbing the composition root
+# injects rather than a utility package the contexts grow dependencies on.
+[[tool.importlinter.contracts]]
+name = "The generic core imports nothing of this product"
+type = "forbidden"
+source_modules = ["fsm.core"]
+forbidden_modules = [
+    "fsm.assist",
+    "fsm.google_calendar",
+    "fsm.identity",
+    "fsm.notifications",
+    "fsm.platform",
+    "fsm.scheduling",
+    "fsm.shared",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only the composition root imports the generic core"
+type = "forbidden"
+source_modules = [
+    "fsm.assist",
+    "fsm.google_calendar",
+    "fsm.identity",
+    "fsm.notifications",
+    "fsm.scheduling",
+    "fsm.shared",
+]
+forbidden_modules = ["fsm.core"]
 
 [[tool.importlinter.contracts]]
 name = "Contexts follow hexagonal layering (adapters over application over ports over domain)"
@@ -159,10 +191,11 @@ ignore_imports = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Neither contexts nor the shared kernel import the web framework"
+name = "Neither contexts, the shared kernel, nor the generic core import the web framework"
 type = "forbidden"
 source_modules = [
     "fsm.assist",
+    "fsm.core",
     "fsm.google_calendar",
     "fsm.identity",
     "fsm.notifications",

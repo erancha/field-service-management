@@ -1,23 +1,22 @@
-"""Application configuration loaded from the environment."""
+"""FSM's own configuration, extending the settings any backend process needs."""
 
 import zoneinfo
 from functools import lru_cache
-from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from fsm.core.config import CoreSettings
 
 
 DEFAULT_TIMEZONE = "Asia/Jerusalem"
 
 
-class Settings(BaseSettings):
-    """Process-wide configuration. Immutable once constructed."""
+class Settings(CoreSettings):
+    """Process-wide configuration. Immutable once constructed.
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
-
-    database_url: SecretStr
-    app_env: Literal["local", "test", "staging", "prod"] = "local"
+    Adds this product's own fields to the database, environment, and broker settings every backend
+    process needs.
+    """
 
     # IANA zone the single service region operates in; appointment times are rendered in it.
     timezone: str = DEFAULT_TIMEZONE
@@ -27,10 +26,6 @@ class Settings(BaseSettings):
     fsm_role: str = "unknown"
     # Comma-separated emails granted ADMIN on first back-office sign-in. The only path to ADMIN.
     admin_emails: str | None = None
-    # Redis pub/sub broker backing cross-process SSE delivery. Both the Docker and host deployments
-    # run one process per role and set this; when unset (the test suite, or a single-process run with
-    # no broker) the in-memory event bus is used instead.
-    redis_url: str | None = None
 
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None

@@ -4,9 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 from testcontainers.postgres import PostgresContainer
 
+from fsm.core.db import session_factory
 from fsm.platform.app import create_app
 from fsm.platform.config import Settings
-from fsm.platform.db import create_engine_from_settings, session_factory
+from fsm.platform.db import create_engine_from_settings
 
 
 def test_health_endpoint_returns_ok():
