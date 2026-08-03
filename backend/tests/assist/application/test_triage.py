@@ -9,12 +9,16 @@ import pytest
 
 from fsm.assist.application.prompts import (
     CLOSED_MARKER,
+    EQUIPMENT_CLOSE,
+    EQUIPMENT_OPEN,
     ESCALATE_MARKER,
     QUESTION_CLOSE,
     QUESTION_OPEN,
     SOLVED_MARKER,
+    SUMMARY_SYSTEM_PROMPT,
     TRIAGE_SYSTEM_PROMPT,
     QuestionSpan,
+    build_summary_prompt,
 )
 from fsm.assist.application.triage import (
     GROUNDING_HITS,
@@ -51,6 +55,10 @@ NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
 CUSTOMER = uuid.uuid4()
 
 OVEN_DOC = "The oven will not heat. Hold the reset button behind the lower panel for ten seconds."
+
+LIFT = "Bruno VPL-3100 vertical platform lift"
+LIFT_NAMED = f"That looks like a {EQUIPMENT_OPEN}{LIFT}{EQUIPMENT_CLOSE}."
+ELEVATOR_NAMED = f"That looks like a {EQUIPMENT_OPEN}Savaria Eclipse home elevator{EQUIPMENT_CLOSE}."
 
 
 class ExactFragmentChatModel(FakeChatModel):
@@ -518,8 +526,9 @@ def test_the_forced_escalation_opens_a_service_call_carrying_the_summary() -> No
 
 def make_grounded_service(
     document_index: FakeDocumentIndex | None,
+    replies: list[str] | None = None,
 ) -> tuple[TriageService, FakeChatModel]:
-    chat_model = FakeChatModel()
+    chat_model = FakeChatModel(replies=replies)
     service = TriageService(
         conversations=FakeConversationRepository(),
         chat_model=chat_model,
@@ -565,6 +574,74 @@ def test_every_turn_searches_again_so_the_topic_can_move_mid_conversation() -> N
         "The oven will not heat.",
         "Now the fridge is making a noise.",
     ]
+
+
+def test_a_later_turn_searches_with_the_equipment_the_assistant_identified() -> None:
+    """A follow-up leaves its subject to the conversation, so the query has to supply it."""
+    index = RecordingDocumentIndex()
+    service, _ = make_grounded_service(index, replies=[f"{LIFT_NAMED} Is the gate latched?"])
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "My lift stopped working.")
+
+    drain(service, convo.id, "What are the dimensions?")
+
+    assert [query for query, _ in index.searches] == [
+        "My lift stopped working.",
+        f"{LIFT}\nWhat are the dimensions?",
+    ]
+
+
+def test_a_corrected_identity_is_what_later_turns_search_with() -> None:
+    index = RecordingDocumentIndex()
+    service, _ = make_grounded_service(
+        index,
+        replies=[ELEVATOR_NAMED, f"{LIFT_NAMED} The rating plate settles it."],
+    )
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "It will not move.")
+    drain(service, convo.id, "Here is the rating plate.")
+
+    drain(service, convo.id, "What are the dimensions?")
+
+    assert index.searches[-1][0] == f"{LIFT}\nWhat are the dimensions?"
+
+
+def test_the_identity_reaches_the_conversation_and_its_name_reaches_the_customer() -> None:
+    service, conversations, _, _ = make_service(
+        replies=[f"That looks like a {EQUIPMENT_OPEN}{LIFT}{EQUIPMENT_CLOSE} to me."]
+    )
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "My lift stopped working.")
+
+    assert conversations.rows[convo.id].equipment == LIFT
+    assert EQUIPMENT_OPEN not in streamed
+    assert EQUIPMENT_CLOSE not in streamed
+    assert streamed.strip() == f"That looks like a {LIFT} to me."
+    assert conversations.rows[convo.id].messages[-1].text == f"That looks like a {LIFT} to me."
+
+
+def test_the_escalation_summary_is_told_what_triage_identified() -> None:
+    service, _, chat_model, _ = make_service(
+        replies=[LIFT_NAMED, f"Opening a service call. {ESCALATE_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "It will not move.")
+
+    drain(service, convo.id, "Yes, book a visit.")
+
+    system, _ = chat_model.summarize_calls[0]
+    assert system == build_summary_prompt(LIFT)
+
+
+def test_a_conversation_that_never_identified_the_equipment_summarizes_from_the_transcript() -> None:
+    service, _, chat_model, _ = make_service(replies=[f"Opening a service call. {ESCALATE_MARKER}"])
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "Yes, book a visit.")
+
+    system, _ = chat_model.summarize_calls[0]
+    assert system == SUMMARY_SYSTEM_PROMPT
 
 
 def test_a_search_that_matches_nothing_leaves_the_model_on_the_bare_prompt() -> None:

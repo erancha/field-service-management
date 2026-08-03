@@ -92,6 +92,26 @@ def test_save_persists_new_messages_and_the_ending(session) -> None:
     assert [m.text for m in loaded.messages] == ["Still cold."]
 
 
+def test_save_carries_the_identified_equipment_across_turns(session) -> None:
+    """Each turn reads the conversation back, so an identity that does not survive the round trip
+    reaches no later turn's search."""
+    repo = SqlAlchemyConversationRepository(session)
+    customer_id = uuid.uuid4()
+    convo = make_conversation(customer_id)
+    repo.add(convo)
+    session.commit()
+    assert repo.get(convo.id, customer_id).equipment is None
+
+    convo.identify_equipment("Bruno VPL-3100 vertical platform lift")
+    repo.save(convo)
+    session.commit()
+    session.expunge_all()
+
+    loaded = SqlAlchemyConversationRepository(session).get(convo.id, customer_id)
+
+    assert loaded.equipment == "Bruno VPL-3100 vertical platform lift"
+
+
 def test_save_does_not_duplicate_messages_already_stored(session) -> None:
     repo = SqlAlchemyConversationRepository(session)
     customer_id = uuid.uuid4()

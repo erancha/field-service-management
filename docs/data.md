@@ -139,6 +139,7 @@ erDiagram
         uuid customer_id
         text status
         uuid service_call_id "set on escalation"
+        text equipment "set once the assistant identifies the machine"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -169,7 +170,10 @@ rows so re-chunking or embedding-model changes rebuild from stored bytes without
 A triage conversation ends exactly once — solved, escalated, or abandoned — and only an escalated
 one carries a `service_call_id`. That column is a plain id, not a foreign key, because the service
 call belongs to the scheduling context. Messages cascade with their conversation; `seq` is what
-orders them, so replaying a chat does not depend on timestamp resolution.
+orders them, so replaying a chat does not depend on timestamp resolution. `equipment` holds the
+assistant's current identification of the machine, which the knowledge-base query is built from;
+each identification overwrites the last, so the column carries the conclusion and not the
+corrections that led to it.
 
 ## Integrity guarantees worth knowing
 

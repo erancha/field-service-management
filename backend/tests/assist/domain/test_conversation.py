@@ -70,6 +70,26 @@ def test_mark_escalated_records_the_service_call() -> None:
     assert convo.service_call_id == service_call_id
 
 
+def test_a_conversation_starts_without_an_identified_machine() -> None:
+    assert make_conversation().equipment is None
+
+
+def test_identifying_the_equipment_again_replaces_the_earlier_identification() -> None:
+    convo = make_conversation()
+
+    convo.identify_equipment("Savaria Eclipse home elevator")
+    convo.identify_equipment("Bruno VPL-3100 vertical platform lift")
+
+    assert convo.equipment == "Bruno VPL-3100 vertical platform lift"
+
+
+def test_identifying_the_equipment_of_a_closed_conversation_is_rejected() -> None:
+    convo = make_conversation(ConversationStatus.SOLVED)
+
+    with pytest.raises(ConversationClosed):
+        convo.identify_equipment("Bruno VPL-3100 vertical platform lift")
+
+
 def test_mark_abandoned_closes_the_conversation() -> None:
     convo = make_conversation()
 

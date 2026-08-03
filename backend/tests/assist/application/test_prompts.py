@@ -5,7 +5,10 @@ import uuid
 
 from fsm.assist.application.prompts import (
     CLOSED_MARKER,
+    EQUIPMENT_CLOSE,
+    EQUIPMENT_OPEN,
     ESCALATE_MARKER,
+    MARKERS,
     QUESTION_CLOSE,
     QUESTION_OPEN,
     SOLVED_MARKER,
@@ -13,6 +16,7 @@ from fsm.assist.application.prompts import (
     TRIAGE_SYSTEM_PROMPT,
     ParsedReply,
     QuestionSpan,
+    build_summary_prompt,
     build_system_prompt,
     parse_reply,
 )
@@ -39,11 +43,17 @@ def test_prompt_tells_the_model_to_ask_for_and_read_photos() -> None:
 
 
 def test_prompt_documents_every_control_marker() -> None:
-    assert SOLVED_MARKER in TRIAGE_SYSTEM_PROMPT
-    assert ESCALATE_MARKER in TRIAGE_SYSTEM_PROMPT
-    assert CLOSED_MARKER in TRIAGE_SYSTEM_PROMPT
-    assert QUESTION_OPEN in TRIAGE_SYSTEM_PROMPT
-    assert QUESTION_CLOSE in TRIAGE_SYSTEM_PROMPT
+    """A marker the parser honours but the prompt never explains is one the model cannot write."""
+    for marker in MARKERS:
+        assert marker in TRIAGE_SYSTEM_PROMPT
+
+
+def test_prompt_asks_the_model_to_name_the_equipment_and_rename_it_when_it_changes() -> None:
+    section = TRIAGE_SYSTEM_PROMPT.split("Naming the equipment:", 1)[1].split("\n\n", 1)[0].lower()
+
+    assert "the moment you can tell what the equipment is" in section
+    assert "the last name you wrap is the one that stands" in section
+    assert "the customer reads it" in section
 
 
 def test_prompt_requires_the_customers_agreement_before_escalating() -> None:
@@ -124,6 +134,17 @@ def test_summary_prompt_bounds_each_field_and_separates_what_is_read_when() -> N
 
     assert "one or two sentences" in prompt
     assert "before setting out" in prompt
+
+
+def test_summary_prompt_states_the_equipment_triage_identified() -> None:
+    prompt = build_summary_prompt("Bruno VPL-3100 vertical platform lift")
+
+    assert SUMMARY_SYSTEM_PROMPT in prompt
+    assert "already been identified as: Bruno VPL-3100 vertical platform lift" in prompt
+
+
+def test_summary_prompt_leaves_an_unidentified_machine_to_the_transcript() -> None:
+    assert build_summary_prompt(None) == SUMMARY_SYSTEM_PROMPT
 
 
 def test_prompt_prefers_a_closed_question_but_not_where_the_answer_is_a_value() -> None:
@@ -218,3 +239,49 @@ def test_parse_reply_carries_both_an_ending_and_no_question() -> None:
 
     assert parsed.marker == ESCALATE_MARKER
     assert parsed.question is None
+
+
+def test_parse_reply_reports_the_equipment_and_leaves_its_name_in_the_reply() -> None:
+    parsed = parse_reply(
+        f"That looks like a {EQUIPMENT_OPEN}Bruno VPL-3100 vertical platform lift{EQUIPMENT_CLOSE}."
+    )
+
+    assert parsed.equipment == "Bruno VPL-3100 vertical platform lift"
+    assert parsed.text == "That looks like a Bruno VPL-3100 vertical platform lift."
+
+
+def test_parse_reply_keeps_a_sentence_that_reads_through_the_equipment_name_intact() -> None:
+    """The name is prose the customer reads, so unwrapping it mid-sentence must not gap the text."""
+    parsed = parse_reply(
+        f"The {EQUIPMENT_OPEN}Bruno VPL-3100{EQUIPMENT_CLOSE} will not travel unlatched."
+    )
+
+    assert parsed.text == "The Bruno VPL-3100 will not travel unlatched."
+
+
+def test_parse_reply_reports_no_equipment_when_the_reply_names_none() -> None:
+    assert parse_reply("Tell me more about the problem.").equipment is None
+
+
+def test_parse_reply_measures_the_question_after_the_equipment_delimiters_have_gone() -> None:
+    """Both spans index the text the customer sees, so an earlier wrapper must not shift them."""
+    parsed = parse_reply(
+        f"A {EQUIPMENT_OPEN}Savaria Eclipse home elevator{EQUIPMENT_CLOSE}, then. "
+        f"{QUESTION_OPEN}Is it lit?{QUESTION_CLOSE}"
+    )
+
+    assert parsed.text[parsed.question.start:parsed.question.end] == "Is it lit?"
+
+
+def test_parse_reply_drops_a_half_written_name_without_reporting_one() -> None:
+    parsed = parse_reply(f"That is a {EQUIPMENT_OPEN}Bruno VPL")
+
+    assert parsed.equipment is None
+    assert parsed.text == "That is a Bruno VPL"
+
+
+def test_parse_reply_treats_an_empty_pair_as_naming_nothing() -> None:
+    parsed = parse_reply(f"Right. {EQUIPMENT_OPEN}{EQUIPMENT_CLOSE}Is it lit?")
+
+    assert parsed.equipment is None
+    assert parsed.text == "Right. Is it lit?"

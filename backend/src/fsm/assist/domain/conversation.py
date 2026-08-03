@@ -56,6 +56,10 @@ class Conversation:
 
     service_call_id is set only on escalation and refers to a scheduling service call by id;
     cross-context references stay by-id.
+
+    equipment is what the assistant has determined the exchange is about, in make-model-type form,
+    and None until it can tell. It holds only the current identity, not the corrections that led to
+    it.
     """
 
     id: uuid.UUID
@@ -65,6 +69,7 @@ class Conversation:
     updated_at: datetime
     messages: list[Message] = field(default_factory=list)
     service_call_id: uuid.UUID | None = None
+    equipment: str | None = None
 
     def is_open(self) -> bool:
         return self.status is ConversationStatus.ACTIVE
@@ -77,6 +82,15 @@ class Conversation:
         self.require_open()
         self.messages.append(message)
         self.updated_at = now
+
+    def identify_equipment(self, identity: str) -> None:
+        """Record what the equipment has turned out to be, replacing any earlier identification.
+
+        Later beats earlier because identification improves with the conversation: a guess from a
+        blurred photo gives way to the model number off the rating plate.
+        """
+        self.require_open()
+        self.equipment = identity
 
     def mark_solved(self, now: datetime) -> None:
         self._close(ConversationStatus.SOLVED, now)

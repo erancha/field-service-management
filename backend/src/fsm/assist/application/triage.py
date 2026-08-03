@@ -1,4 +1,15 @@
-"""Runs the customer triage conversation and its three endings."""
+"""The customer's triage conversation, one request at a time, and the three endings it can reach.
+
+TriageService orchestrates a single request: opening or resuming the conversation, streaming one
+reply, recording both messages, and applying whichever ending that reply marked. It holds no
+conversation of its own — the exchange is read back from the store each turn — while what the
+instance does accumulate, the turn's outcome and cited sources, describes that one turn and is read
+off it once the stream drains.
+
+Alongside it: TurnOutcome and DocumentRef, which are what the chat surface learns from a turn
+without parsing the reply; and cited_sources, the bar a retrieved document clears before it is
+offered to the customer.
+"""
 from __future__ import annotations
 
 import uuid
@@ -11,9 +22,9 @@ from fsm.assist.application.prompts import (
     ESCALATE_MARKER,
     MARKERS,
     SOLVED_MARKER,
-    SUMMARY_SYSTEM_PROMPT,
     ParsedReply,
     QuestionSpan,
+    build_summary_prompt,
     build_system_prompt,
     parse_reply,
 )
@@ -137,6 +148,19 @@ class TurnOutcome:
     sources: tuple[DocumentRef, ...] = ()
 
 
+def _search_query(equipment: str | None, text: str) -> str:
+    """What the knowledge base is searched with for this turn.
+
+    A message is embedded as it stands, so a follow-up that leaves its subject to the conversation
+    — "what are the dimensions?" — lands nowhere near the manual that answers it and retrieves on
+    wording alone. Leading with the identified equipment puts the query back in the region of the
+    documents about that machine. Until triage has identified it, the message searches alone.
+    """
+    if equipment is None:
+        return text
+    return f"{equipment}\n{text}"
+
+
 def _visible_prefix(text: str) -> str:
     """What of a part-streamed reply the customer can be shown now.
 
@@ -161,7 +185,11 @@ def _visible_prefix(text: str) -> str:
 
 
 class TriageService:
-    """One conversation per customer at a time, ending solved, escalated, or abandoned."""
+    """One conversation per customer at a time, ending solved, escalated, or abandoned.
+
+    An instance belongs to one request, not to the conversation it acts on: the outcome and sources
+    it accumulates belong to the turn just streamed, so two callers cannot share one.
+    """
 
     def __init__(
         self,
@@ -288,7 +316,8 @@ class TriageService:
             )
             return
 
-        hits = self._document_index.search(text, GROUNDING_HITS) if self._document_index else []
+        query = _search_query(conversation.equipment, text)
+        hits = self._document_index.search(query, GROUNDING_HITS) if self._document_index else []
         self._sources = cited_sources(hits)
         system = build_system_prompt(hits)
 
@@ -329,6 +358,8 @@ class TriageService:
             ),
             now,
         )
+        if parsed.equipment is not None:
+            conversation.identify_equipment(parsed.equipment)
 
         if marker == SOLVED_MARKER:
             conversation.mark_solved(now)
@@ -337,7 +368,9 @@ class TriageService:
             conversation.mark_abandoned(now)
             self._outcome = TurnOutcome(status=ConversationStatus.ABANDONED)
         elif marker == ESCALATE_MARKER:
-            summary = self._chat_model.summarize(SUMMARY_SYSTEM_PROMPT, conversation.messages)
+            summary = self._chat_model.summarize(
+                build_summary_prompt(conversation.equipment), conversation.messages
+            )
             description = summary.render()
             opened = self._service_calls.open(
                 conversation.customer_id,

@@ -46,6 +46,9 @@ class AssistConversationRow(Base):
     customer_id and service_call_id are plain user and service-call ids, not foreign keys —
     cross-context references stay by-id.
 
+    equipment is overwritten by each identification, so the column holds the current one and no
+    history of the corrections behind it.
+
     A customer has at most one ACTIVE conversation at a time; the partial unique index enforces
     that in the database, so concurrent start requests cannot each open one.
     """
@@ -56,6 +59,7 @@ class AssistConversationRow(Base):
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     service_call_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    equipment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 

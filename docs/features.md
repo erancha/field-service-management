@@ -1,5 +1,10 @@
 # Features & roadmap
 
+[Sign-in and roles](#sign-in-and-roles) · [Booking and scheduling](#booking-and-scheduling) ·
+[Google Calendar](#google-calendar-both-directions) · [Notifications](#notifications) ·
+[Triage assistant](#the-customers-triage-assistant) · [Photos in the chat](#photos-in-the-chat) ·
+[Knowledge base](#knowledge-base) · [Deployment](#deployment) · [Roadmap](#roadmap)
+
 ## What's built
 
 Everything below is running today. Everything not below is in the [Roadmap](#roadmap).
@@ -44,92 +49,83 @@ variables and degrades gracefully when unset — the feed row is still written.
 is over; the code around it takes the one action that follows — opening the service call. The model
 calls no tools; letting it act across the call lifecycle is what would make it an agent.
 
-Replies are grounded in the back-office knowledge base by retrieval-augmented generation: every
-customer turn is embedded, the nearest chunks come back from pgvector and enter the system prompt as
-reference material the model follows and cites by document name, falling back to its own knowledge
-when no uploaded document covers the topic. Retrieval repeats per turn, because the topic can move
-mid-chat.
+**Grounded in the knowledge base.** Every turn is embedded, the nearest chunks come back from
+pgvector into the system prompt as reference material the model follows and cites by document name,
+falling back to its own knowledge when nothing uploaded covers the topic. Retrieval repeats per
+turn, because the topic can move mid-chat.
 
-A turn whose retrieval landed well also offers the document itself: the reply carries a link that
-opens the original in a new tab at the page its best-matching passage starts on, served by the one
-knowledge-base route open past the back office.
-Two bars keep the offer honest, both stricter than what grounding needs, because naming a document
-on screen claims the answer rests on it: a chunk counts only above a cosine similarity of 0.45, and
-a document is offered only when at least two of its chunks clear that. Measured against an elevator
-controller manual, questions it answers score 0.47-0.55 and unrelated ones 0.21-0.25. The model
-still sees every retrieved chunk regardless of score, so the link governs what the customer is
-shown, not what the assistant reads. Links are reported per streamed turn and not stored with the
-transcript, so a reloaded or past conversation shows the turns without them.
+The query is the customer's message led by the equipment the assistant has identified, since a
+message carries its own subject only sometimes: "what are the dimensions?" names no machine and
+lands nowhere near the manual that answers it. The assistant names the equipment as soon as it can
+tell — from a photo, a rating plate, or what the customer says — wrapping that name in a control
+marker whose delimiters alone are stripped, so the customer reads the identification and can correct
+it while the conversation keeps it for later queries. The latest name stands, so a guess off a
+blurred photo gives way to the model number off the plate. The technician's summary is handed that
+same identity rather than reaching its own verdict on the transcript, so the machine named on the
+job and the machine the manuals were searched for cannot drift apart.
 
-The page comes from offsets rather than from splitting the text page by page: extraction records
-where each page begins, indexing records where each chunk begins, and a lookup between the two gives
-a chunk its page. Chunking, and with it retrieval, is therefore exactly what it would be with no
-pages at all. A chunk carries whatever the indexing run that wrote it recorded, so a document whose
-chunks hold no page gains one on a re-index, which re-extracts from the stored original.
+**Offering the document.** A turn whose retrieval landed well carries a link opening the original in
+a new tab at the page its best-matching passage starts on, served by the one knowledge-base route
+open past the back office. Two bars keep the offer honest, both stricter than what grounding needs,
+because naming a document on screen claims the answer rests on it: a chunk counts only above a
+cosine similarity of 0.45, and a document is offered only when at least two of its chunks clear
+that. Measured against an elevator controller manual, questions it answers score 0.47-0.55 and
+unrelated ones 0.21-0.25. The model still sees every retrieved chunk regardless of score, so the
+link governs what the customer is shown, not what the assistant reads. Links are reported per
+streamed turn and not stored with the transcript, so history reads back without them. The page comes
+from offsets rather than from splitting the text page by page — extraction records where each page
+begins, indexing where each chunk begins, and a lookup between the two gives a chunk its page — so
+chunking, and with it retrieval, is exactly what it would be with no pages at all.
 
-The chat appears when `ASSIST_MODEL` and its provider's API key are set; with them unset the
-customer sees the plain description form instead, and switching between an Anthropic and an OpenAI
-model is a change to `ASSIST_MODEL` and its key, with no code change. The assistant suggests only
-steps that are safe for a customer to try — never gas, mains wiring, refrigerant, or working at
-height.
+**One answerable question at a time.** The assistant names what it suspects and lets the customer
+confirm or deny it ("do you see anything built up on the rail?") rather than sending them off to
+observe and report, since a denial rules the suspicion out just as well. Questions stay open only
+where no yes or no could carry the answer — a model number, an error code, a reading — and a message
+prescribing a step ends by asking after that step's result ("did cleaning the rail stop the
+juddering?"), so a suggestion never leaves the customer with an instruction and nothing to answer.
 
-Before a customer first reaches their dashboard, a disclaimer states what the assistant is: it
-answers from the uploaded knowledge base and names the document, falls back on the model's training
-data where no document covers the question, and is to be checked rather than followed. Nothing it
-suggests is a reason to work on gas, mains wiring, refrigerant, or at height. Continuing needs a
-ticked confirmation, recorded on the account as a timestamp
-(`app_user.assist_disclaimer_accepted_at`) rather than in browser storage, so a customer is asked
-once rather than once per device — and is asked even where `ASSIST_MODEL` is unset.
+A plain yes/no question gets tappable Yes and No buttons, with a Send tick-box beside them that is
+on by default: a tap answers in one turn, or, cleared, drops the word into the composer to be
+qualified — "Yes, on the control box". Either way a tap folds in anything already typed rather than
+stranding it, and answering retires the buttons so a second tap cannot stack a second answer.
 
-The assistant is told to put its question as one a yes or no answers whenever a yes or no would
-tell it what it needs — to name the thing it suspects and let the customer confirm or deny it
-("do you see anything built up on the rail?") rather than send them off to observe and report
-("look at the rail and tell me what you see"), since a denial rules the suspicion out just as well.
-Questions stay open only where no yes or no could carry the answer: a model number, an error code,
-a reading. A message that prescribes a step closes the same way, asking after that step's result as
-a yes/no that names it ("did cleaning the rail stop the juddering?"), so a suggestion never leaves
-the customer with an instruction and nothing to answer.
+The question is marked in place, like the equipment name: the delimiters are stripped before storing
+and reported as offsets into the visible text on the turn's final SSE frame, so the browser learns
+from data both that buttons belong on this turn and where to bold the question. Written as part of
+the question, they cannot be missing from one the model has finished writing; sitting mid-reply,
+each is removed where it stands so the question streams as it is written rather than in one lump at
+the end. History carries no offsets, so it shows neither buttons nor emphasis.
 
-When the assistant's one question is a plain yes/no ("Is the breaker on?"), the chat shows tappable
-Yes and No quick-reply buttons. Beside them sits a Send tick-box, on by default: a tap then answers
-the question in one turn. Clearing it redirects the tap into the composer instead, unsent and ready
-to be qualified — "Yes, on the control box" — for a question where yes or no is only the opening of
-the answer. Either way a tap folds in anything already typed rather than stranding it, and
-answering retires the buttons so a second tap cannot stack a second answer.
-
-The assistant marks such a question by wrapping it in delimiters, which the server strips before
-storing the reply and reports as offsets into the visible text on the turn's final SSE frame. The
-browser therefore learns both facts from data: that buttons belong on this turn, and where the
-question they answer sits, so it bolds that question without inspecting the reply itself. History
-read back after a conversation ends carries no offsets and so shows neither buttons nor emphasis.
-
-Marking the question in place is what keeps that signal dependable: the delimiters are written as
-part of the question, so a question the model has finished writing cannot be missing them. Because
-they sit mid-reply, the stream removes each one where it stands and carries on, which is what lets
-the question reach the customer as it is written rather than in one lump when the turn ends.
+**Configuration and safety.** The chat appears when `ASSIST_MODEL` and its provider's API key are
+set; unset, the customer sees the plain description form instead, and switching between an Anthropic
+and an OpenAI model is a config change, not a code change. The assistant suggests only steps that
+are safe for a customer to try — never gas, mains wiring, refrigerant, or working at height. A
+disclaimer saying so, and stating that the assistant answers from the uploaded documents, falls back
+on training data where none covers the question, and is to be checked rather than followed, is shown
+before a customer first reaches their dashboard. Continuing needs a ticked confirmation recorded on
+the account (`app_user.assist_disclaimer_accepted_at`) rather than in browser storage, so a customer
+is asked once rather than once per device — even where `ASSIST_MODEL` is unset.
 
 A conversation ends one of three ways:
 
 - **Solved** — the customer confirms the problem is fixed.
-- **Escalated** — the assistant first asks, as a yes/no question, whether to book a technician
-  visit; only a Yes opens the service call carrying the summary, after which the customer books a
-  technician through the same flow as before. A No stays in the conversation for one more try or a
-  late correction — though a declined safety escalation reopens nothing unsafe: the assistant
-  repeats that a technician is the safe way forward.
-- **Closed** — it was never an equipment fault, or the customer asked to stop. Booking nothing is
-  the point, so asking to leave never books a visit. Both the assistant and an End chat button can
-  close one.
+- **Escalated** — the assistant asks first, as a yes/no question, whether to book a visit; only a
+  Yes opens the service call carrying the summary, and the customer books through the usual flow
+  from there. A No stays in the conversation for one more try or a late correction, though a
+  declined safety escalation reopens nothing unsafe.
+- **Closed** — never an equipment fault, or the customer asked to stop; asking to leave books
+  nothing. Both the assistant and an End chat button can close one.
 
 The summary is **stored as structure, not prose**: the service call keeps the fields as JSON, and
 one layout definition drives the calendar event's HTML, the appointment card, and the notification
-email, so no surface reads a rendering back apart.
+email.
 
 Around the edges: a conversation that runs long escalates on its own, without the booking question,
-because each turn re-sends the whole exchange and a customer still stuck that far in needs a visit; one left quiet for 24 hours is
-retired; a customer has at most one active conversation, enforced by a partial unique index; replies
-stream to the browser and survive a page reload; ended conversations stay readable, newest first;
-and a conversation nobody typed into never appears. Opening a service call never depends on the
-assistant — a turn the model cannot answer offers the plain description form as a way through.
+because each turn re-sends the whole exchange and a customer still stuck that far in needs a visit;
+one left quiet for 24 hours is retired; a customer has at most one active conversation, enforced by
+a partial unique index; replies stream and survive a page reload; ended conversations stay readable,
+newest first; and a conversation nobody typed into never appears. Opening a service call never
+depends on the assistant — a turn the model cannot answer offers the plain description form instead.
 
 ### Photos in the chat
 

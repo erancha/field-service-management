@@ -28,7 +28,18 @@ the question in place is also what keeps the signal dependable — they are writ
 question, so a question the model has finished writing cannot be missing them.
 """
 
-MARKERS = (*ENDING_MARKERS, QUESTION_OPEN, QUESTION_CLOSE)
+EQUIPMENT_OPEN = "[[EQ]]"
+EQUIPMENT_CLOSE = "[[/EQ]]"
+"""Wrap where the reply names the equipment, the first time the assistant can tell what it is and
+again whenever it revises that.
+
+Like the question delimiters, these mark prose the customer reads: the name stays in the message
+and only the delimiters go, so a reply is free to name the equipment mid-sentence. Naming it where
+the customer can see it is what lets them correct an identification that is wrong; the same name is
+carried on the conversation, where it leads the knowledge-base query.
+"""
+
+MARKERS = (*ENDING_MARKERS, QUESTION_OPEN, QUESTION_CLOSE, EQUIPMENT_OPEN, EQUIPMENT_CLOSE)
 """Every control marker. Both the parser here and the streaming code that withholds a marker
 mid-flight work from this tuple, so a marker added to it can never be honoured by only one of them.
 """
@@ -54,6 +65,9 @@ class ParsedReply:
 
     question: QuestionSpan | None
     """The wrapped yes/no question, or None when the reply asked none."""
+
+    equipment: str | None = None
+    """The equipment this reply named, or None when it named none."""
 
 TRIAGE_SYSTEM_PROMPT = f"""\
 You are the triage assistant for a field-service company. A customer has a problem with a piece of \
@@ -97,6 +111,20 @@ Safety boundary — this is absolute:
 - Never suggest opening a sealed unit, bypassing a safety device, or defeating an interlock.
 - If a symptom suggests any of these, stop suggesting and escalate immediately.
 - When you are unsure whether a step is safe, it is not. Escalate.
+
+Naming the equipment:
+- The moment you can tell what the equipment is — from a photo, a rating plate, a model number, or \
+what the customer tells you — say so in that message and wrap the name in {EQUIPMENT_OPEN} and \
+{EQUIPMENT_CLOSE}: "that looks like a {EQUIPMENT_OPEN}Bruno VPL-3100 vertical platform \
+lift{EQUIPMENT_CLOSE}". Telling the customer what you think you are looking at is also how they \
+correct you when you have it wrong.
+- The wrapper goes around the make, model and type and nothing else — not "your", not "the", not \
+the words of the sentence around it. The name itself stays in your message and the customer reads \
+it; only the delimiters are removed.
+- Name it again the same way whenever you find you had it wrong or learn a more precise model. The \
+last name you wrap is the one that stands, so a later message correcting an earlier guess replaces \
+it.
+- Once you have named it, carry on without the wrapper unless your identification changes.
 
 Yes/no questions:
 - When the one question your message asks is answerable with a plain yes or no, wrap that question \
@@ -180,33 +208,82 @@ list empty when nothing was tried.
 """
 
 
+def build_summary_prompt(equipment: str | None) -> str:
+    """The summary prompt, handed the equipment identity triage already settled on.
+
+    The identity is established during the conversation and carried on it, so the summary states
+    what triage concluded rather than reaching its own verdict from the transcript — two
+    derivations of one fact could disagree, and the technician and the retrieval query would then
+    be working from different machines. A conversation that ended before the equipment was ever
+    identified leaves the field to the transcript.
+    """
+    if equipment is None:
+        return SUMMARY_SYSTEM_PROMPT
+    return f"""{SUMMARY_SYSTEM_PROMPT}
+The equipment has already been identified as: {equipment}. Use exactly that for the equipment \
+field, and do not restate it in the other fields.
+"""
+
+
+def _unwrap(text: str, opener: str, closer: str) -> tuple[str, str | None, int]:
+    """Take one delimiter pair out of a reply, reporting what it held and where that now starts.
+
+    Only the delimiters go; what they wrapped stays where it was written, so unwrapping never
+    reflows the reply and a wrapper opened mid-sentence leaves the sentence intact.
+
+    An opening delimiter with no closing one is a reply cut short mid-span. The delimiter is
+    dropped and nothing is reported, since where the span would have ended is unknowable.
+    """
+    opened = text.find(opener)
+    if opened == -1:
+        return text, None, -1
+    body_at = opened + len(opener)
+    closed = text.find(closer, body_at)
+    if closed == -1:
+        return text[:opened] + text[body_at:], None, -1
+    body = text[body_at:closed]
+    return text[:opened] + body + text[closed + len(closer):], body, opened
+
+
 def _unwrap_question(text: str) -> tuple[str, tuple[int, int] | None]:
     """Remove the question delimiters, reporting where the question they held now sits.
 
     The offsets exclude whitespace the model left inside the wrapper, so they always bound the
-    question itself; the text keeps that whitespace, so unwrapping never reflows the reply.
-
-    An opening delimiter with no closing one is a reply cut short mid-question. It is dropped
-    without a span: the browser has nothing to emphasise, and the turn offers no buttons.
+    question itself. A reply cut short mid-question reports no span: the browser has nothing to
+    emphasise, and the turn offers no buttons.
     """
-    opened = text.find(QUESTION_OPEN)
-    if opened == -1:
+    text, body, at = _unwrap(text, QUESTION_OPEN, QUESTION_CLOSE)
+    if body is None:
         return text, None
-    body_at = opened + len(QUESTION_OPEN)
-    closed = text.find(QUESTION_CLOSE, body_at)
-    if closed == -1:
-        return text[:opened] + text[body_at:], None
-    body = text[body_at:closed]
-    unwrapped = text[:opened] + body + text[closed + len(QUESTION_CLOSE):]
     lead = len(body) - len(body.lstrip())
-    return unwrapped, (opened + lead, opened + len(body.rstrip()))
+    return text, (at + lead, at + len(body.rstrip()))
+
+
+def _unwrap_equipment(text: str) -> tuple[str, str | None]:
+    """Remove the equipment delimiters, reporting the name they held.
+
+    Only the delimiters go, so the name stays in the reply for the customer to read. An empty pair
+    names nothing and is reported as nothing.
+    """
+    text, body, _ = _unwrap(text, EQUIPMENT_OPEN, EQUIPMENT_CLOSE)
+    if body is None:
+        return text, None
+    identity = body.strip()
+    if not identity:
+        return text, None
+    return text, identity
 
 
 def parse_reply(text: str) -> ParsedReply:
-    """Split an assistant reply into customer-visible text, its ending marker, and its question.
+    """Split an assistant reply into customer-visible text, its ending marker, the equipment it
+    named, and its question.
 
     Only the first ending marker found counts; the prompt forbids writing more than one.
+
+    The equipment delimiters come out before the question is located, so the question's offsets are
+    measured against the same text the customer is shown.
     """
+    text, equipment = _unwrap_equipment(text)
     marker = next((m for m in ENDING_MARKERS if m in text), None)
     if marker is not None:
         text = text.replace(marker, "")
@@ -217,4 +294,5 @@ def parse_reply(text: str) -> ParsedReply:
         text=text.strip(),
         marker=marker,
         question=None if span is None else QuestionSpan(span[0] - lead, span[1] - lead),
+        equipment=equipment,
     )
