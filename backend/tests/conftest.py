@@ -27,7 +27,12 @@ _ASSIST_ENV_VARS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Force SMTP and the AI provider keys unconfigured for the whole session.
+    """Force SMTP and the AI provider keys unconfigured, and pin the process role, session-wide.
+
+    Every serving process is launched with FSM_ROLE set (docker-compose.yml, scripts/start.sh) and
+    create_app refuses to start without a recognized one, so the suite sets it for the tests that
+    build an app from the environment instead of injected settings. Assigned rather than defaulted
+    so a developer's exported FSM_ROLE cannot change which sign-in funnel those tests exercise.
 
     The function-scoped fixture below only protects Settings built inside a test; the cached
     `get_settings()` that `create_app` uses in the integration suite is populated by a
@@ -40,6 +45,7 @@ def pytest_configure(config: pytest.Config) -> None:
     """
     for var in (*_SMTP_ENV_VARS, *_ASSIST_ENV_VARS):
         os.environ[var] = ""
+    os.environ["FSM_ROLE"] = "customer"
     get_settings.cache_clear()
 
 

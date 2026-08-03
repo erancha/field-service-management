@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from fsm.assist.domain.errors import AssistError
 from fsm.core.events import build_event_bus
 from fsm.platform.api.assist_errors import handle_assist_error
+from fsm.platform.api.auth_routes import SIGN_IN_HOST_BY_ROLE
 from fsm.platform.api.auth_routes import router as auth_router
 from fsm.platform.api.backoffice_routes import router as backoffice_router
 from fsm.platform.api.calendar_routes import router as calendar_router
@@ -42,11 +43,17 @@ def create_app(
     settings: Settings instance injected for testing. When absent, loaded from environment.
     """
     configure_logging()
-    role = os.environ.get("FSM_ROLE", "unknown")
 
     if settings is None:
         from fsm.platform.config import get_settings
         settings = get_settings()
+
+    role = settings.fsm_role
+    if role not in SIGN_IN_HOST_BY_ROLE:
+        raise ValueError(
+            f"FSM_ROLE is {role!r}; expected one of {sorted(SIGN_IN_HOST_BY_ROLE)}. Serving with an "
+            "unrecognized role would sign every user in through the customer funnel."
+        )
 
     # Stop events of the worker threads started below; the lifespan sets them all on shutdown.
     worker_stop_events: list[threading.Event] = []

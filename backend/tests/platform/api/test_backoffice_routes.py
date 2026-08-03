@@ -45,7 +45,7 @@ def pg_session_factory():
         del os.environ["DATABASE_URL"]
 
 
-def _settings(pg_url: str, *, fsm_role: str = "unknown", admin_emails: str | None = None) -> Settings:
+def _settings(pg_url: str, *, fsm_role: str = "backoffice", admin_emails: str | None = None) -> Settings:
     return Settings(
         database_url=pg_url,
         app_env="test",

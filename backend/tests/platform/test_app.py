@@ -19,22 +19,47 @@ def test_health_endpoint_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
-def test_landing_page_reflects_the_configured_role(monkeypatch):
-    monkeypatch.setenv("FSM_ROLE", "technician")
-    client = TestClient(create_app())
+def _settings(**overrides) -> Settings:
+    values: dict = dict(
+        database_url="postgresql+psycopg://fsm:fsm@localhost:5432/fsm",
+        app_env="test",
+        fsm_role="technician",
+    )
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_landing_page_reflects_the_configured_role():
+    client = TestClient(create_app(settings=_settings(fsm_role="backoffice")))
 
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "technician" in response.text
+    assert "backoffice" in response.text
+
+
+def test_role_comes_from_the_settings_not_the_process_environment(monkeypatch):
+    """Injected settings are the single source of the role, so the two readers cannot disagree."""
+    monkeypatch.setenv("FSM_ROLE", "backoffice")
+
+    app = create_app(settings=_settings(fsm_role="technician"))
+
+    assert "technician" in app.title
+
+
+def test_create_app_refuses_a_misspelled_role():
+    """Serving with an unrecognized role would sign every user in through the customer funnel."""
+    with pytest.raises(ValueError, match="FSM_ROLE"):
+        create_app(settings=_settings(fsm_role="backofice"))
+
+
+def test_create_app_refuses_a_process_with_no_role_configured():
+    with pytest.raises(ValueError, match="FSM_ROLE"):
+        create_app(settings=_settings(fsm_role="unknown"))
 
 
 def _settings_with_session(app_env: str) -> Settings:
-    return Settings(
-        database_url="postgresql+psycopg://fsm:fsm@localhost:5432/fsm",
-        app_env=app_env,
-        session_secret="test-session-secret-32-bytes-long!!",
-    )
+    return _settings(app_env=app_env, session_secret="test-session-secret-32-bytes-long!!")
 
 
 @pytest.mark.parametrize("app_env", ["staging", "prod"])
@@ -55,14 +80,13 @@ def test_session_cookie_is_not_secure_for_local_and_test(app_env):
 
 def _worker_settings(**overrides) -> Settings:
     values: dict = dict(
-        database_url="postgresql+psycopg://fsm:fsm@localhost:5432/fsm",
-        app_env="test",
+        fsm_role="backoffice",
         fsm_dispatch_enabled=True,
         fsm_sync_enabled=True,
         technician_app_url="https://tech.example.com",
     )
     values.update(overrides)
-    return Settings(**values)
+    return _settings(**values)
 
 
 @pytest.fixture

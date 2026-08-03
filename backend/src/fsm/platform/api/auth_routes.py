@@ -44,7 +44,9 @@ from fsm.platform.notifications_factory import build_email_sender
 
 router = APIRouter(prefix="/auth")
 
-_HOST_BY_ROLE = {
+# The sign-in funnel each role's deployment serves. Also the set of roles a serving process may
+# run as: create_app refuses to start when FSM_ROLE is not a key here.
+SIGN_IN_HOST_BY_ROLE = {
     "customer": SignInHost.CUSTOMER,
     "technician": SignInHost.TECHNICIAN,
     "backoffice": SignInHost.BACKOFFICE,
@@ -52,8 +54,8 @@ _HOST_BY_ROLE = {
 
 
 def _sign_in_host(settings) -> SignInHost:
-    """Map the process FSM_ROLE to the sign-in host; unknown roles default to the customer funnel."""
-    return _HOST_BY_ROLE.get(settings.fsm_role, SignInHost.CUSTOMER)
+    """Return the sign-in host of the process role, which create_app has already validated."""
+    return SIGN_IN_HOST_BY_ROLE[settings.fsm_role]
 
 
 _publish = publish_to_app

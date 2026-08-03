@@ -125,8 +125,8 @@ def _sign_in(client: TestClient, app) -> None:
 def _claim_technician_role(client: TestClient, pg_session_factory, approved: bool = True) -> uuid.UUID:
     """Move the signed-in user onto the TECHNICIAN role, approved or still pending.
 
-    Sign-in in these tests arrives on a customer-host flow (fsm_role is unset), so the technician
-    claim and the back-office approval decision are applied directly to the identity row.
+    Sign-in in these tests arrives on a customer-host flow (the suite-wide FSM_ROLE), so the
+    technician claim and the back-office approval decision are applied directly to the identity row.
     """
     user_id = uuid.UUID(client.get("/auth/me").json()["user_id"])
     with pg_session_factory() as session:

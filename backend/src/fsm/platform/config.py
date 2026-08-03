@@ -22,7 +22,9 @@ class Settings(CoreSettings):
     timezone: str = DEFAULT_TIMEZONE
 
     # Which deployment this process serves: technician | customer | backoffice. Drives the
-    # sign-in role assignment (see SignInHost) and the landing-page title.
+    # sign-in role assignment (see SignInHost) and the landing-page title. The default stands for
+    # "no deployment", legal only for processes that serve no sign-in — the standalone calendar
+    # workers; create_app rejects it, and anything else outside the three, before serving.
     fsm_role: str = "unknown"
     # Comma-separated emails granted ADMIN on first back-office sign-in. The only path to ADMIN.
     admin_emails: str | None = None
