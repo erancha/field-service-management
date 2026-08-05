@@ -14,8 +14,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Protocol
+
+_log = logging.getLogger(__name__)
 
 
 class EventBus(Protocol):
@@ -48,9 +51,12 @@ class InMemoryEventBus:
         return len(self._subscribers)
 
     async def publish(self, channel: str, event: dict) -> None:
+        delivered = 0
         for sub in list(self._subscribers):
             if channel in sub.channels:
                 sub.queue.put_nowait(event)
+                delivered += 1
+        _log.info("published %s to %s (%d subscriber(s))", event["type"], channel, delivered)
 
     @contextlib.asynccontextmanager
     async def subscribe(self, channels: set[str]) -> AsyncIterator["asyncio.Queue[dict]"]:
@@ -73,7 +79,8 @@ class RedisEventBus:
         self._redis = client
 
     async def publish(self, channel: str, event: dict) -> None:
-        await self._redis.publish(channel, json.dumps(event))
+        receivers = await self._redis.publish(channel, json.dumps(event))
+        _log.info("published %s to %s (%d receiver(s))", event["type"], channel, receivers)
 
     @contextlib.asynccontextmanager
     async def subscribe(self, channels: set[str]) -> AsyncIterator["asyncio.Queue[dict]"]:
@@ -84,7 +91,9 @@ class RedisEventBus:
         async def _pump() -> None:
             async for message in pubsub.listen():
                 if message.get("type") == "message":
-                    queue.put_nowait(json.loads(message["data"]))
+                    event = json.loads(message["data"])
+                    queue.put_nowait(event)
+                    _log.info("received %s on %s", event["type"], message["channel"])
 
         pump_task = asyncio.create_task(_pump())
         try:
