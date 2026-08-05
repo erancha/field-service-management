@@ -56,7 +56,7 @@ class InMemoryEventBus:
             if channel in sub.channels:
                 sub.queue.put_nowait(event)
                 delivered += 1
-        _log.info("published %s to %s (%d subscriber(s))", event["type"], channel, delivered)
+        _log.info("Published '%s' to '%s' (%d subscriber(s))", event["type"], channel, delivered)
 
     @contextlib.asynccontextmanager
     async def subscribe(self, channels: set[str]) -> AsyncIterator["asyncio.Queue[dict]"]:
@@ -80,7 +80,7 @@ class RedisEventBus:
 
     async def publish(self, channel: str, event: dict) -> None:
         receivers = await self._redis.publish(channel, json.dumps(event))
-        _log.info("published %s to %s (%d receiver(s))", event["type"], channel, receivers)
+        _log.info("Published '%s' to '%s' (%d receiver(s))", event["type"], channel, receivers)
 
     @contextlib.asynccontextmanager
     async def subscribe(self, channels: set[str]) -> AsyncIterator["asyncio.Queue[dict]"]:
@@ -93,7 +93,7 @@ class RedisEventBus:
                 if message.get("type") == "message":
                     event = json.loads(message["data"])
                     queue.put_nowait(event)
-                    _log.info("received %s on %s", event["type"], message["channel"])
+                    _log.info("Received '%s' on '%s'", event["type"], message["channel"])
 
         pump_task = asyncio.create_task(_pump())
         try:

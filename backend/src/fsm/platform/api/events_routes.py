@@ -38,12 +38,13 @@ async def events(request: Request, user: SessionUser = Depends(require_user)) ->
     bus = request.app.state.event_bus
     channels = subscribable_channels(user)
     stream_id = uuid.uuid4().hex[:8]
+    sorted_channels = sorted(channels)
 
     async def stream():
         async with bus.subscribe(channels) as queue:
             _log.info(
-                "SSE stream %s opened for user %s on channels %s",
-                stream_id, user.id, sorted(channels),
+                "SSE stream '%s' opened. Channels: %s",
+                stream_id, sorted_channels,
             )
             try:
                 while True:
@@ -55,11 +56,11 @@ async def events(request: Request, user: SessionUser = Depends(require_user)) ->
                         yield ": keepalive\n\n"
                         continue
                     _log.info(
-                        "delivering %s to client user %s on stream %s",
+                        "Delivering '%s' to client user '%s' on stream '%s'",
                         event["type"], user.id, stream_id,
                     )
                     yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
             finally:
-                _log.info("SSE stream %s closed for user %s", stream_id, user.id)
+                _log.info("SSE stream '%s' closed. Channels: %s", stream_id, sorted_channels)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
