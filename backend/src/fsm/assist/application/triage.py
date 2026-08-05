@@ -319,7 +319,7 @@ class TriageService:
         query = _search_query(conversation.equipment, text)
         hits = self._document_index.search(query, GROUNDING_HITS) if self._document_index else []
         self._sources = cited_sources(hits)
-        system = build_system_prompt(hits)
+        system = build_system_prompt(hits, triage_declined=conversation.triage_declined)
 
         fragments: list[str] = []
         emitted = 0
@@ -360,6 +360,12 @@ class TriageService:
         )
         if parsed.equipment is not None:
             conversation.identify_equipment(parsed.equipment)
+        # Applied before the ending, so a reply that both skips and escalates records the choice
+        # on a conversation that is still open.
+        if parsed.triage_declined is True:
+            conversation.decline_triage()
+        elif parsed.triage_declined is False:
+            conversation.resume_triage()
 
         if marker == SOLVED_MARKER:
             conversation.mark_solved(now)

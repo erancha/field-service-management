@@ -112,6 +112,26 @@ def test_save_carries_the_identified_equipment_across_turns(session) -> None:
     assert loaded.equipment == "Bruno VPL-3100 vertical platform lift"
 
 
+def test_save_carries_a_declined_triage_across_turns(session) -> None:
+    """The declined regime is rebuilt from the stored conversation each turn, so a flag that does
+    not survive the round trip would quietly drop the customer back into troubleshooting."""
+    repo = SqlAlchemyConversationRepository(session)
+    customer_id = uuid.uuid4()
+    convo = make_conversation(customer_id)
+    repo.add(convo)
+    session.commit()
+    assert repo.get(convo.id, customer_id).triage_declined is False
+
+    convo.decline_triage()
+    repo.save(convo)
+    session.commit()
+    session.expunge_all()
+
+    loaded = SqlAlchemyConversationRepository(session).get(convo.id, customer_id)
+
+    assert loaded.triage_declined is True
+
+
 def test_save_does_not_duplicate_messages_already_stored(session) -> None:
     repo = SqlAlchemyConversationRepository(session)
     customer_id = uuid.uuid4()

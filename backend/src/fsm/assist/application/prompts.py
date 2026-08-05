@@ -1,8 +1,9 @@
 """The assistant's instructions and the control markers it annotates its replies with.
 
 The markers are the contract between the prompt and the parser: they are the only way the model
-signals an ending or delimits a plain yes/no question, so both live here and every marker is
-stripped from the text before the customer sees it.
+signals an ending, records the customer's standing choice about troubleshooting, names the
+equipment, or delimits a plain yes/no question — so prompt and parser live here together, and
+every marker is stripped from the text before the customer sees it.
 """
 from __future__ import annotations
 
@@ -18,6 +19,16 @@ CLOSED_MARKER = "[[CLOSED]]"
 ENDING_MARKERS = (SOLVED_MARKER, ESCALATE_MARKER, CLOSED_MARKER)
 """The endings, in the order a reply is searched for one. Exactly one ends a conversation."""
 
+SKIP_MARKER = "[[SKIP]]"
+RESUME_MARKER = "[[RESUME]]"
+"""Record the customer's standing choice about troubleshooting, without ending the conversation.
+
+The model writes SKIP_MARKER in the reply that honours a request to skip the troubleshooting and
+go straight to a technician, and RESUME_MARKER when a customer who had skipped asks to try fixing
+it after all. The choice is carried on the conversation itself, so it holds across turns — and
+across a retried turn — rather than depending on the model re-reading it from the transcript.
+"""
+
 QUESTION_OPEN = "[[Q]]"
 QUESTION_CLOSE = "[[/Q]]"
 """Wrap the one question of a reply that a bare yes or no answers.
@@ -28,8 +39,8 @@ the question in place is also what keeps the signal dependable — they are writ
 question, so a question the model has finished writing cannot be missing them.
 """
 
-EQUIPMENT_OPEN = "[[EQ]]"
-EQUIPMENT_CLOSE = "[[/EQ]]"
+EQUIPMENT_OPEN = "[[EQUIP]]"
+EQUIPMENT_CLOSE = "[[/EQUIP]]"
 """Wrap where the reply names the equipment, the first time the assistant can tell what it is and
 again whenever it revises that.
 
@@ -39,7 +50,15 @@ the customer can see it is what lets them correct an identification that is wron
 carried on the conversation, where it leads the knowledge-base query.
 """
 
-MARKERS = (*ENDING_MARKERS, QUESTION_OPEN, QUESTION_CLOSE, EQUIPMENT_OPEN, EQUIPMENT_CLOSE)
+MARKERS = (
+    *ENDING_MARKERS,
+    SKIP_MARKER,
+    RESUME_MARKER,
+    QUESTION_OPEN,
+    QUESTION_CLOSE,
+    EQUIPMENT_OPEN,
+    EQUIPMENT_CLOSE,
+)
 """Every control marker. Both the parser here and the streaming code that withholds a marker
 mid-flight work from this tuple, so a marker added to it can never be honoured by only one of them.
 """
@@ -68,6 +87,10 @@ class ParsedReply:
 
     equipment: str | None = None
     """The equipment this reply named, or None when it named none."""
+
+    triage_declined: bool | None = None
+    """True when the reply honoured a request to skip troubleshooting, False when it honoured a
+    return to it, None when the reply changed nothing about that choice."""
 
 TRIAGE_SYSTEM_PROMPT = f"""\
 You are the triage assistant for a field-service company. A customer has a problem with a piece of \
@@ -144,6 +167,22 @@ below.
 correct a detail first. On a safety escalation, declining does not reopen self-help — repeat that \
 a technician is the safe way forward and suggest nothing the safety boundary forbids.
 
+Skipping the troubleshooting:
+- Some customers do not want to work through fixes at all. When the customer asks to skip the \
+troubleshooting, or to just open a service call, say you will get one opened and write \
+{SKIP_MARKER} at the end of that message. Their request already is their yes to a technician \
+visit, so never ask again for permission to book one.
+- After such a request, do not suggest fixes — but a service call still has a minimum: what the \
+equipment is and what it is doing wrong, told to you in words or shown in a photo. Ask for what \
+is still missing one focused question at a time — the rules above hold while skipping too. If \
+the customer pushes to open the call without it, explain briefly that the technician needs at \
+least that much to arrive prepared. Once you know both, tell them you are opening a service call \
+and that they will be asked to pick a visit slot next, and end with {ESCALATE_MARKER}.
+- If a customer who asked to skip changes their mind and wants to try fixing it after all, write \
+{RESUME_MARKER} in that reply and triage as normal from there.
+- {SKIP_MARKER} and {RESUME_MARKER} record the customer's choice and mean nothing to the \
+customer; never write both in one message.
+
 How a conversation ends — every conversation ends in exactly one of these, and you end it by \
 writing the marker on its own line as the last thing in your message:
 - The customer confirms the problem is fixed. Acknowledge it briefly, then write {SOLVED_MARKER}
@@ -164,17 +203,34 @@ wrapper. Never mention the markers or the wrapper to the customer, or explain th
 """
 
 
-def build_system_prompt(hits: Sequence[SearchHit]) -> str:
-    """The triage prompt, extended with retrieved document excerpts when a search found any.
+TRIAGE_DECLINED_DIRECTIVE = f"""\
+The customer has already agreed to a service call and asked to skip the troubleshooting; that \
+choice stands however many messages ago it was made. Do not suggest fixes and do not ask again \
+whether to book a technician. The call still has its minimum: what the equipment is and what it \
+is doing wrong, told to you in words or shown in a photo. Ask for what is still missing one \
+focused question at a time — the how-to-work rules hold while skipping. If the customer pushes \
+to open the call without it, explain briefly that the technician needs at least that much to \
+arrive prepared. Once you know both, tell them you are opening the call and end with \
+{ESCALATE_MARKER}. Only if they now ask to try fixing it themselves do you write \
+{RESUME_MARKER} and triage as normal from there.
+"""
+
+
+def build_system_prompt(hits: Sequence[SearchHit], *, triage_declined: bool = False) -> str:
+    """The triage prompt, extended with retrieved excerpts and the customer's standing choice.
 
     A search always returns its nearest matches even when none address the topic, so relevance is
     left to the model rather than a similarity cutoff: it is told to use the excerpts only when
     they cover the customer's problem and to fall back to its own knowledge otherwise.
+
+    triage_declined appends the declined-triage directive. It is restated from the conversation's
+    own state on every turn, so the customer's request holds even when the turn that recorded it
+    is far up the transcript or the exchange resumed after a failed turn.
     """
-    if not hits:
-        return TRIAGE_SYSTEM_PROMPT
-    excerpts = "\n\n".join(f'From "{hit.filename}":\n{hit.content}' for hit in hits)
-    return f"""{TRIAGE_SYSTEM_PROMPT}
+    prompt = TRIAGE_SYSTEM_PROMPT
+    if hits:
+        excerpts = "\n\n".join(f'From "{hit.filename}":\n{hit.content}' for hit in hits)
+        prompt = f"""{prompt}
 Reference material from the back office's uploaded documents, nearest matches to what the \
 customer just said:
 
@@ -184,6 +240,9 @@ Follow this material when it covers the customer's problem, and name the documen
 suggestion from. If none of it addresses the topic, answer from your own knowledge instead and do \
 not mention these excerpts.
 """
+    if triage_declined:
+        prompt = f"{prompt}\n{TRIAGE_DECLINED_DIRECTIVE}"
+    return prompt
 
 
 SUMMARY_SYSTEM_PROMPT = """\
@@ -276,17 +335,25 @@ def _unwrap_equipment(text: str) -> tuple[str, str | None]:
 
 def parse_reply(text: str) -> ParsedReply:
     """Split an assistant reply into customer-visible text, its ending marker, the equipment it
-    named, and its question.
+    named, its question, and the troubleshooting choice it recorded.
 
-    Only the first ending marker found counts; the prompt forbids writing more than one.
+    Only the first ending marker found counts; the prompt forbids writing more than one. The same
+    rule settles the mode markers: a reply carrying both — also forbidden — reads as a skip, and
+    both markers leave the text either way.
 
-    The equipment delimiters come out before the question is located, so the question's offsets are
-    measured against the same text the customer is shown.
+    The equipment delimiters and mode markers come out before the question is located, so the
+    question's offsets are measured against the same text the customer is shown.
     """
     text, equipment = _unwrap_equipment(text)
     marker = next((m for m in ENDING_MARKERS if m in text), None)
     if marker is not None:
         text = text.replace(marker, "")
+    declined: bool | None = None
+    if SKIP_MARKER in text:
+        declined = True
+    elif RESUME_MARKER in text:
+        declined = False
+    text = text.replace(SKIP_MARKER, "").replace(RESUME_MARKER, "")
     text, span = _unwrap_question(text)
     # Offsets are taken before the outer trim, so both shift by the leading whitespace it removes.
     lead = len(text) - len(text.lstrip())
@@ -295,4 +362,5 @@ def parse_reply(text: str) -> ParsedReply:
         marker=marker,
         question=None if span is None else QuestionSpan(span[0] - lead, span[1] - lead),
         equipment=equipment,
+        triage_declined=declined,
     )

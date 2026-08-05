@@ -11,6 +11,8 @@ from fsm.assist.application.prompts import (
     MARKERS,
     QUESTION_CLOSE,
     QUESTION_OPEN,
+    RESUME_MARKER,
+    SKIP_MARKER,
     SOLVED_MARKER,
     SUMMARY_SYSTEM_PROMPT,
     TRIAGE_SYSTEM_PROMPT,
@@ -61,6 +63,60 @@ def test_prompt_requires_the_customers_agreement_before_escalating() -> None:
 
     assert "whether to book" in prompt
     assert "after the customer agrees" in prompt
+
+
+def test_equipment_wrapper_spells_equipment_out() -> None:
+    """"EQ" also reads as an abbreviation of other things; the wrapper names what it wraps."""
+    assert EQUIPMENT_OPEN == "[[EQUIP]]"
+    assert EQUIPMENT_CLOSE == "[[/EQUIP]]"
+
+
+def test_prompt_treats_a_skip_request_as_the_yes_to_a_visit() -> None:
+    prompt = TRIAGE_SYSTEM_PROMPT
+
+    assert SKIP_MARKER in prompt
+    assert RESUME_MARKER in prompt
+    assert "their yes to a technician visit" in prompt.lower()
+
+
+def test_prompt_states_the_minimum_a_service_call_needs_even_when_triage_is_skipped() -> None:
+    """Skipping means skipping the fixes, not the description: the call cannot be opened until the
+    customer has said what the equipment is and what it is doing wrong, in words or in a photo."""
+    section = TRIAGE_SYSTEM_PROMPT.split("Skipping the troubleshooting:", 1)[1].split("\n\n", 1)[0]
+
+    assert "what the equipment is and what it is doing wrong" in section
+    assert "shown in a photo" in section
+    assert "at least that much" in section
+    assert "one focused question at a time" in section
+
+
+def test_declined_prompt_forbids_fixes_and_aims_the_conversation_at_escalation() -> None:
+    declined = build_system_prompt([], triage_declined=True)
+
+    assert TRIAGE_SYSTEM_PROMPT in declined
+    directive = declined.split(TRIAGE_SYSTEM_PROMPT, 1)[1]
+    assert "already agreed to a service call" in directive
+    assert "do not suggest fixes" in directive.lower()
+    assert ESCALATE_MARKER in directive
+    assert RESUME_MARKER in directive
+
+
+def test_declined_directive_holds_the_same_minimum_before_the_call_can_open() -> None:
+    directive = build_system_prompt([], triage_declined=True).split(TRIAGE_SYSTEM_PROMPT, 1)[1]
+
+    assert "what the equipment is and what it is doing wrong" in directive
+    assert "shown in a photo" in directive
+    assert "at least that much" in directive
+    assert "one focused question at a time" in directive
+
+
+def test_declined_directive_rides_along_with_retrieved_excerpts() -> None:
+    declined = build_system_prompt(
+        [hit("oven-guide.md", "Hold the reset button.")], triage_declined=True
+    )
+
+    assert "Hold the reset button." in declined
+    assert "already agreed to a service call" in declined
 
 
 def test_prompt_keeps_a_declined_safety_escalation_away_from_self_help() -> None:
@@ -278,6 +334,42 @@ def test_parse_reply_drops_a_half_written_name_without_reporting_one() -> None:
 
     assert parsed.equipment is None
     assert parsed.text == "That is a Bruno VPL"
+
+
+def test_parse_reply_reports_a_skip_request_and_removes_its_marker() -> None:
+    parsed = parse_reply(f"Understood — what is the equipment?\n{SKIP_MARKER}")
+
+    assert parsed.triage_declined is True
+    assert parsed.marker is None
+    assert parsed.text == "Understood — what is the equipment?"
+
+
+def test_parse_reply_reports_a_resumed_triage_and_removes_its_marker() -> None:
+    parsed = parse_reply(f"Happy to try a fix. {RESUME_MARKER}Is the display lit?")
+
+    assert parsed.triage_declined is False
+    assert parsed.text == "Happy to try a fix. Is the display lit?"
+
+
+def test_parse_reply_reports_no_mode_change_when_the_reply_carries_neither_marker() -> None:
+    assert parse_reply("Is the display lit?").triage_declined is None
+
+
+def test_parse_reply_carries_a_skip_and_an_escalation_in_one_reply() -> None:
+    parsed = parse_reply(f"Opening the call now.\n{SKIP_MARKER}\n{ESCALATE_MARKER}")
+
+    assert parsed.triage_declined is True
+    assert parsed.marker == ESCALATE_MARKER
+    assert parsed.text == "Opening the call now."
+
+
+def test_parse_reply_measures_the_question_after_a_mode_marker_has_gone() -> None:
+    parsed = parse_reply(
+        f"{SKIP_MARKER}Fine. {QUESTION_OPEN}Is it the lift outside?{QUESTION_CLOSE}"
+    )
+
+    assert parsed.triage_declined is True
+    assert parsed.text[parsed.question.start:parsed.question.end] == "Is it the lift outside?"
 
 
 def test_parse_reply_treats_an_empty_pair_as_naming_nothing() -> None:

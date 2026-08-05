@@ -60,6 +60,10 @@ class Conversation:
     equipment is what the assistant has determined the exchange is about, in make-model-type form,
     and None until it can tell. It holds only the current identity, not the corrections that led to
     it.
+
+    triage_declined records the customer's standing request to skip troubleshooting and go straight
+    to a technician. It lives here rather than in the transcript alone so every turn — including
+    one retried after a failure — rebuilds the same regime.
     """
 
     id: uuid.UUID
@@ -70,6 +74,7 @@ class Conversation:
     messages: list[Message] = field(default_factory=list)
     service_call_id: uuid.UUID | None = None
     equipment: str | None = None
+    triage_declined: bool = False
 
     def is_open(self) -> bool:
         return self.status is ConversationStatus.ACTIVE
@@ -91,6 +96,16 @@ class Conversation:
         """
         self.require_open()
         self.equipment = identity
+
+    def decline_triage(self) -> None:
+        """Record the customer's request to skip troubleshooting and go straight to a technician."""
+        self.require_open()
+        self.triage_declined = True
+
+    def resume_triage(self) -> None:
+        """Record that the customer wants to try fixes after all, reopening normal triage."""
+        self.require_open()
+        self.triage_declined = False
 
     def mark_solved(self, now: datetime) -> None:
         self._close(ConversationStatus.SOLVED, now)

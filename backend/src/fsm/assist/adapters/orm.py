@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, Text, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, LargeBinary, Text, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +49,9 @@ class AssistConversationRow(Base):
     equipment is overwritten by each identification, so the column holds the current one and no
     history of the corrections behind it.
 
+    triage_declined holds the customer's standing choice to skip troubleshooting; the flag flips
+    back if they change their mind, so like equipment it keeps only the current choice.
+
     A customer has at most one ACTIVE conversation at a time; the partial unique index enforces
     that in the database, so concurrent start requests cannot each open one.
     """
@@ -60,6 +63,9 @@ class AssistConversationRow(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     service_call_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     equipment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    triage_declined: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 

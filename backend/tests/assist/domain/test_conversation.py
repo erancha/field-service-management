@@ -90,6 +90,27 @@ def test_identifying_the_equipment_of_a_closed_conversation_is_rejected() -> Non
         convo.identify_equipment("Bruno VPL-3100 vertical platform lift")
 
 
+def test_a_conversation_starts_with_triage_not_declined() -> None:
+    assert make_conversation().triage_declined is False
+
+
+def test_declining_triage_is_recorded_and_a_change_of_mind_clears_it() -> None:
+    convo = make_conversation()
+
+    convo.decline_triage()
+    assert convo.triage_declined is True
+
+    convo.resume_triage()
+    assert convo.triage_declined is False
+
+
+def test_declining_triage_on_a_closed_conversation_is_rejected() -> None:
+    convo = make_conversation(ConversationStatus.SOLVED)
+
+    with pytest.raises(ConversationClosed):
+        convo.decline_triage()
+
+
 def test_mark_abandoned_closes_the_conversation() -> None:
     convo = make_conversation()
 

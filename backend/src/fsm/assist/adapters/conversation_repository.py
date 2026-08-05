@@ -59,6 +59,7 @@ class SqlAlchemyConversationRepository:
                         status=conversation.status.value,
                         service_call_id=conversation.service_call_id,
                         equipment=conversation.equipment,
+                        triage_declined=conversation.triage_declined,
                         created_at=conversation.created_at,
                         updated_at=conversation.updated_at,
                     )
@@ -81,6 +82,7 @@ class SqlAlchemyConversationRepository:
         row.status = conversation.status.value
         row.service_call_id = conversation.service_call_id
         row.equipment = conversation.equipment
+        row.triage_declined = conversation.triage_declined
         row.updated_at = conversation.updated_at
         self._append_messages(conversation, from_seq=self._stored_message_count(conversation.id))
 
@@ -195,4 +197,5 @@ class SqlAlchemyConversationRepository:
             messages=messages,
             service_call_id=row.service_call_id,
             equipment=row.equipment,
+            triage_declined=row.triage_declined,
         )

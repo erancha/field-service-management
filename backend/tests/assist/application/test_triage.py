@@ -14,6 +14,8 @@ from fsm.assist.application.prompts import (
     ESCALATE_MARKER,
     QUESTION_CLOSE,
     QUESTION_OPEN,
+    RESUME_MARKER,
+    SKIP_MARKER,
     SOLVED_MARKER,
     SUMMARY_SYSTEM_PROMPT,
     TRIAGE_SYSTEM_PROMPT,
@@ -619,6 +621,60 @@ def test_the_identity_reaches_the_conversation_and_its_name_reaches_the_customer
     assert EQUIPMENT_CLOSE not in streamed
     assert streamed.strip() == f"That looks like a {LIFT} to me."
     assert conversations.rows[convo.id].messages[-1].text == f"That looks like a {LIFT} to me."
+
+
+def test_a_skip_request_flips_the_conversation_into_the_declined_regime() -> None:
+    """The customer's request must outlive the turn that voiced it, so a retried or drifting later
+    turn is still told not to troubleshoot."""
+    service, conversations, chat_model, _ = make_service(
+        replies=[f"Understood — what is the equipment?\n{SKIP_MARKER}", "Noted."]
+    )
+    convo = service.start(CUSTOMER)
+
+    streamed = drain(service, convo.id, "Open a service call. I don't want to triage.")
+
+    assert SKIP_MARKER not in streamed
+    assert conversations.rows[convo.id].triage_declined is True
+    assert conversations.rows[convo.id].status is ConversationStatus.ACTIVE
+    assert "already agreed to a service call" not in chat_model.stream_calls[0][0]
+
+    drain(service, convo.id, "It is the porch lift.")
+
+    assert "already agreed to a service call" in chat_model.stream_calls[1][0]
+
+
+def test_a_resume_returns_a_declined_conversation_to_normal_triage() -> None:
+    service, conversations, chat_model, _ = make_service(
+        replies=[
+            f"Understood.\n{SKIP_MARKER}",
+            f"Happy to try. {RESUME_MARKER}Is the display lit?",
+            "Tell me more.",
+        ]
+    )
+    convo = service.start(CUSTOMER)
+    drain(service, convo.id, "Just open a call.")
+
+    streamed = drain(service, convo.id, "Actually, let's try fixing it first.")
+
+    assert RESUME_MARKER not in streamed
+    assert conversations.rows[convo.id].triage_declined is False
+
+    drain(service, convo.id, "Sure.")
+
+    assert "already agreed to a service call" not in chat_model.stream_calls[2][0]
+
+
+def test_a_skip_with_the_equipment_already_known_escalates_in_the_same_turn() -> None:
+    service, conversations, _, openers = make_service(
+        replies=[f"Opening the call now.\n{SKIP_MARKER}\n{ESCALATE_MARKER}"]
+    )
+    convo = service.start(CUSTOMER)
+
+    drain(service, convo.id, "Skip the questions — my porch lift will not move at all.")
+
+    assert conversations.rows[convo.id].status is ConversationStatus.ESCALATED
+    assert conversations.rows[convo.id].triage_declined is True
+    assert len(openers.opened) == 1
 
 
 def test_the_escalation_summary_is_told_what_triage_identified() -> None:
