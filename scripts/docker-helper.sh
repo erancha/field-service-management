@@ -24,12 +24,17 @@
 #       scripts/deploy-to-ec2/start.sh). Omitted, every command runs against the local daemon.
 #   -h, --help
 #
-# Scope to specific services by naming them last (narrows --logs; --stop is whole-stack):
-#   ./scripts/docker-helper.sh --logs -e backoffice   # include: follow errors from one service
-# To skip a service, list the others. Combine with -e/-w to filter by severity too —
-# e.g. warnings from everything except nginx, whose access logs otherwise flood a plain follow:
+# --logs only: narrow to specific services by naming them last (--stop always takes the whole stack):
+#   ./scripts/docker-helper.sh --logs -e backoffice   # follow errors from one service
+#
+# To skip a service, list the others. Combine with -e/-w to filter by severity too — e.g. warnings
+# from everything except nginx, whose access logs otherwise flood a plain follow:
 #   ./scripts/docker-helper.sh --logs -w $(docker compose -f docker-compose.yml config --services 2>/dev/null | grep -vx nginx)
 #   ./scripts/docker-helper.sh --logs -w --since 1h $(docker compose -f docker-compose.yml config --services 2>/dev/null | grep -vx nginx)
+#
+# To follow a live event across the roles as one line per delivery hop, each prefixed with the replica
+# that logged it (published -> received -> delivering -> SSE stream open/close):
+#   ./scripts/docker-helper.sh --logs --grep 'published|received|delivering|SSE stream' technician customer backoffice worker
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
