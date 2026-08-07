@@ -6,8 +6,8 @@ boundary. Naming the channels and deciding who may subscribe to which is the app
 not this module's.
 
 RedisEventBus carries events between processes and is required wherever the streams that must see
-an event live outside the publishing process. InMemoryEventBus fans out within a single process
-and backs test suites and any single-process run started without a broker configured.
+an event live outside the publishing process. The single-process fallback lives in
+fsm.core.events_memory and is loaded only when no broker is configured.
 """
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import asyncio
 import contextlib
 import json
 import logging
-from dataclasses import dataclass, field
 from typing import AsyncIterator, Protocol
 
 _log = logging.getLogger(__name__)
@@ -34,45 +33,6 @@ class EventBus(Protocol):
         stream_id, when given, names the consuming stream in the delivery-trace log lines.
         """
         ...
-
-
-@dataclass(eq=False)
-class _Subscription:
-    channels: set[str]
-    queue: "asyncio.Queue[dict]" = field(default_factory=asyncio.Queue)
-    stream_id: str | None = None
-
-
-class InMemoryEventBus:
-    """Single-process fan-out: delivers each event to every subscriber listening on its channel."""
-
-    def __init__(self) -> None:
-        self._subscribers: set[_Subscription] = set()
-
-    @property
-    def subscriber_count(self) -> int:
-        """Number of active subscriptions (test/observability helper)."""
-        return len(self._subscribers)
-
-    async def publish(self, channel: str, event: dict) -> None:
-        delivered = [sub for sub in self._subscribers if channel in sub.channels]
-        for sub in delivered:
-            sub.queue.put_nowait(event)
-        _log.info(
-            "Published '%s' to '%s' (%d subscriber(s), streams: %s)",
-            event["type"], channel, len(delivered), [sub.stream_id for sub in delivered],
-        )
-
-    @contextlib.asynccontextmanager
-    async def subscribe(
-        self, channels: set[str], stream_id: str | None = None
-    ) -> AsyncIterator["asyncio.Queue[dict]"]:
-        sub = _Subscription(channels=set(channels), stream_id=stream_id)
-        self._subscribers.add(sub)
-        try:
-            yield sub.queue
-        finally:
-            self._subscribers.discard(sub)
 
 
 class RedisEventBus:
@@ -118,9 +78,15 @@ class RedisEventBus:
 
 
 def build_event_bus(redis_url: str | None) -> EventBus:
-    """Return a Redis-backed bus when a broker URL is given, else the in-process bus."""
+    """Return a Redis-backed bus when a broker URL is given, else the in-process bus.
+
+    Each branch imports its transport on first use, so a deployment loads only the bus it runs.
+    """
     if redis_url:
         import redis.asyncio as redis
 
         return RedisEventBus(redis.from_url(redis_url, decode_responses=True))
+
+    from fsm.core.events_memory import InMemoryEventBus
+
     return InMemoryEventBus()

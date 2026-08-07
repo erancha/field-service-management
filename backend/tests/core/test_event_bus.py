@@ -8,7 +8,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fsm.core.events import InMemoryEventBus, RedisEventBus, build_event_bus
+from fsm.core.events import RedisEventBus, build_event_bus
+from fsm.core.events_memory import InMemoryEventBus
 
 
 def _drain(bus: InMemoryEventBus, channels: set[str], publish_channel: str, event: dict):
@@ -50,7 +51,7 @@ class TestInMemoryEventBus:
 
         async def scenario():
             async with bus.subscribe({"admins"}, stream_id="ab12cd34") as queue:
-                with caplog.at_level(logging.INFO, logger="fsm.core.events"):
+                with caplog.at_level(logging.INFO, logger="fsm.core.events_memory"):
                     await bus.publish("admins", {"type": "x"})
                 await asyncio.wait_for(queue.get(), timeout=0.5)
 

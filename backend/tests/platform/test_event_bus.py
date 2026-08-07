@@ -10,7 +10,7 @@ import logging
 import uuid
 from types import SimpleNamespace
 
-from fsm.core.events import InMemoryEventBus
+from fsm.core.events_memory import InMemoryEventBus
 from fsm.identity.domain.role import Role
 from fsm.identity.domain.role_status import RoleStatus
 from fsm.platform.api.auth_deps import SessionUser
