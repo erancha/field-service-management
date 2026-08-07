@@ -6,6 +6,7 @@ which is the property applications build their delivery boundaries on.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fsm.core.events import InMemoryEventBus, RedisEventBus, build_event_bus
 
@@ -43,6 +44,79 @@ class TestInMemoryEventBus:
         self_received = _drain(bus, {"admins"}, "admins", {"type": "x"})
         assert self_received  # sanity: delivery worked inside the context
         assert bus.subscriber_count == 0
+
+    def test_publish_log_names_the_delivered_streams(self, caplog):
+        bus = InMemoryEventBus()
+
+        async def scenario():
+            async with bus.subscribe({"admins"}, stream_id="ab12cd34") as queue:
+                with caplog.at_level(logging.INFO, logger="fsm.core.events"):
+                    await bus.publish("admins", {"type": "x"})
+                await asyncio.wait_for(queue.get(), timeout=0.5)
+
+        asyncio.run(scenario())
+        assert "'ab12cd34'" in caplog.text
+
+
+class _FakePubSub:
+    """In-process stand-in for redis.asyncio pubsub: listen drains the queue _FakeRedis.publish feeds."""
+
+    def __init__(self) -> None:
+        self.messages: "asyncio.Queue[dict]" = asyncio.Queue()
+
+    async def subscribe(self, *channels: str) -> None:
+        pass
+
+    async def unsubscribe(self, *channels: str) -> None:
+        pass
+
+    async def aclose(self) -> None:
+        pass
+
+    async def listen(self):
+        while True:
+            yield await self.messages.get()
+
+
+class _FakeRedis:
+    """Routes publishes straight into the single pubsub's message queue."""
+
+    def __init__(self) -> None:
+        self.pubsub_instance = _FakePubSub()
+
+    def pubsub(self) -> _FakePubSub:
+        return self.pubsub_instance
+
+    async def publish(self, channel: str, data: str) -> int:
+        await self.pubsub_instance.messages.put(
+            {"type": "message", "channel": channel, "data": data}
+        )
+        return 1
+
+
+class TestRedisEventBus:
+    def test_publish_log_counts_subscribers(self, caplog):
+        bus = RedisEventBus(_FakeRedis())
+
+        async def scenario():
+            with caplog.at_level(logging.INFO, logger="fsm.core.events"):
+                await bus.publish("admins", {"type": "x"})
+
+        asyncio.run(scenario())
+        assert "Published 'x' to 'admins' (1 subscriber(s))" in caplog.text
+
+    def test_receipt_log_names_the_stream(self, caplog):
+        bus = RedisEventBus(_FakeRedis())
+
+        async def scenario():
+            with caplog.at_level(logging.INFO, logger="fsm.core.events"):
+                async with bus.subscribe({"admins"}, stream_id="ab12cd34") as queue:
+                    await bus.publish("admins", {"type": "x"})
+                    return await asyncio.wait_for(queue.get(), timeout=0.5)
+
+        event = asyncio.run(scenario())
+        assert event == {"type": "x"}
+        assert "Received 'x' from 'admins' to the queue of stream 'ab12cd34'" in caplog.text
 
 
 class TestBuildEventBus:

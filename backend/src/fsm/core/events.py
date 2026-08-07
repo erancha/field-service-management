@@ -28,8 +28,11 @@ class EventBus(Protocol):
         """Deliver event to every current subscriber listening on channel."""
         ...
 
-    def subscribe(self, channels: set[str]):
-        """Async context manager yielding an async iterator of events for the given channels."""
+    def subscribe(self, channels: set[str], stream_id: str | None = None):
+        """Async context manager yielding an async iterator of events for the given channels.
+
+        stream_id, when given, names the consuming stream in the delivery-trace log lines.
+        """
         ...
 
 
@@ -37,6 +40,7 @@ class EventBus(Protocol):
 class _Subscription:
     channels: set[str]
     queue: "asyncio.Queue[dict]" = field(default_factory=asyncio.Queue)
+    stream_id: str | None = None
 
 
 class InMemoryEventBus:
@@ -51,16 +55,19 @@ class InMemoryEventBus:
         return len(self._subscribers)
 
     async def publish(self, channel: str, event: dict) -> None:
-        delivered = 0
-        for sub in list(self._subscribers):
-            if channel in sub.channels:
-                sub.queue.put_nowait(event)
-                delivered += 1
-        _log.info("Published '%s' to '%s' (%d subscriber(s))", event["type"], channel, delivered)
+        delivered = [sub for sub in self._subscribers if channel in sub.channels]
+        for sub in delivered:
+            sub.queue.put_nowait(event)
+        _log.info(
+            "Published '%s' to '%s' (%d subscriber(s), streams: %s)",
+            event["type"], channel, len(delivered), [sub.stream_id for sub in delivered],
+        )
 
     @contextlib.asynccontextmanager
-    async def subscribe(self, channels: set[str]) -> AsyncIterator["asyncio.Queue[dict]"]:
-        sub = _Subscription(channels=set(channels))
+    async def subscribe(
+        self, channels: set[str], stream_id: str | None = None
+    ) -> AsyncIterator["asyncio.Queue[dict]"]:
+        sub = _Subscription(channels=set(channels), stream_id=stream_id)
         self._subscribers.add(sub)
         try:
             yield sub.queue
@@ -79,21 +86,26 @@ class RedisEventBus:
         self._redis = client
 
     async def publish(self, channel: str, event: dict) -> None:
-        receivers = await self._redis.publish(channel, json.dumps(event))
-        _log.info("Published '%s' to '%s' (%d receiver(s))", event["type"], channel, receivers)
+        subscribers = await self._redis.publish(channel, json.dumps(event))
+        _log.info("Published '%s' to '%s' (%d subscriber(s))", event["type"], channel, subscribers)
 
     @contextlib.asynccontextmanager
-    async def subscribe(self, channels: set[str]) -> AsyncIterator["asyncio.Queue[dict]"]:
+    async def subscribe(
+        self, channels: set[str], stream_id: str | None = None
+    ) -> AsyncIterator["asyncio.Queue[dict]"]:
         queue: "asyncio.Queue[dict]" = asyncio.Queue()
         pubsub = self._redis.pubsub()
         await pubsub.subscribe(*channels)
+        trace_suffix = "" if stream_id is None else f" to the queue of stream '{stream_id}'"
 
         async def _pump() -> None:
             async for message in pubsub.listen():
                 if message.get("type") == "message":
                     event = json.loads(message["data"])
                     queue.put_nowait(event)
-                    _log.info("Received '%s' on '%s'", event["type"], message["channel"])
+                    _log.info(
+                        "Received '%s' from '%s'%s", event["type"], message["channel"], trace_suffix
+                    )
 
         pump_task = asyncio.create_task(_pump())
         try:
