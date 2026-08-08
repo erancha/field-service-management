@@ -38,7 +38,7 @@ class InMemoryEventBus:
         for sub in delivered:
             sub.queue.put_nowait(event)
         _log.info(
-            "Published '%s' to '%s' (%d subscriber(s), streams: %s)",
+            "Published '%s' to channel '%s' (%d subscriber(s), streams: %s)",
             event["type"], channel, len(delivered), [sub.stream_id for sub in delivered],
         )
 

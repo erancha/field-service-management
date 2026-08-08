@@ -104,7 +104,7 @@ class TestRedisEventBus:
                 await bus.publish("admins", {"type": "x"})
 
         asyncio.run(scenario())
-        assert "Published 'x' to 'admins' (1 subscriber(s))" in caplog.text
+        assert "Published 'x' to channel 'admins' (1 subscriber(s))" in caplog.text
 
     def test_receipt_log_names_the_stream(self, caplog):
         bus = RedisEventBus(_FakeRedis())
@@ -117,7 +117,7 @@ class TestRedisEventBus:
 
         event = asyncio.run(scenario())
         assert event == {"type": "x"}
-        assert "Received 'x' from 'admins' to the queue of stream 'ab12cd34'" in caplog.text
+        assert "Received 'x' from channel 'admins' to the queue of stream 'ab12cd34'" in caplog.text
 
 
 class TestBuildEventBus:

@@ -47,7 +47,9 @@ class RedisEventBus:
 
     async def publish(self, channel: str, event: dict) -> None:
         subscribers = await self._redis.publish(channel, json.dumps(event))
-        _log.info("Published '%s' to '%s' (%d subscriber(s))", event["type"], channel, subscribers)
+        _log.info(
+            "Published '%s' to channel '%s' (%d subscriber(s))", event["type"], channel, subscribers
+        )
 
     @contextlib.asynccontextmanager
     async def subscribe(
@@ -64,7 +66,8 @@ class RedisEventBus:
                     event = json.loads(message["data"])
                     queue.put_nowait(event)
                     _log.info(
-                        "Received '%s' from '%s'%s", event["type"], message["channel"], trace_suffix
+                        "Received '%s' from channel '%s'%s",
+                        event["type"], message["channel"], trace_suffix,
                     )
 
         pump_task = asyncio.create_task(_pump())
