@@ -10,10 +10,14 @@ How the test suite is organized and how to run it.
 ./scripts/test.sh frontend               # frontend, full (alias: fe)
 ./scripts/test.sh frontend=unit          # frontend fast path: typecheck + vitest only (alias: fe=u)
 ./scripts/test.sh backend frontend=unit  # combine targets in one run
+./scripts/test.sh e2e                    # cross-process SSE sample stack, opt-in (docker compose)
 ```
 
 Each argument is a target with an optional `=mode`, and targets combine. The `=unit` mode applies to
 the frontend only: it keeps the typecheck but skips oxlint and the vite build for a faster inner loop.
+The `e2e` target is never part of the default run: it builds and starts the
+`samples/redis_event_bus_with_sse/` compose stack and asserts that a posted message crosses backend
+processes through Redis before returning over SSE (details in that folder's README).
 
 Backend integration tests start ephemeral PostgreSQL and MinIO containers via
 testcontainers<sup>(1)</sup>, so **Docker must be running**. On first run the script provisions the

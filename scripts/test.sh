@@ -8,6 +8,7 @@
 #   ./scripts/test.sh frontend               # frontend, full (alias: fe)
 #   ./scripts/test.sh frontend=unit          # frontend fast path only (alias: fe=u)
 #   ./scripts/test.sh backend frontend=unit  # combine targets: full backend + fast frontend
+#   ./scripts/test.sh e2e                    # cross-process SSE sample stack (docker compose)
 #
 # Each argument is a target with an optional =mode. Targets combine, so several may be given.
 #
@@ -17,6 +18,8 @@
 # unit/component tests (vitest), and a production build (vite).
 # The =unit mode is a frontend inner-loop shortcut that keeps the typecheck but skips oxlint and the
 # vite build; run the full frontend target before committing. It applies to the frontend only. The
+# e2e target is opt-in and never part of the default: it builds and starts the
+# samples/redis_event_bus_with_sse compose stack and asserts the cross-process SSE round trip. The
 # test taxonomy is documented in docs/testing.md.
 set -euo pipefail
 
@@ -29,12 +32,13 @@ VENV="$BACKEND/.venv"
 print_help() { awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "${BASH_SOURCE[0]}"; }
 
 usage() {
-  echo "Usage: ./scripts/test.sh [all|backend|frontend[=unit]] ...   (first letters suffice: be | fe | u)" >&2
+  echo "Usage: ./scripts/test.sh [all|backend|frontend[=unit]|e2e] ...   (first letters suffice: be | fe | u)" >&2
   exit 2
 }
 
 RUN_BACKEND=false
 RUN_FRONTEND=false
+RUN_E2E=false
 FRONTEND_MODE="full"
 selected=false
 
@@ -49,6 +53,7 @@ for arg in "$@"; do
     all)        RUN_BACKEND=true; RUN_FRONTEND=true; fe_arg=true ;;
     be*|back*)  RUN_BACKEND=true; fe_arg=false ;;
     fe*|front*) RUN_FRONTEND=true; fe_arg=true ;;
+    e*)         RUN_E2E=true; fe_arg=false ;;
     *) usage ;;
   esac
   selected=true
@@ -119,7 +124,13 @@ run_frontend() {
   fi
 }
 
+run_e2e() {
+  echo "==> E2E (samples/redis_event_bus_with_sse)"
+  "$ROOT/samples/redis_event_bus_with_sse/test.sh"
+}
+
 if [ "$RUN_BACKEND" = true ]; then run_backend; fi
 if [ "$RUN_FRONTEND" = true ]; then run_frontend; fi
+if [ "$RUN_E2E" = true ]; then run_e2e; fi
 
 echo "All requested tests passed."

@@ -26,6 +26,7 @@ CLAUDE.md
 # walkthrough below has to stay tracked.
 /samples/*
 !/samples/walkthrough/
+!/samples/redis_event_bus_with_sse/
 
 /scripts/aws-config.sh
 /scripts/domain-contact.json

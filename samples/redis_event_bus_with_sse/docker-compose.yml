@@ -1,0 +1,82 @@
+# Narrowed stack for the cross-process event path: two processes of the sample backend share the
+# Redis broker, and the frontend's dev-server proxy pins the SSE stream to backend-1 and the
+# publish POST to backend-2 — so every posted event crosses processes before it reaches the page.
+# Self-contained: it builds the same fsm-backend:local image as the main compose (no rebuild when
+# that stack already built it) and runs a broker of its own, published to no host port.
+name: fsm-sse-sample
+
+# Both backends are identical processes of the sample app; only the frontend proxy assigns them
+# roles. The app itself is bind-mounted, so editing it needs no image rebuild.
+x-sample-backend: &sample-backend
+  build:
+    context: ../../backend
+    dockerfile: Dockerfile
+  image: fsm-backend:local
+  command: uvicorn app:create_app --factory --app-dir /sample --host 0.0.0.0 --port 8000
+  environment:
+    REDIS_URL: redis://redis:6379/0
+    # The same delivery-trace levels the repo's stack enables in backend/.env, with this sample's
+    # `app` module standing in for the FSM SSE route module. Set inline rather than inherited from
+    # that optional file because test.sh asserts on these log lines and must pass on a checkout
+    # that has no backend/.env.
+    FSM_LOG_LEVELS: fsm.core.events=INFO,app=INFO
+  volumes:
+    - ./backend:/sample:ro
+  deploy:
+    resources:
+      limits:
+        memory: 256M
+  # The slim image has no curl, so the probe uses Python's urllib, which is always present.
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+    interval: 3s
+    timeout: 3s
+    retries: 20
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    # Covers the image's declared VOLUME /data with tmpfs: pure pub/sub broker, no state to keep.
+    # No published host port — nothing outside this compose network subscribes, and staying off the
+    # host keeps clear of the main stack's broker on 127.0.0.1:6379.
+    tmpfs:
+      - /data
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  backend-1: *sample-backend
+  backend-2: *sample-backend
+
+  # Vite dev server, the stack's only published entry point. Its image bakes the main frontend's
+  # dependency tree (see Dockerfile); the mounts below recreate the repo layout under /app, so the
+  # page's relative import of the shared SSE hook resolves identically on the host and in here.
+  frontend:
+    build:
+      context: ../..
+      dockerfile: samples/redis_event_bus_with_sse/frontend/Dockerfile
+    image: fsm-sse-sample-frontend:local
+    command: npx vite samples/redis_event_bus_with_sse/frontend
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - ../../frontend/src:/app/frontend/src:ro
+      - ./frontend:/app/samples/redis_event_bus_with_sse/frontend:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
