@@ -2,15 +2,17 @@
 
 [![CI](https://github.com/erancha/field-service-management/actions/workflows/ci.yml/badge.svg)](https://github.com/erancha/field-service-management/actions/workflows/ci.yml)
 
-A service-call management platform for agencies like elevator or appliance maintenance companies.
+A service-call management system for agencies like elevator or appliance maintenance companies,
+with AI assistance for the customer: a triage chat, grounded in the agency's knowledge base, that
+resolves the issue or escalates it to a booked visit.
 
 **Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [License](#license)
 
 ## Features & roadmap
 
 [docs/features.md](docs/features.md) covers what's running today — sign-in and roles, booking and
-scheduling, two-way Google Calendar sync, notifications, the customer's triage assistant and its
-photo handling, the knowledge base, and deployment — plus the roadmap tracked in issues.
+scheduling, two-way Google Calendar sync, notifications, the customer's AI triage assistant and
+its photo handling, the knowledge base, and deployment — plus the roadmap tracked in issues.
 
 The [**visual walkthrough**](https://erancha.github.io/field-service-management/samples/walkthrough/)
 shows most of that list actually running, without deploying anything: annotated screenshots from one
