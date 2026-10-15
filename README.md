@@ -64,8 +64,7 @@ builds the backend image and brings the roles up as compose services; `--host` p
 virtualenv, builds the frontend, and runs one uvicorn per role. Each mode starts PostgreSQL and
 Redis via Docker and applies migrations first. Edit `backend/.env` and re-run to pick up changes. In
 either mode every role serves its React UI at `/`, API docs at `/docs`, and `/health` + `/ready` for
-liveness and readiness. Bring the stack down or tail logs with `./scripts/docker-helper.sh --stop` /
-`--logs`.
+liveness and readiness. Tail logs with `./scripts/docker-helper.sh --logs`.
 
 #### Open a UI in your browser
 
@@ -77,6 +76,20 @@ serves the SPA and API directly.
 | Technician | http://localhost:8001 |
 | Customer | http://localhost:8002 |
 | Back office | http://localhost:8003 |
+
+#### Take the stack down
+
+```bash
+./scripts/docker-helper.sh --stop             # stop + remove the containers; Postgres data is kept
+./scripts/docker-helper.sh --stop --volumes   # also drop the volumes for a clean database next start
+./scripts/docker-helper.sh --stop -v --prune  # plus clear this project's dangling images and volumes
+```
+
+`--stop` always takes the whole stack, including the PostgreSQL, Redis, and object-store containers
+that `--host` mode starts, so it is the teardown for both run modes. In `--host` mode, Ctrl-C in
+the launcher's terminal stops the uvicorn and worker processes first; the Docker services keep
+running until `--stop`. Pruning is label-scoped to this compose project and never touches other
+stacks; see `./scripts/docker-helper.sh -h` for the full option list.
 
 ## Scripts
 
