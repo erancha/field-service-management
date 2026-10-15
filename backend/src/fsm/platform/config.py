@@ -89,8 +89,8 @@ class Settings(CoreSettings):
     openai_api_key: SecretStr | None = None
 
     # Object storage for customer photos from the triage chat. Defaults match the bundled
-    # docker-compose MinIO service, the same way DATABASE_URL defaults to the bundled Postgres.
-    # Only the photo feature reads these; with the triage chat disabled they are ignored.
+    # docker-compose object-store service, the same way DATABASE_URL defaults to the bundled
+    # Postgres. Only the photo feature reads these; with the triage chat disabled they are ignored.
     minio_endpoint: str = "localhost:9100"
     minio_access_key: str = "fsm"
     minio_secret_key: SecretStr = SecretStr("fsm-minio-local")

@@ -1,23 +1,46 @@
-"""Round-trips against a real MinIO container; Docker must be running (same as pg_engine)."""
+"""Round-trips against a real object-store container; Docker must be running (same as pg_engine).
+
+The container runs the exact image docker-compose.yml ships, read from that file so the suite
+cannot drift from the stack and silently prove the adapter against a different server.
+"""
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 import pytest
 from minio.deleteobjects import DeleteError
-from testcontainers.minio import MinioContainer
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import HttpWaitStrategy
 
 from fsm.assist.adapters.photo_store import MinioPhotoStore
 from fsm.assist.ports.photo_store import PhotoStore
 
+_COMPOSE_FILE = Path(__file__).resolve().parents[4] / "docker-compose.yml"
+_COMPOSE_IMAGE = re.compile(r"^\s+image:\s*(rustfs/rustfs:\S+)", re.MULTILINE)
+_S3_PORT = 9000
+
+
+def _shipped_image() -> str:
+    match = _COMPOSE_IMAGE.search(_COMPOSE_FILE.read_text(encoding="utf-8"))
+    assert match is not None, f"{_COMPOSE_FILE} no longer pins a rustfs/rustfs image"
+    return match[1]
+
 
 @pytest.fixture(scope="module")
 def store():
-    with MinioContainer() as container:
-        config = container.get_config()
+    container = (
+        DockerContainer(_shipped_image())
+        .with_env("RUSTFS_ACCESS_KEY", "fsm")
+        .with_env("RUSTFS_SECRET_KEY", "fsm-test")
+        .with_command("/data")
+        .with_exposed_ports(_S3_PORT)
+        .waiting_for(HttpWaitStrategy(_S3_PORT, "/health"))
+    )
+    with container:
+        endpoint = f"{container.get_container_host_ip()}:{container.get_exposed_port(_S3_PORT)}"
         yield MinioPhotoStore(
-            endpoint=config["endpoint"],
-            access_key=config["access_key"],
-            secret_key=config["secret_key"],
-            bucket="test-photos",
+            endpoint=endpoint, access_key="fsm", secret_key="fsm-test", bucket="test-photos"
         )
 
 

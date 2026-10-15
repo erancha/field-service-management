@@ -19,7 +19,7 @@ The `e2e` target is never part of the default run: it builds and starts the
 `samples/redis_event_bus_with_sse/` compose stack and asserts that a posted message crosses backend
 processes through Redis before returning over SSE (details in that folder's README).
 
-Backend integration tests start ephemeral PostgreSQL and MinIO containers via
+Backend integration tests start ephemeral PostgreSQL and RustFS object-store containers via
 testcontainers<sup>(1)</sup>, so **Docker must be running**. On first run the script provisions the
 backend virtualenv and installs frontend dependencies. The same gates run in CI
 (`.github/workflows/ci.yml`).
@@ -46,7 +46,7 @@ Run against a **real PostgreSQL** instance started per test module via testconta
 (`tests/<context>/adapters`). They verify the SQLAlchemy repositories, the Alembic migrations, and the
 database-enforced invariants — most importantly the GiST `EXCLUDE`<sup>(3)</sup> no-double-booking constraint, which
 can only be proven against a real Postgres, not a fake. The assist context's `MinioPhotoStore`
-adapter is verified the same way, round-tripping bytes against a real **MinIO** container
+adapter is verified the same way, round-tripping bytes against a real **RustFS** container
 (`tests/assist/adapters/test_photo_store.py`).
 
 ### API tests

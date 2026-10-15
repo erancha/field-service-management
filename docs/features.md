@@ -136,7 +136,8 @@ plate, a display error code, the state of a part.
   1280px), reads what it shows, and quotes back a model number or error code it can make out.
 - It stops suggesting steps and escalates the moment a photo shows a risk signal — scorch marks,
   exposed wiring, water near electrics, gas fittings.
-- Originals live in the bundled MinIO service; Postgres keeps only metadata rows, never photo bytes.
+- Originals live in the bundled object-store service (RustFS); Postgres keeps only metadata rows,
+  never photo bytes.
 - Every non-escalated ending reclaims the conversation's photos. For a 24-hour retirement that
   reclamation is lazy, done when the customer next opens the chat, not by a background job.
 - An escalated ending carries the sent photos onto the service call as attachments, shown as preview

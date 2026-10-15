@@ -1,4 +1,4 @@
-"""MinIO-backed photo object store."""
+"""Photo object store on any S3-compatible server, driven through the minio client library."""
 from __future__ import annotations
 
 import io
@@ -12,7 +12,7 @@ class MinioPhotoStore:
     """Stores photo objects in one bucket, created on first use.
 
     The client holds no connection at construction time, so building the store at app startup
-    does not require MinIO to be reachable; an unreachable endpoint surfaces on the first photo
+    does not require the server to be reachable; an unreachable endpoint surfaces on the first photo
     operation instead of blocking every deployment that never uses photos.
     """
 
@@ -45,10 +45,12 @@ class MinioPhotoStore:
             response.release_conn()
 
     def remove(self, keys: Sequence[str]) -> None:
-        """Raises RuntimeError if MinIO reports a failure for any individual key."""
+        """Raises RuntimeError if the server reports a failure for any individual key."""
         self._ensure_bucket()
         errors = list(
             self._client.remove_objects(self._bucket, [DeleteObject(key) for key in keys])
         )
         if errors:
-            raise RuntimeError(f"MinIO refused to delete {len(errors)} object(s): {errors[0]}")
+            raise RuntimeError(
+                f"object store refused to delete {len(errors)} object(s): {errors[0]}"
+            )

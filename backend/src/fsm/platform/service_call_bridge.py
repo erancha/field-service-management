@@ -73,7 +73,7 @@ def delete_service_call(
     Attachment rows die with the call row via the FK cascade; the objects are removed after the
     delete commits, since a failed commit must not have already destroyed them. No route exposes
     this yet — it is the deletion path any future admin surface must call, and the reason manual
-    row deletes are not enough: the database cannot reach MinIO.
+    row deletes are not enough: the database cannot reach the object store.
     """
     attachments = SqlAlchemyServiceCallAttachmentRepository(session)
     keys = [

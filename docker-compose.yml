@@ -17,7 +17,7 @@ x-backend-env: &backend-env
   # Shared pub/sub broker so an event published in one role process (e.g. a customer's sign-in)
   # reaches SSE streams connected to another role process (e.g. the back office).
   REDIS_URL: redis://redis:6379/0
-  MINIO_ENDPOINT: minio:9000
+  MINIO_ENDPOINT: objectstore:9000
 
 # Shared liveness-probe timing for the role backends; nginx gates startup on these becoming healthy.
 # Each service supplies its own `test` (the role port differs); the slim image has no curl, so the
@@ -77,28 +77,29 @@ services:
       retries: 15
 
   # Object storage for customer photos attached in the triage chat: originals plus the
-  # model-sized previews. Postgres holds only metadata rows.
-  minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: server /data
+  # model-sized previews. Postgres holds only metadata rows. The backend speaks plain S3 through
+  # the minio client library, so any S3-compatible server can fill this slot; RustFS is the one
+  # bundled here.
+  objectstore:
+    image: rustfs/rustfs:1.0.1
+    command: /data
     deploy:
       resources:
         limits:
           memory: 256M
     environment:
-      MINIO_ROOT_USER: fsm
-      MINIO_ROOT_PASSWORD: fsm-minio-local
-    # Published on every interface so a photo object can be fetched from a device other than this
-    # host — a technician opening the calendar event on a phone. The host port stays off MinIO's
-    # default 9000 so this stack coexists with another local S3 store already holding it.
-    # Host-mode backends reach the store at localhost:9100; Docker-mode backends reach it
-    # in-network as minio:9000.
+      RUSTFS_ACCESS_KEY: fsm
+      RUSTFS_SECRET_KEY: fsm-minio-local
+    # Loopback-only like db and redis: a phone fetches a photo through the role APIs, never straight
+    # from the store. The host port stays off the S3 default 9000 so this stack coexists with
+    # another local S3 store already holding it. Host-mode backends reach the store at
+    # localhost:9100; Docker-mode backends reach it in-network as objectstore:9000.
     ports:
-      - "9100:9000"
+      - "127.0.0.1:9100:9000"
     volumes:
-      - fsm_minio:/data
+      - fsm_objectstore:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 3s
       timeout: 3s
       retries: 15
@@ -137,7 +138,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -170,7 +171,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -205,7 +206,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -265,4 +266,4 @@ services:
 
 volumes:
   fsm_pgdata:
-  fsm_minio:
+  fsm_objectstore:
