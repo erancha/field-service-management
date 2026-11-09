@@ -2,7 +2,7 @@
 
 Detail behind the [root README's summary](../README.md#architecture) of how the system is built.
 
-**Contents:** [Bounded contexts](#bounded-contexts) · [Import rules](#import-rules) · [How contexts integrate](#how-contexts-integrate) · [Enforcement in CI](#enforcement-in-ci) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema)
+**Contents:** [Bounded contexts](#bounded-contexts) · [Import rules](#import-rules) · [How contexts integrate](#how-contexts-integrate) · [Enforcement in CI](#enforcement-in-ci) · [Runtime topology](#runtime-topology) · [Authentication & live communication](#authentication--live-communication) · [Database schema](#database-schema)
 
 ## Bounded contexts
 
@@ -95,6 +95,49 @@ The import rules are executable: the import-linter contracts in `backend/pyproje
 (`[tool.importlinter]`, run as `lint-imports` or via `backend/tests/test_architecture.py`) fail
 the build on any import outside this shape — including one reached transitively through another
 module.
+
+## Runtime topology
+
+One backend image runs as several role processes that differ only by `FSM_ROLE`.
+`docker-compose.yml` sets each role's replica count, and nginx is the only published entry point.
+
+```mermaid
+flowchart LR
+  T[Technician app] -->|:8001| NX
+  C[Customer app] -->|:8002| NX
+  A[Back office app] -->|:8003| NX
+  NX["nginx<br/>SPA + reverse proxy<br/>(HTTPS per hostname when public)"]
+  subgraph ROLES[Role processes, one image]
+    TECH["technician ×2"]
+    CUST["customer ×5"]
+    BO["backoffice ×1"]
+  end
+  NX --> TECH & CUST & BO
+  subgraph DATA[State]
+    RD[(Redis<br/>pub/sub only)]
+    PG[(Postgres + pgvector)]
+    OS[(Object store<br/>photos)]
+  end
+  ROLES -->|pub/sub| RD
+  ROLES --> PG & OS
+  CUST -->|triage chat| LLM[LLM + embeddings]
+  BO -->|knowledge-base ingest| LLM
+  W["worker ×1<br/>calendar loops"] --> PG & RD
+  W <-->|outbox out, edits polled in| GC[Google Calendar]
+  MIG[migrate, one-off] --> PG
+```
+
+- **Load balancing.** nginx forwards each role's API to that role's service name, which Docker
+  resolves to every replica, so a role scales by changing its `replicas` count. Requests are spread
+  round-robin with no sticky sessions: the session is a signed cookie, and live events reach any
+  process through Redis.
+- **Live events across processes.** Redis serves only as a pub/sub broker, with no stored state: an
+  event published in one process reaches the SSE streams held by every other.
+- **Background work.** The worker runs the calendar loops outside the HTTP roles, so no role has to
+  stay single-replica for them. The outbound dispatcher is safe to run concurrently; the inbound
+  poller holds a Postgres advisory lease, so a second worker replica waits as a warm standby.
+- **Startup order.** `migrate` applies the schema once, and each role starts only after Postgres,
+  Redis and the object store report healthy; nginx starts after the roles do.
 
 ## Authentication & live communication
 
