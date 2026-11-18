@@ -2,7 +2,7 @@
 name = "fsm"
 version = "0.1.0"
 description = "Field Service Management system"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 authors = [{ name = "Eran C", email = "erancha@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [

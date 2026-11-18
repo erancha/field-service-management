@@ -141,7 +141,10 @@ and knows nothing of this product.
 
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE).
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). Reading the source,
+forking it and running a private deployment are free for anyone, companies included:
+[NOTICE](NOTICE) grants that explicitly for evaluating the project or its author. Building a
+commercial product or service on it needs a commercial license: erancha@gmail.com.
 
 ---
 
