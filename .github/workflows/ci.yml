@@ -16,8 +16,9 @@ jobs:
           # Matches the floor in backend/pyproject.toml and the python:3.12-slim image the app
           # deploys on — CI proves exactly what ships.
           python-version: "3.12"
-      # ruff lint + mypy typecheck + import-linter boundary contracts + the full pytest suite
-      # (unit, integration via a testcontainers Postgres on the runner's Docker, API, contract).
+      # The scripts' syntax check and shell tests, ruff lint, mypy typecheck, import-linter
+      # boundary contracts and the full pytest suite (unit, integration via a testcontainers
+      # Postgres on the runner's Docker, API, contract).
       - name: Backend tests
         run: bash scripts/test.sh backend
 
@@ -28,13 +29,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # typecheck (tsc), lint (oxlint), production build (vite).
+      # lint (oxlint), component tests (vitest), typecheck (tsc) and production build (vite).
       - name: Frontend checks
         run: bash scripts/test.sh frontend
 
-  # Turns a `v*` tag pushed by scripts/release.sh into a GitHub Release. Depending on both test
-  # jobs is what keeps a red commit from ever being published under a version. Notes are composed
-  # server-side from the commits since the previous release, so no checkout is needed.
+  # Turns a `v*` tag pushed by scripts/tools/release.sh into a GitHub Release. Depending on both
+  # test jobs is what keeps a red commit from ever being published under a version. Notes are
+  # composed server-side from the commits since the previous release, so no checkout is needed.
   release:
     needs: [backend, frontend]
     if: startsWith(github.ref, 'refs/tags/v')

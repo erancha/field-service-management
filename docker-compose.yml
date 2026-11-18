@@ -1,21 +1,74 @@
-# One backend image runs migrations and all role services; they differ only by command and FSM_ROLE.
+# Field Service Management's services: Postgres, Redis, the object store, the one-shot migration,
+# the role replicas, the calendar worker and the nginx edge the browser reaches the roles through.
+# The scripts call compose from this directory, so relative paths resolve from the repo root.
+# Settings come from the files under scripts/lib/ (stack-params.sh, params.sh, secrets.sh), which
+# the scripts export into their shell before calling compose, so the ${...} values below
+# interpolate; a bare docker compose call has none of them. Postgres, Redis and the object store
+# bind to this machine's loopback interface only, since Docker otherwise publishes on every host
+# interface and exposes the port to the whole network; the edge is the deliberate exception.
+#
+# Nothing is bind-mounted from this machine, so the same file runs against the EC2 instance's
+# Docker daemon (docker-compose.ec2.yml): the edge's configuration and the built page are baked
+# into its image, and the data lives in named volumes.
+name: field-service-management
+
+# One backend image runs the migration and every role service; they differ only by command and
+# FSM_ROLE.
 x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile
 
-# Operator config (Google, SMTP, Fernet key, runner intervals, ...) comes from backend/.env so the
-# Docker path honors the same configuration as host mode. Optional: absent on a fresh checkout.
-# The inline `environment` below overrides DATABASE_URL to the in-network `db` host regardless of
-# what .env sets for the host path.
-x-backend-env-file: &backend-env-file
-  - path: ./backend/.env
-    required: false
+x-backend-image: &backend-image fsm-backend:local
 
+# The in-network address, overriding the host form secrets.sh holds.
+x-database-env: &database-env
+  DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:?set in stack-params.sh}:\
+    ${POSTGRES_PASSWORD:?set in secrets.sh}@db:${DB_PORT:?set in stack-params.sh}/\
+    ${POSTGRES_DB:?set in stack-params.sh}"
+
+# Each container receives only the settings it reads, listed once here for every backend process,
+# since all of them read the same settings. A key listed without a value takes its value from the
+# scripts' shell and stays unset when its settings file leaves it commented out, so the process
+# keeps its default.
 x-backend-env: &backend-env
-  DATABASE_URL: postgresql+psycopg://fsm:fsm@db:5432/fsm
-  APP_ENV: local
-  # Shared pub/sub broker so an event published in one role process (e.g. a customer's sign-in)
-  # reaches SSE streams connected to another role process (e.g. the back office).
+  <<: *database-env
+  APP_ENV:
+  TIMEZONE:
+  ADMIN_EMAILS:
+  GOOGLE_CLIENT_ID:
+  GOOGLE_CLIENT_SECRET:
+  GOOGLE_REDIRECT_URI:
+  GOOGLE_CALENDAR_REDIRECT_URI:
+  SESSION_SECRET:
+  FSM_TOKEN_KEY:
+  TECHNICIAN_APP_URL:
+  FSM_DISPATCH_INTERVAL_SECONDS:
+  FSM_SYNC_INTERVAL_SECONDS:
+  FSM_SYNC_LEASE_RETRY_SECONDS:
+  FSM_BOOKING_CANCEL_LIMIT:
+  FSM_BOOKING_CANCEL_WINDOW_HOURS:
+  FSM_BOOKING_CANCEL_COOLOFF_HOURS:
+  SMTP_HOST:
+  SMTP_PORT:
+  SMTP_USER:
+  SMTP_PASS:
+  SMTP_FROM:
+  SMTP_USE_TLS:
+  GOOGLE_API_KEY:
+  HOLIDAY_CALENDAR_ID:
+  HOLIDAY_REFRESH_YEARS_AHEAD:
+  ASSIST_MODEL:
+  ASSIST_EMBEDDINGS:
+  ANTHROPIC_API_KEY:
+  OPENAI_API_KEY:
+  MINIO_ACCESS_KEY:
+  MINIO_SECRET_KEY:
+  MINIO_BUCKET:
+  MINIO_SECURE:
+  FSM_LOG_LEVEL:
+  FSM_LOG_LEVELS:
+  # In-network, like DATABASE_URL above. The shared pub/sub broker lets an event published in one
+  # role process (a customer's sign-in) reach the event streams held by another (the back office).
   REDIS_URL: redis://redis:6379/0
   MINIO_ENDPOINT: objectstore:9000
 
@@ -43,15 +96,17 @@ services:
         limits:
           memory: 256M
     environment:
-      POSTGRES_USER: fsm
-      POSTGRES_PASSWORD: fsm
-      POSTGRES_DB: fsm
+      POSTGRES_USER: ${POSTGRES_USER:?set in stack-params.sh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in secrets.sh}
+      POSTGRES_DB: ${POSTGRES_DB:?set in stack-params.sh}
+      # Moves the server, and pg_isready below, off the default port.
+      PGPORT: ${DB_PORT:?set in stack-params.sh}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_HOST_PORT:?set in stack-params.sh}:${DB_PORT:?set in stack-params.sh}"
     volumes:
       - fsm_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fsm -d fsm"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 3s
       timeout: 3s
       retries: 15
@@ -66,10 +121,10 @@ services:
       resources:
         limits:
           memory: 128M
-    # Published so host-mode processes (one uvicorn per role) can share the same broker at
-    # localhost:6379; the Docker path reaches it in-network as redis:6379.
+    # Published so backend processes started on the host share the same broker at
+    # localhost:REDIS_HOST_PORT; the Docker path reaches it in-network as redis:6379.
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:?set in stack-params.sh}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -88,14 +143,13 @@ services:
         limits:
           memory: 256M
     environment:
-      RUSTFS_ACCESS_KEY: fsm
-      RUSTFS_SECRET_KEY: fsm-minio-local
+      RUSTFS_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set in stack-params.sh}
+      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY:?set in secrets.sh}
     # Loopback-only like db and redis: a phone fetches a photo through the role APIs, never straight
-    # from the store. The host port stays off the S3 default 9000 so this stack coexists with
-    # another local S3 store already holding it. Host-mode backends reach the store at
-    # localhost:9100; Docker-mode backends reach it in-network as objectstore:9000.
+    # from the store. Backends started on the host reach the store at
+    # localhost:OBJECT_STORE_HOST_PORT; backends in Compose reach it as objectstore:9000.
     ports:
-      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:${OBJECT_STORE_HOST_PORT:?set in stack-params.sh}:9000"
     volumes:
       - fsm_objectstore:/data
     healthcheck:
@@ -106,33 +160,33 @@ services:
 
   migrate:
     build: *backend-build
-    image: fsm-backend:local
+    image: *backend-image
     command: alembic upgrade head
     deploy:
       <<: *backend-deploy
-    env_file: *backend-env-file
-    environment: *backend-env
+    environment: *database-env
     depends_on:
       db:
         condition: service_healthy
 
   technician:
     build: *backend-build
-    image: fsm-backend:local
+    image: *backend-image
     command: uvicorn fsm.platform.app:create_app --factory --host 0.0.0.0 --port 8001
-    env_file: *backend-env-file
     environment:
       <<: *backend-env
       FSM_ROLE: technician
-    # Several interchangeable processes for this role. They all bind 8001 inside their own container
-    # network namespace, so there is no port conflict; nginx reaches them by the `technician` service
-    # name, which resolves to every replica. Publishing a host port is incompatible with replicas > 1.
+    # Several interchangeable processes for this role. They all bind 8001 inside their own
+    # container network namespace, so there is no port conflict; nginx reaches them by the
+    # `technician` service name, which resolves to every replica. Publishing a host port is
+    # incompatible with replicas > 1.
     deploy:
       <<: *backend-deploy
       replicas: 2
     healthcheck:
       <<: *backend-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
     depends_on:
       db:
         condition: service_healthy
@@ -145,9 +199,8 @@ services:
 
   customer:
     build: *backend-build
-    image: fsm-backend:local
+    image: *backend-image
     command: uvicorn fsm.platform.app:create_app --factory --host 0.0.0.0 --port 8002
-    env_file: *backend-env-file
     environment:
       <<: *backend-env
       FSM_ROLE: customer
@@ -165,7 +218,8 @@ services:
           memory: 512M
     healthcheck:
       <<: *backend-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
     depends_on:
       db:
         condition: service_healthy
@@ -178,9 +232,8 @@ services:
 
   backoffice:
     build: *backend-build
-    image: fsm-backend:local
+    image: *backend-image
     command: uvicorn fsm.platform.app:create_app --factory --host 0.0.0.0 --port 8003
-    env_file: *backend-env-file
     environment:
       <<: *backend-env
       FSM_ROLE: backoffice
@@ -198,9 +251,10 @@ services:
           memory: 512M
     healthcheck:
       <<: *backend-healthcheck
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
     # No host port: nginx is the sole entry point; reachable as `backoffice:8003` on the compose
-    # network. ADMIN_EMAILS (in backend/.env) governs who this host grants the admin role to.
+    # network. ADMIN_EMAILS (in params.sh) governs who this host grants the admin role to.
     depends_on:
       db:
         condition: service_healthy
@@ -211,28 +265,19 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # Single edge and the only published entry point: serves the built SPA and reverse-proxies each role
-  # to its (internal) backend on a dedicated localhost port. localhost:8001 -> technician:8001,
-  # localhost:8002 -> customer:8002, localhost:8003 -> backoffice:8003. Per-port (not per-subdomain)
-  # because Google only accepts localhost:<port> as a loopback OAuth redirect URI, not *.localhost.
   # The calendar loops, in a process of their own so no HTTP role has to stay single-replica for
   # them: the outbound dispatcher drains the outbox to Google, the inbound poller reads technician
   # -side edits back. Only the poller may run once at a time, and it takes a lease to decide that,
   # so a second replica here is a warm standby rather than a misconfiguration — it idles until the
-  # holder disconnects, then takes over.
+  # holder disconnects, then takes over. The dispatcher writes photo links into calendar events
+  # from TECHNICIAN_APP_URL, the technician app's public address.
   worker:
     build: *backend-build
-    image: fsm-backend:local
+    image: *backend-image
     command: python -m fsm.platform.worker
-    env_file: *backend-env-file
     environment:
       <<: *backend-env
       FSM_ROLE: worker
-      # The dispatcher writes photo links into calendar events, and a link clicked from Google must
-      # be an absolute address on the technician-facing edge — nginx publishes that role on
-      # localhost:8001. Export TECHNICIAN_APP_URL before launching to point links at a public
-      # deployment instead.
-      TECHNICIAN_APP_URL: "${TECHNICIAN_APP_URL:-http://localhost:8001}"
     deploy:
       <<: *backend-deploy
       replicas: 1
@@ -243,6 +288,12 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  # Single edge and the only published entry point: serves the built SPA and reverse-proxies each
+  # role to its (internal) backend on a port of its own: EDGE_TECHNICIAN_HOST_PORT ->
+  # technician:8001, EDGE_CUSTOMER_HOST_PORT -> customer:8002, EDGE_BACKOFFICE_HOST_PORT ->
+  # backoffice:8003. Per port, not per subdomain, because Google accepts only localhost:<port> as a
+  # loopback OAuth redirect URI, not *.localhost.
   nginx:
     build:
       context: .
@@ -253,9 +304,9 @@ services:
         limits:
           memory: 64M
     ports:
-      - "8001:8001"
-      - "8002:8002"
-      - "8003:8003"
+      - "${EDGE_TECHNICIAN_HOST_PORT:?set in stack-params.sh}:8001"
+      - "${EDGE_CUSTOMER_HOST_PORT:?set in stack-params.sh}:8002"
+      - "${EDGE_BACKOFFICE_HOST_PORT:?set in stack-params.sh}:8003"
     depends_on:
       technician:
         condition: service_healthy

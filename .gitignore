@@ -1,32 +1,37 @@
 __pycache__/
 *.py[cod]
 .venv/
-venv/
-.env
-.env.*
-!.env.example
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 node_modules/
 dist/
 build/
+
+# The settings files init-env.sh creates from their committed .example.sh files.
+.env
+.env.*
+/scripts/lib/aws-config.sh
+/scripts/lib/secrets.sh
+/scripts/lib/params.sh
+# The throwaway Instance Connect key pair and the socket of the EC2 instance's Docker daemon.
+/scripts/lib/.ssh/
+
 docs/superpowers/*
-docs/senior-code-eval-*
 .superpowers/
+.claude/*
+!.claude/skills/
+CLAUDE.local.md
+graphify-out/
+docs/senior-code-eval*.md
 
-# AI-tooling working files stay local, consistent with the sibling portfolio repos
-.claude/
-CLAUDE.md
-
-# Third-party documents fetched to exercise the knowledge base locally. Real equipment manuals are
-# copyrighted, so they are kept out of this public repository rather than redistributed with it; #73
-# tracks fetching them on demand instead. The contents are excluded rather than the directory
-# itself, because git cannot re-include a path underneath an excluded directory — and the published
-# walkthrough below has to stay tracked.
+# Third-party documents fetched to exercise the knowledge base locally: real equipment manuals are
+# copyrighted, so they stay out of this public repository. The contents are excluded rather than
+# the folder itself, since git cannot re-include a path under an excluded folder, and the published
+# walkthrough and the SSE sample stay tracked.
 /samples/*
 !/samples/walkthrough/
 !/samples/redis_event_bus_with_sse/
-
-/scripts/aws-config.sh
-/scripts/domain-contact.json
+# Local copies of previous settings files, kept for reference.
+backup/

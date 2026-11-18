@@ -11,8 +11,8 @@ Everything below is running today. Everything not below is in the [Roadmap](#roa
 
 ### Sign-in and roles
 
-Google OIDC is the only sign-in path, so its environment variables are required configuration and
-every booking or scheduling action needs a signed-in session. There are three roles — customer,
+Google OIDC is the only sign-in path, so its client is required configuration and every booking
+or scheduling action needs a signed-in session. There are three roles — customer,
 technician, and admin — and a role comes from the per-role edge that completed the sign-in, never
 from client input. An admin approves a technician before they can be booked.
 
@@ -40,8 +40,8 @@ from client input. An admin approves a technician before they can be booked.
 
 ### Notifications
 
-An in-app feed for both parties, plus an email to the technician. Email is configured by environment
-variables and degrades gracefully when unset — the feed row is still written.
+An in-app feed for both parties, plus an email to the technician. Email is configured by the SMTP
+settings and degrades gracefully when unset — the feed row is still written.
 
 ### The customer's triage assistant
 
@@ -155,9 +155,10 @@ panel stays usable as the library grows.
 
 ### Deployment
 
-`./scripts/start.sh` runs the whole stack locally in Docker or as host processes
-([Getting started](../README.md#getting-started)). `scripts/deploy-to-ec2/` serves the three role
-apps publicly from a single ARM EC2 box over HTTPS, with certificates renewed in the background.
+`./scripts/deploy.sh` runs the whole stack locally in Docker
+([Getting started](../README.md#getting-started)). `./scripts/deploy.sh --ec2` serves the three
+role apps publicly from loan-simulator's EC2 instance, each over HTTPS at a CloudFront
+distribution of its own ([Development & deployment](development.md#deployment-scripts-scripts)).
 
 ## Roadmap
 

@@ -15,10 +15,10 @@ x-sample-backend: &sample-backend
   command: uvicorn app:create_app --factory --app-dir /sample --host 0.0.0.0 --port 8000
   environment:
     REDIS_URL: redis://redis:6379/0
-    # The same delivery-trace levels the repo's stack enables in backend/.env, with this sample's
-    # `app` module standing in for the FSM SSE route module. Set inline rather than inherited from
-    # that optional file because test.sh asserts on these log lines and must pass on a checkout
-    # that has no backend/.env.
+    # The delivery-trace levels FSM_LOG_LEVELS of scripts/lib/stack-params.sh shows, with this
+    # sample's `app` module standing in for the FSM SSE route module. Set inline rather than read
+    # from the settings files because test.sh asserts on these log lines and must pass on a checkout
+    # whose settings leave them unset.
     FSM_LOG_LEVELS: fsm.core.events=INFO,app=INFO
   volumes:
     - ./backend:/sample:ro

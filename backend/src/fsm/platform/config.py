@@ -4,19 +4,32 @@ import zoneinfo
 from functools import lru_cache
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic_settings import SettingsConfigDict
 
 from fsm.core.config import CoreSettings
 
 
 DEFAULT_TIMEZONE = "Asia/Jerusalem"
 
+SETTINGS_FILES = (
+    "scripts/lib/stack-params.sh",
+    "scripts/lib/params.sh",
+    "scripts/lib/secrets.sh",
+)
+"""The stack's settings files, relative to the repo root; a later file wins over an earlier one.
+Each holds plain export KEY="value" lines, which the scripts source and this loader parses."""
+
 
 class Settings(CoreSettings):
     """Process-wide configuration. Immutable once constructed.
 
     Adds this product's own fields to the database, environment, and broker settings every backend
-    process needs.
+    process needs. SETTINGS_FILES are read from the working directory, so a process started on the
+    host from the repo root reads the files the scripts and compose share; a missing file is
+    skipped, and keys only the scripts or compose read are ignored here.
     """
+
+    model_config = SettingsConfigDict(env_file=SETTINGS_FILES)
 
     # IANA zone the single service region operates in; appointment times are rendered in it.
     timezone: str = DEFAULT_TIMEZONE
@@ -81,8 +94,8 @@ class Settings(CoreSettings):
     holiday_refresh_years_ahead: int = 1
 
     # AI triage assistant. provider:model strings with no in-code default — the chosen models
-    # live in .env (.env.example documents them). The KB is enabled only when both an embeddings
-    # model and the key matching its provider are present.
+    # live in scripts/lib/params.sh (params.example.sh documents them). The KB is enabled only when
+    # both an embeddings model and the key matching its provider are present.
     assist_model: str | None = None
     assist_embeddings: str | None = None
     anthropic_api_key: SecretStr | None = None
@@ -97,8 +110,9 @@ class Settings(CoreSettings):
     minio_bucket: str = "fsm-photos"
     minio_secure: bool = False
 
-    # An optional key present but left blank in .env (e.g. `SESSION_SECRET=`) is treated as
-    # unset, so an uncommented-but-empty template entry behaves the same as an absent one.
+    # An optional key present but left blank in a settings file (e.g. `SESSION_SECRET=""`) is
+    # treated as unset, so an uncommented-but-empty template entry behaves the same as an absent
+    # one.
     @field_validator(
         "google_client_id",
         "google_client_secret",

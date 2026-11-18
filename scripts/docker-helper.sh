@@ -1,148 +1,89 @@
 #!/usr/bin/env bash
 #
-# Thin Docker Compose helper for the Field Service Management stack: teardown and scoped logs.
-# Bringing the stack UP stays in start.sh (it also provisions the venv, builds the SPA, and applies
-# migrations); this helper owns the compose operations start.sh does not.
+# Docker Compose helper for the stack: teardown, logs, status. Bringing it up is deploy.sh's job.
+# With --ec2 as the first argument it acts on the stack's EC2 instance instead of this machine.
 #
-#   ./scripts/docker-helper.sh --stop [--volumes] [--prune[=images|volumes|all]]
-#       Stop and remove the stack's containers and network. Volumes are KEPT by default so the
-#       Postgres data survives a restart; --volumes (alias -v) also removes them for a clean
-#       database. --prune additionally clears this project's dangling images and/or volumes (bare
-#       --prune = all), label-scoped to the FSM compose project so other stacks are never touched.
-#       Pruning volumes is refused unless --volumes is also given, since it would delete the kept
-#       Postgres volume.
-#   ./scripts/docker-helper.sh --logs [-e|--errors|-w|--warnings] [--grep <pat>] [--since <dur>] [--sorted] [service...]
-#       Follow logs live (last 200 lines). -e filters to ERROR/EXCEPTION/FATAL; -w widens that to
-#       also include WARN; --grep <pat> filters to a case-insensitive regex; --since limits the
-#       window (e.g. 10m, 1h). A trailing service list narrows to those services (technician
-#       customer backoffice nginx db redis). --sorted dumps the window once instead of following,
-#       merged across services and ordered by each line's own timestamp: the live follow prints
-#       per-container pipes as they drain, so lines logged microseconds apart in different
-#       replicas can print out of order. Sorting keys on the timestamp the app stamped, so it
-#       reflects when each line was logged, not when Docker collected it. Lines whose message
-#       does not start with a timestamp (nginx access logs, tracebacks) sort by their text —
-#       pair --sorted with --grep or a service list that keeps timestamped app lines.
+#   ./scripts/docker-helper.sh --stop [--volumes]
+#       Stop and remove the stack's containers and network. The fsm_pgdata volume (the database)
+#       and the fsm_objectstore volume (the customers' photos) are KEPT by default so they survive
+#       a restart; --volumes (alias -v) also removes both for a clean start.
+#   ./scripts/docker-helper.sh --logs [-e|--errors|-w|--warnings] [--grep <pattern>]
+#                                     [--since <duration>] [--sorted] [service...]
+#       Follow the stack's logs live (last 200 lines). -e filters to ERROR/EXCEPTION/FATAL lines,
+#       -w adds WARN lines, --grep filters to a case-insensitive regular expression, and --since
+#       limits the window (10m, 1h). A trailing service list (db redis objectstore migrate
+#       technician customer backoffice worker nginx) narrows to those services. --sorted prints
+#       the window once instead of following it, merged across services and ordered by the
+#       timestamp each app line opens with: a live follow prints each container's lines as they
+#       arrive, so lines logged microseconds apart by different replicas can print out of order.
+#       Lines without a leading timestamp (nginx access lines, tracebacks) sort by their text, so
+#       pair --sorted with --grep or a list of the backend services.
 #   ./scripts/docker-helper.sh --ps
-#       Show the stack's container status.
-#   --context <name>
-#       Operate the stack on another Docker daemon, given before the command — e.g.
-#       `--context fsm-ec2 --logs -e backoffice` reaches the EC2 deployment (see
-#       scripts/deploy-to-ec2/start.sh). Omitted, every command runs against the local daemon.
+#       Show the containers' status.
+#   ./scripts/docker-helper.sh --ec2 --delete-stack
+#       Delete the git branch's three EC2 stacks, one per role: each one's port on loan-simulator's
+#       instance and its CloudFront distribution, after asking to type each stack's name. The
+#       containers and volumes stay on the instance; run --ec2 --stop [--volumes] first to remove
+#       them.
 #   -h, --help
 #
-# --logs only: narrow to specific services by naming them last (--stop always takes the whole stack):
-#   ./scripts/docker-helper.sh --logs -e backoffice   # follow errors from one service
-#
-# To skip a service, list the others. Combine with -e/-w to filter by severity too — e.g. warnings
-# from everything except nginx, whose access logs otherwise flood a plain follow:
-#   ./scripts/docker-helper.sh --logs -w $(docker compose -f docker-compose.yml config --services 2>/dev/null | grep -vx nginx)
-#   ./scripts/docker-helper.sh --logs -w --since 1h $(docker compose -f docker-compose.yml config --services 2>/dev/null | grep -vx nginx)
-#
-# To follow a live event across the roles as one line per delivery hop, each prefixed with the replica
-# that logged it (published -> received -> delivering -> SSE stream open/close):
-#   ./scripts/docker-helper.sh --logs --grep 'published|received|delivering|SSE stream' technician customer backoffice worker
-# Add --sorted (and optionally --since) to re-read those hops afterwards in true timestamp order:
-#   ./scripts/docker-helper.sh --logs --sorted --since 10m --grep 'published|received|delivering|SSE stream' technician customer backoffice worker
+# Examples:
+#   # a live event across the roles, one line per delivery hop, each prefixed with its replica
+#   # (published -> received -> delivering -> SSE stream open/close):
+#   ./scripts/docker-helper.sh --logs --grep 'published|received|delivering|SSE stream' \
+#     technician customer backoffice worker
+#   # the same hops afterwards, in timestamp order:
+#   ./scripts/docker-helper.sh --logs --sorted --since 10m \
+#     --grep 'published|received|delivering|SSE stream' technician customer backoffice worker
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
+source "$SCRIPT_DIR/common.sh"
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
-
-# Selects the Docker daemon for every call below. Empty means the caller's current context, so a bare
-# invocation reaches the local stack. Passing --context here rather than switching the context
-# globally leaves other shells, projects, and testcontainers pointed at the local daemon.
-DOCKER_CONTEXT_ARGS=()
-if [[ "${1:-}" == "--context" ]]; then
-  DOCKER_CONTEXT_ARGS=(--context "${2:?--context needs a context name}")
-  shift 2
-fi
-
-# Pin compose's project-directory to the repo root so relative build contexts and the default
-# project name resolve the same regardless of the caller's working directory.
-compose() { (cd "$ROOT_DIR" && docker "${DOCKER_CONTEXT_ARGS[@]}" compose -f "$COMPOSE_FILE" "$@"); }
-
-# Compose's default project name: the repo dir basename, lowercased and stripped to the chars
-# compose keeps. Used to label-scope prune so it only ever touches THIS stack's images/volumes.
-compose_project() { basename "$ROOT_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'; }
-
-require_docker() {
-  docker "${DOCKER_CONTEXT_ARGS[@]}" info >/dev/null 2>&1 \
-    || { echo "Docker is not reachable — start Docker (or the deployment box) and retry." >&2; exit 1; }
+do_stop() {  # [-v|--volumes], checked below before anything runs
+  local -a down=(down --remove-orphans)
+  [ $# -eq 0 ] || down+=(-v)
+  compose "${down[@]}"
 }
 
-# Print this script's header comment block as --help text (single source of usage docs).
-print_help() { awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "${BASH_SOURCE[0]}"; }
-
-do_stop() {
-  local wipe=false prune=""
-  while [[ $# -gt 0 ]]; do
+# The --logs options, read before any settings file, AWS or Docker is touched. The service list
+# after them stays in LOG_SERVICES.
+LOG_PATTERN=""
+LOG_FOLLOW=true
+LOG_SINCE=()
+LOG_SERVICES=()
+parse_logs_options() {
+  while [ $# -gt 0 ]; do
     case "$1" in
-      -v|--volumes) wipe=true ;;
-      --prune)      prune=all ;;
-      --prune=*)    prune="${1#*=}" ;;
-      *)            echo "Unknown --stop option '$1'" >&2; exit 1 ;;
+      -e|--errors)   LOG_PATTERN='(error|exception|fatal)'; shift ;;
+      -w|--warnings) LOG_PATTERN='(warn|warning|error|exception|fatal)'; shift ;;
+      --grep)
+        [ -n "${2:-}" ] || { echo "--grep needs a pattern" >&2; exit 1; }
+        LOG_PATTERN="$2"; shift 2 ;;
+      --since)
+        [ -n "${2:-}" ] || { echo "--since needs a duration" >&2; exit 1; }
+        LOG_SINCE=(--since "$2"); shift 2 ;;
+      --sorted)      LOG_FOLLOW=false; shift ;;
+      -*)            echo "Unknown --logs option '$1'" >&2; exit 1 ;;
+      *)             LOG_SERVICES+=("$1"); shift ;;
     esac
-    shift
   done
-
-  case "$prune" in
-    ""|images|volumes|all) ;;
-    *) echo "--prune expects images|volumes|all (bare --prune = all)" >&2; exit 1 ;;
-  esac
-  if ! $wipe && [[ "$prune" == volumes || "$prune" == all ]]; then
-    echo "--prune=$prune would delete the kept Postgres volume; pass --volumes too if that is intended." >&2
-    exit 1
-  fi
-
-  if $wipe; then
-    compose down -v --remove-orphans
-  else
-    compose down --remove-orphans
-  fi
-
-  local -a scope=(--filter "label=com.docker.compose.project=$(compose_project)")
-  local -a d=(docker "${DOCKER_CONTEXT_ARGS[@]}")
-  case "$prune" in
-    images)  "${d[@]}" image  prune -f "${scope[@]}" ;;
-    volumes) "${d[@]}" volume prune -f "${scope[@]}" ;;
-    all)     "${d[@]}" image  prune -f "${scope[@]}"; "${d[@]}" volume prune -f "${scope[@]}" ;;
-  esac
 }
 
-# Severity presets and --grep only choose what to match; the stream follows live unless --sorted
-# turns it into a one-shot dump ordered by app timestamp. --since bounds the window. Remaining
-# args name services to narrow to.
+# The sort key is everything after the service-name column, which app lines open with their own
+# ISO-8601 UTC timestamp: fixed width, so text order is time order.
 do_logs() {
-  local pattern="" follow=true
-  local -a since=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -e|--errors)   pattern='(error|exception|fatal)'; shift ;;
-      -w|--warnings) pattern='(warn|warning|error|exception|fatal)'; shift ;;
-      --grep)        pattern="${2:?--grep needs a pattern}"; shift 2 ;;
-      --since)       since=(--since "${2:?--since needs a duration}"); shift 2 ;;
-      --sorted)      follow=false; shift ;;
-      *)             break ;;
-    esac
-  done
-
   local -a args=(logs --tail=200)
-  $follow && args+=(-f)
-  args+=("${since[@]}" "$@")
-
-  # The sort key is everything after the service-name column, which app lines open with their own
-  # ISO-8601 UTC timestamp — fixed-width, so plain lexicographic order is chronological order.
-  if $follow && [[ -n "$pattern" ]]; then
-    compose "${args[@]}" | grep -Eai "$pattern"
-  elif $follow; then
-    compose "${args[@]}"
-  elif [[ -n "$pattern" ]]; then
-    compose "${args[@]}" | grep -Eai "$pattern" | sort -t'|' -k2 -s
-  else
-    compose "${args[@]}" | sort -t'|' -k2 -s
-  fi
+  if $LOG_FOLLOW; then args+=(-f); fi
+  args+=("${LOG_SINCE[@]}" "${LOG_SERVICES[@]}")
+  local -a filter=(cat) order=(cat)
+  if [ -n "$LOG_PATTERN" ]; then filter=(grep -Eai "$LOG_PATTERN"); fi
+  if ! $LOG_FOLLOW; then order=(sort -t'|' -k2 -s); fi
+  compose "${args[@]}" | "${filter[@]}" | "${order[@]}"
 }
 
+TARGET=local
+if [ "${1:-}" = --ec2 ]; then TARGET=ec2; shift; fi
 mode="${1:-}"
 case "$mode" in
   -h|--help) print_help; exit 0 ;;
@@ -150,10 +91,33 @@ case "$mode" in
 esac
 shift
 
+# The arguments are checked before any settings file, AWS or Docker is touched.
+case "$mode" in
+  --stop)
+    for arg in "$@"; do
+      case "$arg" in -v|--volumes) ;; *) echo "Unknown --stop option '$arg'" >&2; exit 1 ;; esac
+    done ;;
+  --ps|--delete-stack)
+    [ $# -eq 0 ] || { echo "$mode takes no arguments (got: $*)" >&2; exit 1; } ;;
+  --logs) parse_logs_options "$@" ;;
+  *) echo "Unknown command: $mode (expected --stop | --logs | --ps | --delete-stack; see -h)" >&2
+     exit 1 ;;
+esac
+
+load_settings
+if [ "$mode" = --delete-stack ]; then
+  [ "$TARGET" = ec2 ] || { echo "--delete-stack needs --ec2 before it" >&2; exit 2; }
+  refuse_stack_name
+  for role in "${ROLES[@]}"; do
+    select_ec2_role "$role"
+    delete_ec2_stack
+  done
+  exit 0
+fi
+if [ "$TARGET" = ec2 ]; then use_ec2_roles; fi
 require_docker
 case "$mode" in
   --stop) do_stop "$@" ;;
-  --logs) do_logs "$@" ;;
-  --ps)   compose ps "$@" ;;
-  *) echo "Unknown command: $mode (expected --stop | --logs | --ps; see -h)" >&2; exit 1 ;;
+  --logs) do_logs ;;
+  --ps)   compose ps ;;
 esac

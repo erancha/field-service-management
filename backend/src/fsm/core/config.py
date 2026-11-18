@@ -9,12 +9,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class CoreSettings(BaseSettings):
     """Base an application's own settings class extends with its product-specific fields.
 
-    Immutable once constructed. Values come from the environment, falling back to a .env file
-    beside the working directory; unknown keys are ignored so one file can serve several
+    Immutable once constructed. Values come from the environment, and from the settings files an
+    application's subclass names; unknown keys are ignored so one file can serve several
     processes.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
+    model_config = SettingsConfigDict(extra="ignore", frozen=True)
 
     database_url: SecretStr
     app_env: Literal["local", "test", "staging", "prod"] = "local"

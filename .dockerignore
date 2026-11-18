@@ -1,14 +1,18 @@
-# Keep build contexts small: never ship dependency trees, build outputs, VCS, or local secrets. Size
-# matters beyond build speed — a remote deployment sends this context to the box's Docker daemon over
-# SSH, so anything listed here is bandwidth paid on every deploy.
+# Keep build contexts small: never ship dependency trees, build outputs, VCS, or local settings.
+.git
+**/.env*
+scripts/lib/secrets.sh
+scripts/lib/params.sh
+scripts/lib/aws-config.sh
+scripts/lib/.ssh
+backup
+.superpowers
+docs
 **/node_modules
-**/.venv
 **/dist
+**/.venv
 **/__pycache__
 **/*.pyc
-**/.pytest_cache
-.git
-backend/.env
-scripts/aws-config.sh
+**/.*_cache
 # Knowledge-base documents fetched to exercise the app locally; no image build reads them.
 /samples

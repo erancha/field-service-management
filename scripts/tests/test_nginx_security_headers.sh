@@ -8,7 +8,7 @@
 #
 # Runs the real nginx image with the repo config mounted; requires Docker.
 #
-#   ./scripts/tests/nginx_security_headers.sh
+#   ./scripts/tests/test_nginx_security_headers.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

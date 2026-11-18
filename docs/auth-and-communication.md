@@ -226,8 +226,8 @@ backend services, and only nginx holds a port (trimmed here to the essentials):
 # One built image; role services differ only by FSM_ROLE, so a role's replicas are interchangeable.
 x-fsm: &fsm
   image: fsm-backend:local
-  env_file: [./backend/.env]          # shared SESSION_SECRET → any replica accepts any session cookie
   environment: &env
+    SESSION_SECRET:                   # one shared value → any replica accepts any session cookie
     REDIS_URL: redis://redis:6379/0   # carries SSE events across replicas
 
 services:
@@ -279,8 +279,9 @@ poller must be single: it takes a lease before polling and a process that loses 
 retries, so a second worker replica is a warm standby that takes over when the holder dies. What
 these workers do is traced in [docs/data.md](data.md#calendar-sync).
 
-Per-key configuration — what each secret does and how to obtain the Google credentials — lives inline
-in [`backend/.env.example`](../backend/.env.example).
+What each secret does is documented beside it in the settings files under `scripts/lib/`
+([Development & deployment](development.md#configuration)), and [Sign-in](sign-in.md) obtains the
+Google credentials.
 
 ## Security guarantees
 
@@ -304,9 +305,9 @@ in [`backend/.env.example`](../backend/.env.example).
 
 ## Token and session lifetimes
 
-Three different credentials are in play, each with its own lifetime. None of them needs an expiry knob
-in the configuration, which is why none appears in `.env.example` — the absence is deliberate, not an
-oversight.
+Three different credentials are in play, each with its own lifetime. None of them needs an expiry
+knob in the configuration, which is why none appears in the settings files — the absence is
+deliberate, not an oversight.
 
 - **The Google ID token (JWT<sup>(8)</sup>) is used once and discarded.** At `/auth/google/callback`
   the token's signature, audience, and expiry are checked in that single moment (with a few seconds of

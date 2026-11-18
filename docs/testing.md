@@ -6,16 +6,12 @@ How the test suite is organized and how to run it.
 
 ```bash
 ./scripts/test.sh                        # everything (backend + frontend)
-./scripts/test.sh backend                # backend only  (alias: be)
-./scripts/test.sh frontend               # frontend, full (alias: fe)
-./scripts/test.sh frontend=unit          # frontend fast path: typecheck + vitest only (alias: fe=u)
-./scripts/test.sh backend frontend=unit  # combine targets in one run
+./scripts/test.sh backend                # backend and scripts only  (alias: be)
+./scripts/test.sh frontend               # frontend only (alias: fe)
 ./scripts/test.sh e2e                    # cross-process SSE sample stack, opt-in (docker compose)
 ```
 
-Each argument is a target with an optional `=mode`, and targets combine. The `=unit` mode applies to
-the frontend only: it keeps the typecheck but skips oxlint and the vite build for a faster inner loop.
-The `e2e` target is never part of the default run: it builds and starts the
+Targets combine. The `e2e` target is never part of the default run: it builds and starts the
 `samples/redis_event_bus_with_sse/` compose stack and asserts that a posted message crosses backend
 processes through Redis before returning over SSE (details in that folder's README).
 
@@ -26,7 +22,10 @@ backend virtualenv and installs frontend dependencies. The same gates run in CI
 
 ## Backend (`backend/tests`, pytest)
 
-Before pytest, `scripts/test.sh backend` runs three static gates: **lint** (`ruff check src tests`),
+Before pytest, `scripts/test.sh backend` checks the scripts' syntax (`bash -n`) and runs their
+shell tests under `scripts/tests/` (the edge's security headers, the test runner's npm bootstrap,
+the argument checks of `docker-helper.sh`, and each role's EC2 stack name and port), then three
+static gates: **lint** (`ruff check src tests`),
 **typecheck** (`mypy`, scoped to `src` — tests lean on fixtures and monkeypatching that static
 analysis cannot follow), and the **import-linter** boundary contracts described under
 [Architecture tests](#architecture-tests).
@@ -70,12 +69,17 @@ of this product's, including the web framework. `tests/test_packages.py` asserts
 every package is importable. These encode the hexagonal<sup>(4)</sup> boundaries as executable checks rather than
 conventions.
 
+Beside them, `tests/test_compose.py` checks the Compose files (what is published, and where; no
+bind mount; an `:ec2` image for every image built here; each role's callbacks on EC2),
+`tests/test_settings_files.py` that the settings files document exactly the keys the backend
+reads and that `scripts/init-env.sh` writes valid generated values, and
+`tests/test_ec2_template.py` the EC2 template's security group descriptions.
+
 ## Frontend (`frontend`)
 
-The React app's quality gates are **typecheck** (`tsc --noEmit`), **lint** (`oxlint`),
-**unit/component tests** (`vitest run`), and a production **build** (`vite build`);
-`scripts/test.sh frontend` runs all four. `scripts/test.sh frontend=unit` runs just the typecheck and
-vitest — the inner-loop shortcut, not a substitute for the full run before committing.
+The React app's quality gates are **lint** (`oxlint`), **unit/component tests** (`vitest run`),
+and the **typecheck** (`tsc -b`) and production **build** (`vite build`) that `npm run build`
+chains; `scripts/test.sh frontend` runs all four.
 
 Tests live next to the code they cover as `*.test.ts(x)` and run under Vitest in a jsdom
 environment with React Testing Library (per-test DOM cleanup is wired in `src/test/setup.ts`).

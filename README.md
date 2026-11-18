@@ -4,140 +4,134 @@
 
 A service-call management system for agencies like elevator or appliance maintenance companies,
 with AI assistance for the customer: a triage chat, grounded in the agency's knowledge base, that
-resolves the issue or escalates it to a booked visit.
-
-**Contents:** [Features & roadmap](#features--roadmap) · [Getting started](#getting-started) · [Scripts](#scripts) · [Testing](#testing) · [Architecture](#architecture) · [License](#license)
-
-## Features & roadmap
-
-[docs/features.md](docs/features.md) covers what's running today — sign-in and roles, booking and
-scheduling, two-way Google Calendar sync, notifications, the customer's AI triage assistant and
-its photo handling, the knowledge base, and deployment — plus the roadmap tracked in issues.
+resolves the issue or escalates it to a booked visit. Customers, technicians and the back office
+each have an app of their own, and bookings land on the technicians' Google Calendars. The stack
+runs under Docker Compose, on one machine or on an EC2 instance behind CloudFront.
 
 The [**visual walkthrough**](https://erancha.github.io/field-service-management/samples/walkthrough/)
-shows most of that list actually running, without deploying anything: annotated screenshots from one
-uninterrupted session, starting on an empty database and ending with a booked appointment in two
-Google Calendars.
+shows it running without deploying anything: annotated screenshots from one uninterrupted session,
+starting on an empty database and ending with a booked appointment in two Google Calendars.
 
-## Getting started
+**Contents:** [Overview](#overview) · [Tech stack](#tech-stack) · [Architecture](#architecture) ·
+[Getting started](#getting-started) · [Scripts](#scripts) · [Details](#details) ·
+[License](#license)
 
-Prerequisites: **Python ≥3.12**, **Docker**, and **Node.js 22+ with npm**.
+## Overview
 
-### 1. Configuration (`backend/.env`)
+- **Three apps, one sign-in**: customers, technicians and the back office each use their own app
+  at its own address, and sign in with Google only. The app a person signs in at decides their
+  role; an administrator approves a technician before customers can book them.
+- **Self-booking on real availability**: customers book a visit against a technician's working
+  hours, time off, public holidays and Google free/busy. The database itself refuses two
+  overlapping appointments for one technician, and every booking change is audited.
+- **Google Calendar both ways**: each appointment lands on the technician's calendar with the
+  customer as a real guest, and edits made on Google's side come back; a technician grants access
+  only to a calendar the app creates and to free/busy times.
+- **AI triage chat**: the assistant works the problem with the customer, answers from the
+  agency's uploaded manuals with a link to the page it used, and either closes the conversation
+  or, on the customer's yes, opens a service call with a structured summary for the technician.
+- **Photos in the chat**: a customer can attach photos of a rating plate or an error display;
+  the assistant reads a downscaled copy and stops at once on a safety risk it sees.
+- **Knowledge base**: the back office uploads the documents the assistant answers from, which
+  are chunked, embedded and searchable.
+- **Live updates and notifications**: an approval or a booking reaches every open app at once,
+  with an in-app feed for both parties and email to the technician.
 
-```bash
-./scripts/init-env.sh   # writes backend/.env from backend/.env.example and mints the local secrets
-```
+## Tech stack
 
-Configuring the **Google Cloud Console** OAuth client is mandatory. Google is the only sign-in path,
-and every booking and scheduling action requires a signed-in session, so the app does nothing useful
-until it is set. `init-env.sh` handles the rest of the baseline: `DATABASE_URL`/`APP_ENV` default to
-the bundled Docker Postgres, and the two secrets every install must mint locally — `SESSION_SECRET`
-and `FSM_TOKEN_KEY` — are generated for you. Holidays and email are the only features that stay
-disabled, without error, when left unset.
-
-Every key in `backend/.env` — what it does, when it is required, and how to obtain it — is
-documented inline in [`backend/.env.example`](backend/.env.example), which also contains the Google
-Cloud Console setup steps. Refer to it there rather than duplicating the list here.
-
-### 2. Runtime
-
-The app runs as three role apps — technician, customer, and back office — each reached on its own
-localhost port. One launcher, `./scripts/start.sh`, starts everything from the `backend/.env`
-written in step 1 and offers two run modes; both serve the roles at the same URLs and support the
-full Google sign-in flow. Docker mode (the default) is a closer-to-production stack; `--host` runs
-the roles as local uvicorn processes for fast boot and debugger attach. Either way PostgreSQL and
-Redis run in Docker.
-
-```bash
-# DOCKER mode (default): roles run as containers; nginx publishes one localhost port per role
-./scripts/start.sh                   # all roles: db + redis + migrations + backends + nginx
-./scripts/start.sh technician        # one role (alias tec) -> http://localhost:8001
-
-# HOST mode (--host): each role is a local uvicorn process on the same ports
-./scripts/start.sh --host                # all roles            -> :8001 / :8002 / :8003
-./scripts/start.sh technician --host     # one role (alias tec) -> http://localhost:8001
-```
-
-The launcher is idempotent and aborts with instructions if `backend/.env` is missing. Docker mode
-builds the backend image and brings the roles up as compose services; `--host` provisions the
-virtualenv, builds the frontend, and runs one uvicorn per role. Each mode starts PostgreSQL and
-Redis via Docker and applies migrations first. Edit `backend/.env` and re-run to pick up changes. In
-either mode every role serves its React UI at `/`, API docs at `/docs`, and `/health` + `/ready` for
-liveness and readiness. Tail logs with `./scripts/docker-helper.sh --logs`.
-
-#### Open a UI in your browser
-
-In Docker mode nginx serves the SPA and proxies the API per port; in host mode the uvicorn process
-serves the SPA and API directly.
-
-| App | URL |
-|---|---|
-| Technician | http://localhost:8001 |
-| Customer | http://localhost:8002 |
-| Back office | http://localhost:8003 |
-
-#### Take the stack down
-
-```bash
-./scripts/docker-helper.sh --stop             # stop + remove the containers; Postgres data is kept
-./scripts/docker-helper.sh --stop --volumes   # also drop the volumes for a clean database next start
-./scripts/docker-helper.sh --stop -v --prune  # plus clear this project's dangling images and volumes
-```
-
-`--stop` always takes the whole stack, including the PostgreSQL, Redis, and object-store containers
-that `--host` mode starts, so it is the teardown for both run modes. In `--host` mode, Ctrl-C in
-the launcher's terminal stops the uvicorn and worker processes first; the Docker services keep
-running until `--stop`. Pruning is label-scoped to this compose project and never touches other
-stacks; see `./scripts/docker-helper.sh -h` for the full option list.
-
-## Scripts
-
-All live in `scripts/`; run with `-h`/`--help` for full usage.
-
-| Script | Purpose |
-|---|---|
-| `init-env.sh` | Bootstrap `backend/.env` on a fresh checkout. |
-| `generate-secret.sh` | Generate one application secret; used by `init-env.sh`. |
-| `start.sh` | Run the app. |
-| `docker-helper.sh` | Operate the running Docker stack. |
-| `sql-helper.sh` | Open psql against the database. |
-| `test.sh` | Run the test suite — see [Testing](#testing). |
-| `deploy-to-ec2/start.sh` | Serve the stack publicly from an EC2 box over HTTPS — see [its README](scripts/deploy-to-ec2/README.md). |
-
-## Testing
-
-Run the whole suite — backend (unit, integration, API, contract, and architecture tests) plus the
-frontend gates (typecheck, lint, vitest unit/component tests, build):
-
-```bash
-./scripts/test.sh            # everything; pass `backend` or `frontend` to scope it
-```
-
-Backend integration tests use ephemeral PostgreSQL via testcontainers, so Docker must be running. See
-[docs/testing.md](docs/testing.md) for the test taxonomy.
+- **Backend** — Python 3.12, FastAPI on uvicorn, SQLAlchemy 2 and Alembic; a modular monolith of
+  bounded contexts whose import rules import-linter enforces
+- **AI** — LangChain with an Anthropic or OpenAI chat model and OpenAI embeddings, each chosen by
+  one setting; pgvector for retrieval
+- **Storage** — Postgres 16 with pgvector; a RustFS object store for photos; Redis as the pub/sub
+  broker between processes
+- **Frontend** — React and TypeScript built with Vite, served by the nginx edge
+- **Auth** — Google OpenID Connect with PKCE and signed session cookies; the technicians' Google
+  refresh tokens encrypted at rest (Fernet)
+- **Runtime** — Docker Compose: an nginx edge, replicas per role, a calendar worker, Postgres,
+  Redis and the object store, on the workstation or on one EC2 instance behind CloudFront
+  (CloudFormation)
+- **Tests** — pytest with Testcontainers, ruff, mypy and import-linter; Vitest and oxlint for the
+  frontend; GitHub Actions runs both
 
 ## Architecture
 
-The backend is a **modular monolith**: bounded contexts (`assist`, `identity`, `scheduling`,
-`google_calendar`, `notifications`) under a single `fsm` package, each layered ports-and-adapters
-style and composed by `fsm.platform`. Contexts never import each other — each declares the ports it
-needs and `platform` injects implementations that bridge to the others. Below all of it, `fsm.core`
-holds the plumbing any backend process would need — logging, engine construction, the event bus —
-and knows nothing of this product.
-[docs/architecture.md](docs/architecture.md) picks up from here:
+One backend image runs as a process per role, technician, customer and back office, each scaled to
+its own number of replicas behind an nginx edge that serves the page and gives each role a port of
+its own. A worker process runs the two-way calendar sync, Redis carries live events between the
+processes, and Postgres is the source of truth.
 
-- each package's responsibility, the full import-rule diagram, the context-integration pattern, and
-  how CI enforces the rules with import-linter
-- authentication & live communication — Google OIDC sign-in, role-scoped sessions, and SSE updates
-  fanned out over Redis pub/sub
-- the database schema — PostgreSQL as the source of truth, database-enforced no-double-booking, and
-  the transactional outbox behind the two-way Google Calendar sync
+```mermaid
+flowchart LR
+  B((Browser)) -->|one port per role| NX[nginx edge]
+  NX --> R["Role processes<br/>technician, customer, back office"]
+  R --> PG[(Postgres + pgvector)]
+  R --> OS[(Object store)]
+  R <-->|pub/sub| RD[(Redis)]
+  R -->|triage, embeddings| LLM[Model provider]
+  W[Calendar worker] --> PG
+  W <-->|outbox out, edits in| GC[Google Calendar]
+```
 
-### Tech stack
+**[Architecture](docs/architecture.md)** continues from here: the bounded contexts and their import
+rules, the runtime topology, authentication and live events, and the database.
 
-- **Backend** (`backend/`): Python 3.12+, FastAPI, SQLAlchemy 2.x + PostgreSQL, Alembic.
-- **Frontend** (`frontend/`): a modular React (Vite + TypeScript) app.
+## Getting started
+
+Needs Docker; the tests also need Python 3.12+ and Node.js 22.
+
+1. Create a Google OAuth web client in a Google Cloud project of your own, with the Google
+   Calendar API enabled, the sign-in and calendar scopes, your Google account as a test user, and
+   these redirect URIs: `http://localhost:8001/auth/google/callback`, the same for `:8002` and
+   `:8003`, and `http://localhost:8001/calendar/connect/callback`
+   ([Sign-in](docs/sign-in.md#setting-up-google) walks the console).
+2. Run `./scripts/deploy.sh`. The first run creates the gitignored settings files under
+   `scripts/lib/` from their `.example.sh` files, which explain each setting, with a generated
+   database password, session secret, token key and store key, then stops and names each
+   setting left to fill in: `GOOGLE_CLIENT_ID` in `params.sh` and `GOOGLE_CLIENT_SECRET` in
+   `secrets.sh`. Put your own address in `ADMIN_EMAILS` of `params.sh` too, and, for the triage
+   chat and the knowledge base, the model providers' keys in `secrets.sh`.
+3. Run `./scripts/deploy.sh` again. It builds the images, starts the stack and returns once each
+   role answers.
+4. Open the back office at http://localhost:8003 and sign in, then the technician app at
+   http://localhost:8001 and the customer app at http://localhost:8002.
+5. To run the stack on AWS instead, on loan-simulator's EC2 instance behind CloudFront, run
+   `./scripts/deploy.sh --ec2`. It also names the access key pair and region to fill in in
+   `aws-config.sh`, and at the end prints each role's CloudFront address and the redirect URIs to
+   add to the Google client
+   ([Development & deployment](docs/development.md#deployment-scripts-scripts)).
+
+`./scripts/docker-helper.sh --stop` takes the stack down and keeps its data; `--volumes` drops it
+too. `./scripts/test.sh` runs every test target. [Development & deployment](docs/development.md)
+has the settings, the addresses and the tests.
+
+## Scripts
+
+- `init-env.sh` — creates the gitignored settings files under `scripts/lib/`, with the generated
+  secrets; `deploy.sh` runs it first
+- `test.sh` — the checks and tests of the backend, the scripts and the frontend
+- `deploy.sh` — builds and starts the stack in Docker; `--ec2` does it on an EC2 instance behind
+  CloudFront
+- `docker-helper.sh` — stops the stack, follows its logs or shows its status
+
+Each script's header comment is its full documentation, and `--help` prints it.
+
+## Details
+
+- [Architecture](docs/architecture.md) — the bounded contexts, the import rules, the runtime
+  topology and the database
+- [Features & roadmap](docs/features.md) — what each role sees, surface by surface, and the open
+  work
+- [Authentication & live communication](docs/auth-and-communication.md) — the sign-in, calendar
+  connect and approval flows end to end, and running a role on several replicas
+- [Sign-in](docs/sign-in.md) — how sign-in works and how to set up the Google side
+- [Google Calendar connect](docs/calendar-setup.md) — the calendar scopes, a rejected connect and
+  re-consent
+- [Database schema](docs/data.md) — the tables, the integrity guarantees and the calendar sync
+- [Development & deployment](docs/development.md) — the settings files, the tests, the scripts
+  and the addresses
+- [Testing](docs/testing.md) — what each test layer proves
+- [Decisions](docs/adr/) — one record per decision: the EC2 deployment
 
 ## License
 

@@ -1,11 +1,11 @@
 """Shared test configuration.
 
-Keeps the suite hermetic with respect to a developer's local `backend/.env`. `Settings`
-auto-loads `.env` from the working directory, so a real `backend/.env` (for example one created
-by `scripts/init-env.sh`, which fills in `FSM_TOKEN_KEY` and `SESSION_SECRET`) would otherwise
-bleed configured values into tests that construct `Settings` to represent an unconfigured
+Keeps the suite hermetic with respect to a developer's settings files under `scripts/lib/`.
+`Settings` reads them by their path from the working directory, so a pytest started from the repo
+root would otherwise bleed configured values (`FSM_TOKEN_KEY` and `SESSION_SECRET`, which
+`scripts/init-env.sh` generates) into tests that construct `Settings` to represent an unconfigured
 environment — making assertions like "calendar login returns 503 when unconfigured" pass or fail
-depending on whether the developer has set up their .env.
+depending on whether the developer has set up their settings.
 """
 from __future__ import annotations
 
@@ -16,29 +16,31 @@ import pytest
 
 from fsm.platform.config import Settings, get_settings
 
-# SMTP variables that, if present in the developer's .env, would make integration tests deliver real
-# notification email. Emptied before any Settings is built (see pytest_configure).
+# SMTP variables that, if present in the developer's settings, would make integration tests deliver
+# real notification email. Emptied before any Settings is built (see pytest_configure).
 _SMTP_ENV_VARS = ("SMTP_HOST", "SMTP_USER", "SMTP_PASS", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM")
 
-# AI provider keys that, if present in the developer's .env, would let a test build a Settings that
-# claims a provider is configured (or spend real API quota if the KB code path is ever exercised).
-# Emptied before any Settings is built (see pytest_configure), same rationale as _SMTP_ENV_VARS.
+# AI provider keys that, if present in the developer's settings, would let a test build a Settings
+# that claims a provider is configured (or spend real API quota if the KB code path is ever
+# exercised). Emptied before any Settings is built (see pytest_configure), same rationale as
+# _SMTP_ENV_VARS.
 _ASSIST_ENV_VARS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Force SMTP and the AI provider keys unconfigured, and pin the process role, session-wide.
 
-    Every serving process is launched with FSM_ROLE set (docker-compose.yml, scripts/start.sh) and
-    create_app refuses to start without a recognized one, so the suite sets it for the tests that
-    build an app from the environment instead of injected settings. Assigned rather than defaulted
-    so a developer's exported FSM_ROLE cannot change which sign-in funnel those tests exercise.
+    Every serving process is launched with FSM_ROLE set (by docker-compose.yml, or by hand on the
+    host) and create_app refuses to start without a recognized one, so the suite sets it for the
+    tests that build an app from the environment instead of injected settings. Assigned rather than
+    defaulted so a developer's exported FSM_ROLE cannot change which sign-in funnel those tests
+    exercise.
 
     The function-scoped fixture below only protects Settings built inside a test; the cached
     `get_settings()` that `create_app` uses in the integration suite is populated by a
     module-scoped app fixture before any function fixture runs, so it would otherwise read the
-    developer's real SMTP credentials (and AI provider keys) from `.env`. Setting these
-    variables empty here (env vars take precedence over `.env`) and clearing the cache
+    developer's real SMTP credentials (and AI provider keys) from the settings files. Setting these
+    variables empty here (env vars take precedence over the files) and clearing the cache
     guarantees the logging email sender is used, and the knowledge base stays disabled, instead.
     Booking flows that resolve a real recipient would otherwise send mail — the integration
     tests seed `@example.com` users, whose bounces flood the sender's inbox.
@@ -51,7 +53,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture(autouse=True)
 def _settings_ignore_dotenv(monkeypatch):
-    """Disable `.env` loading for every `Settings` constructed during a test."""
+    """Disable settings-file loading for every `Settings` constructed during a test."""
     monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 

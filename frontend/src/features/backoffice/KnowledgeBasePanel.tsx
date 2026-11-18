@@ -132,7 +132,7 @@ export function KnowledgeBasePanel() {
       <section className="kb">
         <h3>Knowledge base</h3>
         <p className="kb__disabled">
-          Not configured — set the assistant keys in backend/.env to enable document search.
+          Not configured — set ASSIST_EMBEDDINGS and its provider's key under scripts/lib/ to enable document search.
         </p>
       </section>
     )
