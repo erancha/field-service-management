@@ -95,11 +95,12 @@ Needs Docker; the tests also need Python 3.12+ and Node.js 22.
    role answers.
 4. Open the back office at http://localhost:8003 and sign in, then the technician app at
    http://localhost:8001 and the customer app at http://localhost:8002.
-5. To run the stack on AWS instead, on loan-simulator's EC2 instance behind CloudFront, run
-   `./scripts/deploy.sh --ec2`. It also names the access key pair and region to fill in in
-   `aws-config.sh`, and at the end prints each role's CloudFront address and the redirect URIs to
-   add to the Google client
-   ([Development & deployment](docs/development.md#deployment-scripts-scripts)).
+5. To run the stack on AWS instead, on an EC2 instance behind CloudFront, run `./scripts/deploy.sh
+   --ec2`: on an instance of its own, or as a guest on another Docker Compose repo's instance when
+   `EC2_HOST_STACK` of `params.sh` names that repo's stack. It also names the access key pair and
+   region to fill in in `aws-config.sh`, and at the end prints each role's CloudFront address and
+   the redirect URIs to add to the Google client ([Development &
+   deployment](docs/development.md#deployment-scripts-scripts)).
 
 `./scripts/docker-helper.sh --stop` takes the stack down and keeps its data; `--volumes` drops it
 too. `./scripts/test.sh` runs every test target. [Development & deployment](docs/development.md)

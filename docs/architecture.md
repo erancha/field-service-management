@@ -11,8 +11,9 @@ Detail behind the [root README's summary](../README.md#architecture) of how the 
 
 One backend image runs as several role processes that differ only by `FSM_ROLE`, so every
 runtime shares one body of code. `docker-compose.yml` sets each role's replica count, and nginx is
-the only published entry point: on this machine a port per role, on loan-simulator's EC2
-instance, which the stack shares, the same ports behind a CloudFront distribution per role.
+the only published entry point: on this machine a port per role, on an EC2 instance,
+which the stack may share with other repos, the same ports behind a CloudFront distribution per
+role.
 
 ```mermaid
 flowchart LR
@@ -68,7 +69,9 @@ Through the edge every role answers `/` with the page, which nginx serves, and p
 `/auth`, `/calendar`, `/docs`, `/health` and `/ready` to the role's processes. On the EC2
 instance each role is a CloudFormation stack of its own, `field-service-management-tech`, `-app`
 and `-admin`, which opens the role's port to CloudFront and adds the role's distribution
-([ADR 0001](adr/0001-guests-on-loan-simulators-ec2-instance.md));
+([ADR 0001](adr/0001-guests-on-loan-simulators-ec2-instance.md)). The technician's stack hosts
+the instance unless `EC2_HOST_STACK` names another repo's host stack
+([ADR 0002](adr/0002-any-docker-repo-can-host-the-instance.md));
 [Development & deployment](development.md#deployment-scripts-scripts) has the scripts.
 
 ## Authentication & live communication

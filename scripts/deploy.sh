@@ -5,8 +5,8 @@
 # every role answers through the edge.
 #
 #   ./scripts/deploy.sh          on this machine's Docker
-#   ./scripts/deploy.sh --ec2    on the EC2 instance of the loan-simulator stack, as three guest
-#                                stacks, one per role, each behind a CloudFront distribution
+#   ./scripts/deploy.sh --ec2    on an EC2 instance, as three stacks, one per role, each behind
+#                                a CloudFront distribution
 #   -h, --help                   show this help
 #
 # Before the roles start, a one-shot container (the migrate service) brings the Postgres tables up
@@ -24,10 +24,12 @@
 # the loopback interface at DB_HOST_PORT, REDIS_HOST_PORT and OBJECT_STORE_HOST_PORT.
 #
 # --ec2 also needs the access key pair and region in scripts/lib/aws-config.sh, and deploys to
-# the account its credentials belong to. The loan-simulator stack owns the instance and must be
-# deployed first from its repo. This script creates or updates one CloudFormation stack of
-# scripts/template-ec2.yaml per role (the git branch selects them: field-service-management-tech,
-# -app and -admin on main, each with -fb on any other branch, on loan-simulator-fb's instance):
+# the account its credentials belong to. With EC2_HOST_STACK of params.sh blank the technician's
+# stack is the instance's host and the other two are its guests; set to another Docker Compose
+# repo's host stack, all three are guests on that stack's instance, deployed first from its repo.
+# This script creates or updates one CloudFormation stack of scripts/template-ec2.yaml per role
+# (the git branch selects them: field-service-management-tech, -app and -admin on main, each with
+# -fb on any other branch, on the host's -fb instance):
 # the role's edge port in the instance's security group and a CloudFront distribution whose https
 # address is the role's only way in. It then builds the images here for ARM, loads them into the
 # instance's Docker daemon over SSH, and runs Compose against that daemon once for the whole

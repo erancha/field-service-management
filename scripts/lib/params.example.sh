@@ -29,3 +29,10 @@ export SMTP_FROM=""
 # backend/pyproject.toml publishes too. Tracked files may show this address; the pre-commit hook
 # refuses any other address of this file.
 export LICENSE_CONTACT=""
+
+# deploy.sh --ec2 only: the stack whose EC2 instance this repo's three stacks run on. Blank: the
+# technician's stack is a host, with an instance of its own, and the other two are its guests.
+# The host stack of another Docker Compose repo (its EC2_STACK): all three are guests on that
+# instance, which is deployed first, from its own repo, in the account and region of
+# aws-config.sh.
+export EC2_HOST_STACK=""

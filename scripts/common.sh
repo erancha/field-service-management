@@ -81,10 +81,17 @@ refuse_stack_name() {
 }
 
 # Points lib/ec2.sh at the stack of <role>: STACK_NAME is EC2_STACK-<suffix>, with ec2.sh's -fb
-# rule off main, and EC2_ORIGIN_PORT is the role's edge port. Requires load_settings.
+# rule off main, and EC2_ORIGIN_PORT is the role's edge port. With EC2_HOST_STACK blank the first
+# role's stack is the host and the others are its guests, so deploy it first and delete it last.
+# Requires load_settings.
 select_ec2_role() {  # role
-  local EC2_STACK="$EC2_STACK-${ROLE_STACK_SUFFIX[$1]}"
+  local base="$EC2_STACK"
+  local EC2_STACK="$base-${ROLE_STACK_SUFFIX[$1]}"
+  if [[ -z "$EC2_HOST_STACK" && "$1" != "${ROLES[0]}" ]]; then
+    local EC2_HOST_STACK="$base-${ROLE_STACK_SUFFIX[${ROLES[0]}]}"
+  fi
   STACK_NAME=""
+  HOST_STACK_NAME=""
   resolve_ec2_stack
   EC2_ORIGIN_PORT="$(role_port "$1")"
 }

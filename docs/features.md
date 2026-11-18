@@ -157,7 +157,7 @@ panel stays usable as the library grows.
 
 `./scripts/deploy.sh` runs the whole stack locally in Docker
 ([Getting started](../README.md#getting-started)). `./scripts/deploy.sh --ec2` serves the three
-role apps publicly from loan-simulator's EC2 instance, each over HTTPS at a CloudFront
+role apps publicly from an EC2 instance, each over HTTPS at a CloudFront
 distribution of its own ([Development & deployment](development.md#deployment-scripts-scripts)).
 
 ## Roadmap

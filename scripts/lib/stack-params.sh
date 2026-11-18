@@ -32,9 +32,9 @@ export OBJECT_STORE_HOST_PORT="9100"
 # Read by scripts/lib/ec2.sh only, for deploy.sh --ec2. Each role has a stack of its own, named
 # EC2_STACK-tech, EC2_STACK-app and EC2_STACK-admin on main; any other branch adds -fb.
 export EC2_STACK="field-service-management"
-# The stacks are guests on the instance the loan-simulator stack owns, which must be deployed
-# first from its own repo; each adds its role's port and a CloudFront distribution.
-export EC2_HOST_STACK="loan-simulator"
+# Used only when the stack is a host (EC2_HOST_STACK of params.sh blank): the instance's ARM
+# type, sized for every stack it runs; a change stops and starts the same instance.
+export EC2_INSTANCE_TYPE="t4g.small"
 # The port CloudFront reaches a stack at on the instance is its role's edge port above, which
 # select_ec2_role of scripts/common.sh sets as EC2_ORIGIN_PORT before each stack's deploy.
 

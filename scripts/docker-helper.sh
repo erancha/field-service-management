@@ -21,8 +21,8 @@
 #   ./scripts/docker-helper.sh --ps
 #       Show the containers' status.
 #   ./scripts/docker-helper.sh --ec2 --delete-stack
-#       Delete the git branch's three EC2 stacks, one per role: each one's port on loan-simulator's
-#       instance and its CloudFront distribution, after asking to type each stack's name. The
+#       Delete the git branch's three EC2 stacks, one per role: each one's port on the instance and
+#       its CloudFront distribution, the host's last, after asking to type each stack's name. The
 #       containers and volumes stay on the instance; run --ec2 --stop [--volumes] first to remove
 #       them.
 #   -h, --help
@@ -108,8 +108,8 @@ load_settings
 if [ "$mode" = --delete-stack ]; then
   [ "$TARGET" = ec2 ] || { echo "--delete-stack needs --ec2 before it" >&2; exit 2; }
   refuse_stack_name
-  for role in "${ROLES[@]}"; do
-    select_ec2_role "$role"
+  for ((i = ${#ROLES[@]} - 1; i >= 0; i--)); do
+    select_ec2_role "${ROLES[i]}"
     delete_ec2_stack
   done
   exit 0

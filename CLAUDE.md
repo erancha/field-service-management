@@ -38,7 +38,7 @@ than `LICENSE_CONTACT`, the address the README and `NOTICE` give for a commercia
   every stored connection unreadable, so `init-env.sh --force` is for a fresh start only.
 - Before any AWS work, read this account's inventory, the
   `aws-account-inventory-<account ID>.md` under `/mnt/c/Projects/-- docs --/` that lists
-  loan-simulator: the instance belongs to that repo's stack, and this repo's stacks are guests.
+  the stacks deployed there and which one hosts the instance.
 - `test.sh [all|backend|frontend|e2e]` (aliases `be`, `fe`) — the whole quality gate: bash
   syntax check and the shell tests of `scripts/tests/`, ruff, mypy, import-linter and pytest for
   `backend/`; oxlint, Vitest, `tsc` and the Vite build for `frontend/`. `e2e` is opt-in: the
@@ -46,11 +46,11 @@ than `LICENSE_CONTACT`, the address the README and `NOTICE` give for a commercia
 - `init-env.sh [--force]` — creates each missing gitignored `scripts/lib/secrets.sh`,
   `params.sh` and `aws-config.sh` from its `.example.sh`, with a generated database password,
   session secret, token key and store key; an existing file is kept unless `--force` is given.
-- `deploy.sh` — runs `init-env.sh` first and stops on a list of every required setting still
-  blank, then builds and runs Postgres (with its schema migration), Redis, the object store, the
-  role replicas, the worker and the nginx edge in Docker Compose, and returns once each role
-  answers on 8001, 8002 and 8003; `--ec2` does it on the loan-simulator stack's EC2 instance, as
-  three guest stacks behind their own CloudFront distributions (`template-ec2.yaml`,
+- `deploy.sh` — runs `init-env.sh` first and stops on a list of every required setting still blank,
+  then builds and runs Postgres (with its schema migration), Redis, the object store, the role
+  replicas, the worker and the nginx edge in Docker Compose, and returns once each role answers on
+  8001, 8002 and 8003; `--ec2` does it on an EC2 instance, as three stacks behind their own
+  CloudFront distributions, hosts or guests by `EC2_HOST_STACK` of `params.sh` (`template-ec2.yaml`,
   `docker-compose.ec2.yml`), in the account of the gitignored `lib/aws-config.sh`.
 - `docker-helper.sh [--ec2]` — `--stop [--volumes]`, `--logs [-e|-w] [--grep <pattern>]
   [--since <duration>] [--sorted] [service...]`, `--ps`; `--ec2 --delete-stack` deletes this

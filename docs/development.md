@@ -90,22 +90,23 @@ Docker runs the stack; `deploy.sh` and `docker-helper.sh` stop when it is not re
   edge in Docker, and returns once each role answers through the edge. Then open the back
   office at http://localhost:8003 and sign in with a Google account listed in `ADMIN_EMAILS`
   and as a test user of the Google client.
-- `deploy.sh --ec2` — deploys to the EC2 instance of the loan-simulator stack, in the account of
-  `aws-config.sh`, as a guest beside the other Docker Compose repos; the loan-simulator stack must
-  be deployed first from its repo. `aws-config.sh` must name the account and region of
-  loan-simulator's stack, since a guest's stacks import the host stack's exports. It needs the AWS
-  CLI, `ssh` and `curl`. It creates or updates one CloudFormation stack of
+- `deploy.sh --ec2` — deploys to an EC2 instance in the account of `aws-config.sh`. With
+  `EC2_HOST_STACK` of `params.sh` blank, the technician's stack is the instance's host and the other
+  two roles' stacks its guests. Set to another Docker Compose repo's host stack, all three are
+  guests on that instance, which is deployed first from its repo; `aws-config.sh` then names that
+  stack's account and region, since a guest's stacks import the host stack's exports
+  ([ADR 0002](adr/0002-any-docker-repo-can-host-the-instance.md)).
+  It needs the AWS CLI, `ssh` and `curl`. It creates or updates one CloudFormation stack of
   [`template-ec2.yaml`](../scripts/template-ec2.yaml) per role (the role's edge port on the instance
   and a CloudFront distribution), builds the images here for ARM, loads them into the instance's
   Docker daemon over SSH and starts the stack there with
   [`docker-compose.ec2.yml`](../docker-compose.ec2.yml), and prints each role's CloudFront address
   and the redirect URIs to register with Google ([Sign-in](sign-in.md#setting-up-google)). The git
-  branch selects the stacks: `main` deploys `field-service-management-tech`, `-app` and `-admin` on
-  the `loan-simulator` instance, any other branch the same names with `-fb` on the
-  `loan-simulator-fb` instance. An exported `STACK_NAME`, which names a single stack, is refused.
-  Every deploy, host or guest, also makes sure the instance has a 1 GB swap file (`prepare_ec2_host`
-  in `lib/ec2.sh`), so a burst beyond the instance's 2 GB of memory slows the stacks instead of
-  killing a container.
+  branch selects the stacks: `main` deploys `field-service-management-tech`, `-app` and `-admin`,
+  any other branch the same names with `-fb` on the host's `-fb` instance. An exported `STACK_NAME`,
+  which names a single stack, is refused. Every deploy, host or guest, also makes sure the instance
+  has a 1 GB swap file (`prepare_ec2_host` in `lib/ec2.sh`), so a burst beyond the instance's 2 GB
+  of memory slows the stacks instead of killing a container.
 - [`docker-helper.sh`](../scripts/docker-helper.sh) — `--stop [--volumes]`,
   `--logs [-e|-w] [--grep <pattern>] [--since <duration>] [--sorted] [service...]` or `--ps` for
   the stack; `--volumes` also removes the database and the photos. With `--ec2` as its first

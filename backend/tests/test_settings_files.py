@@ -44,7 +44,7 @@ LOGGING_KEYS = {f"{ENV_PREFIX}LOG_LEVEL", f"{ENV_PREFIX}LOG_LEVELS"}
 # Read by scripts/lib/settings-guard.sh only: the address tracked files may show.
 GUARD_ONLY_KEYS = {"LICENSE_CONTACT"}
 # Read by scripts/lib/ec2.sh only, for deploy.sh --ec2.
-EC2_ONLY_KEYS = {"EC2_STACK", "EC2_HOST_STACK"}
+EC2_ONLY_KEYS = {"EC2_STACK", "EC2_HOST_STACK", "EC2_INSTANCE_TYPE"}
 NOT_SETTINGS_KEYS = COMPOSE_ONLY_KEYS | LOGGING_KEYS | GUARD_ONLY_KEYS | EC2_ONLY_KEYS
 # Set by compose per service, and by hand for a process started on the host.
 SERVICE_SET_KEYS = {"FSM_ROLE"}
