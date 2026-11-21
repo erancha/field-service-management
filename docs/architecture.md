@@ -1,19 +1,25 @@
 # Architecture
 
-Detail behind the [root README's summary](../README.md#architecture) of how the system is built.
+This document details the architecture the [README](../README.md#architecture) summarizes: the
+Compose services the stack runs, sign-in and live events, the calendar sync, the edge on EC2,
+where the data lives and how the code is laid out. Each section is a summary that links the topic
+document holding the detail; each decision has a record under [adr/](adr/). How to run the stack
+is in [Development & deployment](development.md), and how each part is tested in
+[Testing](testing.md).
 
 **Contents:** [One body of code, several entry points](#one-body-of-code-several-entry-points) ·
-[The entry points](#the-entry-points) ·
-[Authentication & live communication](#authentication--live-communication) ·
-[Storage](#storage) · [Codebase structure](#codebase-structure)
+[The entry points](#the-entry-points) · [Sign-in and live events](#sign-in-and-live-events) ·
+[Calendar sync](#calendar-sync) · [Configuration](#configuration) · [The edge](#the-edge) ·
+[Host or guest on EC2](#host-or-guest-on-ec2) · [Storage](#storage) ·
+[Codebase structure](#codebase-structure)
 
 ## One body of code, several entry points
 
-One backend image runs as several role processes that differ only by `FSM_ROLE`, so every
-runtime shares one body of code. `docker-compose.yml` sets each role's replica count, and nginx is
-the only published entry point: on this machine a port per role, on an EC2 instance,
-which the stack may share with other repos, the same ports behind a CloudFront distribution per
-role.
+One backend image runs as several role processes that differ only by `FSM_ROLE`, plus the
+calendar worker and the schema migration, so every runtime shares one body of code, the `fsm`
+package. `docker-compose.yml` sets each role's replica count, and nginx is the only published
+entry point: on this machine a port per role, on an EC2 instance, which the stack may share with
+other repos, the same ports behind a CloudFront distribution per role.
 
 ```mermaid
 flowchart LR
@@ -41,159 +47,99 @@ flowchart LR
   MIG[migrate, one-off] --> PG
 ```
 
-- **Load balancing.** nginx forwards each role's API to that role's service name, which Docker
-  resolves to every replica, so a role scales by changing its `replicas` count. Requests are spread
-  round-robin with no sticky sessions: the session is a signed cookie, and live events reach any
-  process through Redis.
-- **Live events across processes.** Redis serves only as a pub/sub broker, with no stored state: an
-  event published in one process reaches the SSE streams held by every other.
-- **Background work.** The worker runs the calendar loops outside the HTTP roles, so no role has to
-  stay single-replica for them. The outbound dispatcher is safe to run concurrently; the inbound
-  poller holds a Postgres advisory lease, so a second worker replica waits as a warm standby.
-- **Startup order.** `migrate` applies the schema once, and each role starts only after Postgres,
-  Redis and the object store report healthy; nginx starts after the roles do.
+A role scales by changing its `replicas` count: nginx forwards each role's API to that role's
+service name, which Docker resolves to every replica, and spreads requests round-robin with no
+sticky sessions, since the session is a signed cookie and live events reach any process through
+Redis ([Running a role across several
+replicas](live-events.md#running-a-role-across-several-replicas)).
 
 ## The entry points
 
-| Entry point | Runs | Reached at |
-|---|---|---|
-| `technician` ×2 | `uvicorn fsm.platform.app:create_app` with `FSM_ROLE=technician`: the technician app's API, sign-in and calendar connect | the edge's port 8001 |
-| `customer` ×5 | the same with `FSM_ROLE=customer`: booking, the triage chat and its photos | the edge's port 8002 |
-| `backoffice` ×1 | the same with `FSM_ROLE=backoffice`: approvals, the knowledge base, the administrator's views | the edge's port 8003 |
-| `worker` ×1 | `python -m fsm.platform.worker`: the outbound calendar dispatcher and the inbound poller | no port |
-| `migrate` | `alembic upgrade head`, once per start, before the roles | no port |
-| `nginx` | the built page and the reverse proxy, one server block per role | ports 8001 to 8003 |
-| `db`, `redis`, `objectstore` | Postgres with pgvector, the pub/sub broker, the photo store | the loopback interface only |
+Every route a role answers is in [API endpoints](api.md), the work no request waits on in
+[Workers' responsibilities and flows](workers.md).
 
-Through the edge every role answers `/` with the page, which nginx serves, and passes `/api`,
-`/auth`, `/calendar`, `/docs`, `/health` and `/ready` to the role's processes. On the EC2
-instance each role is a CloudFormation stack of its own, `field-service-management-tech`, `-app`
-and `-admin`, which opens the role's port to CloudFront and adds the role's distribution
-([ADR 0001](adr/0001-guests-on-loan-simulators-ec2-instance.md)). The technician's stack hosts
-the instance unless `EC2_HOST_STACK` names another repo's host stack
-([ADR 0002](adr/0002-any-docker-repo-can-host-the-instance.md));
-[Development & deployment](development.md#deployment-scripts-scripts) has the scripts.
+- `technician` ×2 — `uvicorn fsm.platform.app:create_app` with `FSM_ROLE=technician`: the
+  technician app's API, sign-in and calendar connect, at the edge's port 8001.
+- `customer` ×5 — the same with `FSM_ROLE=customer`: booking, the triage chat and its photos, at
+  the edge's port 8002.
+- `backoffice` ×1 — the same with `FSM_ROLE=backoffice`: approvals, the knowledge base, the
+  administrator's views, at the edge's port 8003.
+- `worker` ×1 — `python -m fsm.platform.worker`: the outbound calendar dispatcher and the inbound
+  poller; no port.
+- `migrate` — `alembic upgrade head`, once per start, before the roles; no port.
+- `nginx` — the built page and the reverse proxy, one server block per role, on ports 8001 to
+  8003.
+- `db`, `redis`, `objectstore` — Postgres with pgvector, the pub/sub broker, the photo store, on
+  the loopback interface only.
 
-## Authentication & live communication
+## Sign-in and live events
 
-Google OIDC is the only sign-in path, and every booking and scheduling route requires a signed-in
-session; the session is a signed cookie and a role is assigned from the role of the process that
-completes the sign-in (the per-role edge), never from client input. Once signed in, the frontend
-drives the system with REST calls and receives live updates over a single Server-Sent Events
-stream, fanned out across the per-role processes by Redis pub/sub.
-[auth-and-communication.md](auth-and-communication.md) traces the main flows end-to-end — Google
-sign-in, technician calendar-connect, and the back office approving a technician (dashboard open
-and closed) — with the CSRF, PKCE, and token-encryption properties they rely on and what scaling a
-role to several replicas requires. [Sign-in](sign-in.md) sets up the Google side, and each setting
-is documented in the settings files under `scripts/lib/`
-([Development & deployment](development.md#configuration)).
+Google OIDC is the only sign-in path, and the role a sign-in grants comes from the role of the
+process that completes it, never from client input ([Sign-in](sign-in.md)); a technician's
+calendar is a second consent on the same client
+([Google Calendar connect](calendar-setup.md)). Once signed in, the frontend drives the system
+with REST calls and receives live updates over a single Server-Sent Events stream, fanned out
+across the role processes by Redis pub/sub ([Live events across replicas](live-events.md)).
+
+## Calendar sync
+
+PostgreSQL is the source of truth; Google Calendar is a downstream projection. A booking change
+enqueues an outbox row in its own transaction, and the worker drains the outbox to Google and
+polls Google for the technicians' edits, resolving any conflict in the database's favour
+([Workers' responsibilities and flows](workers.md#the-worker-service)).
+
+## Configuration
+
+Every backend process reads its settings from environment variables, which the scripts export
+from three files under `scripts/lib/` before they call Compose: the committed `stack-params.sh`,
+and the gitignored `params.sh` and `secrets.sh`. The files and their keys are in
+[Development & deployment](development.md#configuration).
+
+## The edge
+
+The edge is the one way into the stack: the `nginx` service, with a port per role
+([The edge](api.md#the-edge-nginx-service)), and on EC2 a CloudFront distribution per role in front
+of it. There each role is a CloudFormation stack, `field-service-management-tech`, `-app` and
+`-admin`, which opens the role's port to CloudFront and adds the role's distribution
+([ADR 0001](adr/0001-guests-on-loan-simulators-ec2-instance.md)).
+[The EC2 stack](development.md#the-ec2-stack) has what `deploy.sh --ec2` deploys and how images
+and settings reach the instance.
+
+## Host or guest on EC2
+
+The instance serves the other Docker Compose repos too: one stack is its host, and the others join
+it as guests, each with its own port and CloudFront distribution. The technician's stack hosts the
+instance unless `EC2_HOST_STACK` names another repo's host stack
+([ADR 0002](adr/0002-any-docker-repo-can-host-the-instance.md)).
 
 ## Storage
 
-PostgreSQL is the source of truth; Google Calendar is a downstream projection. The
-entity-relationship diagram and the integrity guarantees (database-enforced no-double-booking, the
-transactional calendar outbox, the append-only appointment audit) are in [data.md](data.md), which
-also traces the two-way [calendar sync](data.md#calendar-sync) — outbound projection and inbound
-reconciliation — end to end.
+Every table, its keys and the integrity guarantees the database enforces (no double-booking, the
+transactional calendar outbox, the append-only appointment audit) are in
+[Data model](data-model.md).
 
-The customers' photos live in the object store (RustFS, spoken to over S3), with only their
-metadata rows in Postgres; Redis keeps nothing, since it serves only as the pub/sub broker. Both
-volumes, `fsm_pgdata` and `fsm_objectstore`, are named Docker volumes on either target.
+- **Postgres** (volume `fsm_pgdata`) is the source of truth, the knowledge base's vectors in
+  pgvector included.
+- **The object store** (RustFS, spoken to over S3, volume `fsm_objectstore`) holds the customers'
+  photos, with only their metadata rows in Postgres.
+- **Redis** keeps nothing: it serves only as the pub/sub broker, so an event published in one
+  process reaches the event streams held by every other.
+
+Both volumes are named Docker volumes on either target.
 
 ## Codebase structure
 
-The backend is a modular monolith: bounded contexts under the single `fsm` package in
-`backend/src`, each layered ports-and-adapters style and composed by `fsm.platform`. The React page
-is in `frontend/`, the edge's configuration in `nginx/`, and the scripts in `scripts/`.
+The backend is a modular monolith whose bounded contexts never import each other
+([Design patterns](design-patterns.md)).
 
-### Bounded contexts
-
-| Package | Responsibility |
-|---|---|
-| `assist` | knowledge base and AI triage chat for the customer channel (LangChain/pgvector behind ports) |
-| `identity` | Google OIDC sign-in, users, roles |
-| `scheduling` | service calls, appointments, availability, lifecycle — the core domain (no external I/O) |
-| `google_calendar` | Google Calendar connections and the raw API client behind the `GoogleCalendarClient` port |
-| `notifications` | in-app feed for both parties + technician email behind `NotificationPort` |
-| `platform` | composition root: configuration, database, web wiring, background workers, and the conformance bridges that implement one context's ports in terms of another (e.g. `calendar_bridge` implements scheduling's `CalendarPort` over the google_calendar context's client) |
-| `shared` | shared kernel: the declarative ORM `Base`, Google OAuth endpoint URIs, and product identity constants (the brand name) — the only package a context may import from outside itself |
-| `core` | app-agnostic plumbing any backend process needs: structured logging, engine construction, and the publish/subscribe event bus. Knows nothing of this product — the log-level environment prefix, the pool sizing, the broker URL, and the channel names all arrive from `platform` |
-
-### Import rules
-
-Arrows read **may import**. There are no arrows between contexts — none may import another — and
-none from a context up to `platform`:
-
-```mermaid
-flowchart TD
-    platform["fsm.platform:<br/>composition root — web wiring, workers, calendar_bridge"]
-
-    subgraph assist["fsm.assist"]
-        direction TB
-        a_adapters[adapters] --> a_application[application] --> a_ports[ports] --> a_domain[domain]
-    end
-
-    subgraph notifications["fsm.notifications"]
-        direction TB
-        n_adapters[adapters] --> n_application[application] --> n_ports[ports] --> n_domain[domain]
-    end
-
-    subgraph google_calendar["fsm.google_calendar"]
-        direction TB
-        c_adapters[adapters] --> c_application[application] --> c_ports[ports] --> c_domain[domain]
-    end
-
-    subgraph scheduling["fsm.scheduling"]
-        direction TB
-        s_adapters[adapters] --> s_application[application] --> s_ports[ports] --> s_domain[domain]
-    end
-
-    subgraph identity["fsm.identity"]
-        direction TB
-        i_adapters[adapters] --> i_application[application] --> i_ports[ports] --> i_domain[domain]
-    end
-
-    shared["fsm.shared:<br/>ORM Base, Google OAuth endpoint URIs"]
-
-    core["fsm.core:<br/>logging, engine construction, event bus"]
-
-    platform --> assist
-    platform --> notifications
-    platform --> google_calendar
-    platform --> scheduling
-    platform --> identity
-    platform --> shared
-    platform --> core
-
-    a_adapters --> shared
-    n_adapters --> shared
-    c_adapters --> shared
-    s_adapters --> shared
-    i_adapters --> shared
-```
-
-The three inner layers (`application`, `ports`, `domain`) use only their own context, the standard
-library, and `shared.constants` (the product brand). Only `adapters` may import the rest of `shared`
-(the ORM `Base`, OAuth URIs) and infrastructure libraries (SQLAlchemy, Google clients).
-
-`core` has no arrows out of it at all — it may import neither a context, nor `shared`, nor
-`platform`, nor the web framework — and only `platform` has an arrow into it. Both directions are
-contracts, so a context cannot grow a dependency on the plumbing either: what a context needs is
-injected through its own ports. That is what keeps the event bus a transport — it carries dicts on
-named channels and never learns that `admins` is a channel or that only an approved administrator
-may open it, which `platform.events` decides.
-
-### How contexts integrate
-
-Contexts integrate without knowing each other. The consumer declares an interface in its own
-`ports` package (`scheduling.ports.CalendarPort`), and `platform` builds and injects the
-implementation (`platform.calendar_bridge.GoogleCalendarAdapter`, written against the
-google_calendar context's `GoogleCalendarClient` port). Application code receives its dependencies
-as constructor arguments and names only these interfaces, never concrete adapters.
-
-### Enforcement in CI
-
-The import rules are executable: the import-linter contracts in `backend/pyproject.toml`
-(`[tool.importlinter]`, run as `lint-imports` or via `backend/tests/test_architecture.py`) fail
-the build on any import outside this shape — including one reached transitively through another
-module.
+- `backend/` — `src/fsm/` with the contexts `assist`, `identity`, `scheduling`,
+  `google_calendar` and `notifications`, the composition root `platform`, and `shared` and
+  `core`; `alembic/` migrations, its tests and the Dockerfile.
+- `frontend/` — the React page.
+- `nginx/` — the edge's configuration and its Dockerfile, which bakes in the built page.
+- `scripts/` — the operational scripts and `common.sh`, which they share
+  ([Development & deployment](development.md#deployment-scripts-scripts)).
+- `samples/` — the cross-process event sample that `./scripts/test.sh e2e` runs, sample
+  knowledge-base documents and photos, and the visual walkthrough.
+- `docs/` — this document, the topic documents and `adr/`.
+- `.github/workflows/` — the CI workflow.

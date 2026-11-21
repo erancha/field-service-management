@@ -7,8 +7,8 @@ describes what the scripts run. Each script's header comment is its full documen
 
 **Contents:** [Working copy location](#working-copy-location) · [Frontend](#frontend) ·
 [Configuration](#configuration) · [Backend tests](#backend-tests) ·
-[Deployment scripts (scripts/)](#deployment-scripts-scripts) · [Addresses](#addresses) ·
-[Running the roles on the host](#running-the-roles-on-the-host)
+[Deployment scripts (scripts/)](#deployment-scripts-scripts) · [The EC2 stack](#the-ec2-stack) ·
+[Addresses](#addresses) · [Running the roles on the host](#running-the-roles-on-the-host)
 
 ## Working copy location
 
@@ -90,23 +90,8 @@ Docker runs the stack; `deploy.sh` and `docker-helper.sh` stop when it is not re
   edge in Docker, and returns once each role answers through the edge. Then open the back
   office at http://localhost:8003 and sign in with a Google account listed in `ADMIN_EMAILS`
   and as a test user of the Google client.
-- `deploy.sh --ec2` — deploys to an EC2 instance in the account of `aws-config.sh`. With
-  `EC2_HOST_STACK` of `params.sh` blank, the technician's stack is the instance's host and the other
-  two roles' stacks its guests. Set to another Docker Compose repo's host stack, all three are
-  guests on that instance, which is deployed first from its repo; `aws-config.sh` then names that
-  stack's account and region, since a guest's stacks import the host stack's exports
-  ([ADR 0002](adr/0002-any-docker-repo-can-host-the-instance.md)).
-  It needs the AWS CLI, `ssh` and `curl`. It creates or updates one CloudFormation stack of
-  [`template-ec2.yaml`](../scripts/template-ec2.yaml) per role (the role's edge port on the instance
-  and a CloudFront distribution), builds the images here for ARM, loads them into the instance's
-  Docker daemon over SSH and starts the stack there with
-  [`docker-compose.ec2.yml`](../docker-compose.ec2.yml), and prints each role's CloudFront address
-  and the redirect URIs to register with Google ([Sign-in](sign-in.md#setting-up-google)). The git
-  branch selects the stacks: `main` deploys `field-service-management-tech`, `-app` and `-admin`,
-  any other branch the same names with `-fb` on the host's `-fb` instance. An exported `STACK_NAME`,
-  which names a single stack, is refused. Every deploy, host or guest, also makes sure the instance
-  has a 1 GB swap file (`prepare_ec2_host` in `lib/ec2.sh`), so a burst beyond the instance's 2 GB
-  of memory slows the stacks instead of killing a container.
+- `deploy.sh --ec2` — the same on an EC2 instance, as one stack per role
+  ([The EC2 stack](#the-ec2-stack)).
 - [`docker-helper.sh`](../scripts/docker-helper.sh) — `--stop [--volumes]`,
   `--logs [-e|-w] [--grep <pattern>] [--since <duration>] [--sorted] [service...]` or `--ps` for
   the stack; `--volumes` also removes the database and the photos. With `--ec2` as its first
@@ -131,6 +116,26 @@ and `lib/ec2.sh` holds the EC2 target: a stack's deploy, the SSH connection with
 Connect key, and Compose pointed at the instance's Docker daemon. Both, the template and the
 pre-commit hook are the same files in every Docker Compose repo, and each serves one stack at a
 time; `select_ec2_role` of `common.sh` points them at each role's stack in turn.
+
+## The EC2 stack
+
+`deploy.sh --ec2` deploys to an EC2 instance in the account of `aws-config.sh`. With
+`EC2_HOST_STACK` of `params.sh` blank, the technician's stack is the instance's host and the other
+two roles' stacks its guests. Set to another Docker Compose repo's host stack, all three are
+guests on that instance, which is deployed first from its repo; `aws-config.sh` then names that
+stack's account and region, since a guest's stacks import the host stack's exports
+([ADR 0002](adr/0002-any-docker-repo-can-host-the-instance.md)).
+It needs the AWS CLI, `ssh` and `curl`. It creates or updates one CloudFormation stack of
+[`template-ec2.yaml`](../scripts/template-ec2.yaml) per role (the role's edge port on the instance
+and a CloudFront distribution), builds the images here for ARM, loads them into the instance's
+Docker daemon over SSH and starts the stack there with
+[`docker-compose.ec2.yml`](../docker-compose.ec2.yml), and prints each role's CloudFront address
+and the redirect URIs to register with Google ([Sign-in](sign-in.md#setting-up-google)). The git
+branch selects the stacks: `main` deploys `field-service-management-tech`, `-app` and `-admin`,
+any other branch the same names with `-fb` on the host's `-fb` instance. An exported `STACK_NAME`,
+which names a single stack, is refused. Every deploy, host or guest, also makes sure the instance
+has a 1 GB swap file (`prepare_ec2_host` in `lib/ec2.sh`), so a burst beyond the instance's 2 GB
+of memory slows the stacks instead of killing a container.
 
 Each role needs a distribution of its own because the roles are told apart by their origin: a
 sign-in's role comes from the app it completes at, and the session cookie belongs to one host.

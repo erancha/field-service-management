@@ -6,7 +6,7 @@ from pathlib import Path
 
 def test_no_foreign_keys_cross_context_boundaries():
     """Cross-context references are plain UUID columns, never database foreign keys
-    (docs/data.md); a ForeignKey may only target a table declared in the same bounded
+    (docs/data-model.md); a ForeignKey may only target a table declared in the same bounded
     context. This is the data-level counterpart of this file's import contracts.
     """
     import fsm.assist.adapters.orm  # noqa: F401

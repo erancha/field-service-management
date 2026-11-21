@@ -1,22 +1,25 @@
-# Features & roadmap
+# Features
 
-[Sign-in and roles](#sign-in-and-roles) · [Booking and scheduling](#booking-and-scheduling) ·
-[Google Calendar](#google-calendar-both-directions) · [Notifications](#notifications) ·
-[Triage assistant](#the-customers-triage-assistant) · [Photos in the chat](#photos-in-the-chat) ·
-[Knowledge base](#knowledge-base) · [Deployment](#deployment) · [Roadmap](#roadmap)
+This document details what each role sees, surface by surface, behind the parts that
+[Architecture](architecture.md) summarizes: sign-in, booking, the calendar sync, notifications,
+the customer's triage assistant, the knowledge base and the deployment.
 
-## What's built
+**Contents:** [Sign-in and roles](#sign-in-and-roles) ·
+[Booking and scheduling](#booking-and-scheduling) ·
+[Google Calendar, both directions](#google-calendar-both-directions) ·
+[Notifications](#notifications) ·
+[The customer's triage assistant](#the-customers-triage-assistant) ·
+[Photos in the chat](#photos-in-the-chat) · [Knowledge base](#knowledge-base) ·
+[Deployment](#deployment)
 
-Everything below is running today. Everything not below is in the [Roadmap](#roadmap).
-
-### Sign-in and roles
+## Sign-in and roles
 
 Google OIDC is the only sign-in path, so its client is required configuration and every booking
 or scheduling action needs a signed-in session. There are three roles — customer,
 technician, and admin — and a role comes from the per-role edge that completed the sign-in, never
 from client input. An admin approves a technician before they can be booked.
 
-### Booking and scheduling
+## Booking and scheduling
 
 - Customers book themselves, against a technician's real availability.
 - **No double-booking is enforced by the database**, not by application checks: a GiST exclusion
@@ -25,7 +28,7 @@ from client input. An admin approves a technician before they can be booked.
   the technician's Google free/busy.
 - Either side can reschedule or cancel; every booking action lands in an append-only audit.
 
-### Google Calendar, both directions
+## Google Calendar, both directions
 
 - **Outbound:** every appointment is projected to the technician's calendar through a transactional
   outbox, so a calendar failure can never lose a booking that the database accepted.
@@ -38,12 +41,12 @@ from client input. An admin approves a technician before they can be booked.
 - The technician's event carries the triage summary laid out as HTML — the fault and symptoms and
   what to do first, then the equipment, suspected cause, and what has been ruled out.
 
-### Notifications
+## Notifications
 
 An in-app feed for both parties, plus an email to the technician. Email is configured by the SMTP
 settings and degrades gracefully when unset — the feed row is still written.
 
-### The customer's triage assistant
+## The customer's triage assistant
 
 **An assistant today, an agent on the way.** The model holds the conversation and marks when triage
 is over; the code around it takes the one action that follows — opening the service call. The model
@@ -127,7 +130,7 @@ a partial unique index; replies stream and survive a page reload; ended conversa
 newest first; and a conversation nobody typed into never appears. Opening a service call never
 depends on the assistant — a turn the model cannot answer offers the plain description form instead.
 
-### Photos in the chat
+## Photos in the chat
 
 A customer can attach up to five photos per conversation (JPEG, PNG, or WebP, 5 MB each) — a rating
 plate, a display error code, the state of a part.
@@ -147,30 +150,15 @@ plate, a display error code, the state of a part.
 - Both the images and the problem text are sent to the configured chat-model provider, the same
   third-party posture as the rest of the chat.
 
-### Knowledge base
+## Knowledge base
 
 The back office uploads the documents the assistant answers from. An upload is chunked, embedded,
 and indexed into pgvector; a byte-identical re-upload is rejected rather than indexed twice; and the
 panel stays usable as the library grows.
 
-### Deployment
+## Deployment
 
 `./scripts/deploy.sh` runs the whole stack locally in Docker
 ([Getting started](../README.md#getting-started)). `./scripts/deploy.sh --ec2` serves the three
 role apps publicly from an EC2 instance, each over HTTPS at a CloudFront
 distribution of its own ([Development & deployment](development.md#deployment-scripts-scripts)).
-
-## Roadmap
-
-The [vision document](https://docs.google.com/document/d/1bX7L_CL6hBIfpJVCkpRFYk6hIZ7OxD7dSugnPWCKLsY/edit)
-describes the full product. What is not built yet is tracked as issues rather than described here, so
-this page stays a record of what runs and the tracker stays the record of what is next. Everything
-below carries the [`Long term`](https://github.com/erancha/field-service-management/labels/Long%20term)
-label; smaller follow-ups live in the tracker alongside them.
-
-| Track | Open work |
-|---|---|
-| Back office | [#81](https://github.com/erancha/field-service-management/issues/81) customers, sites, and contacts · [#82](https://github.com/erancha/field-service-management/issues/82) asset catalog and fault history · [#83](https://github.com/erancha/field-service-management/issues/83) call lifecycle past SCHEDULED, with a dispatch board · [#90](https://github.com/erancha/field-service-management/issues/90) search · [#91](https://github.com/erancha/field-service-management/issues/91) parts and inventory |
-| Technician field app | [#84](https://github.com/erancha/field-service-management/issues/84) route and navigation · [#85](https://github.com/erancha/field-service-management/issues/85) check-in/out and time logging · [#86](https://github.com/erancha/field-service-management/issues/86) service report, signature, signed PDF · [#87](https://github.com/erancha/field-service-management/issues/87) offline use |
-| Customer app | [#89](https://github.com/erancha/field-service-management/issues/89) live status, on-the-way alert, report download |
-| Platform | [#88](https://github.com/erancha/field-service-management/issues/88) push and SMS channels · [#92](https://github.com/erancha/field-service-management/issues/92) audit trail across the lifecycle |

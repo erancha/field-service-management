@@ -8,7 +8,7 @@ resolves the issue or escalates it to a booked visit. Customers, technicians and
 each have an app of their own, and bookings land on the technicians' Google Calendars. The stack
 runs under Docker Compose, on one machine or on an EC2 instance behind CloudFront.
 
-The [**visual walkthrough**](https://erancha.github.io/field-service-management/samples/walkthrough/)
+A [**visual walkthrough**](https://erancha.github.io/field-service-management/samples/walkthrough/)
 shows it running without deploying anything: annotated screenshots from one uninterrupted session,
 starting on an empty database and ending with a booked appointment in two Google Calendars.
 
@@ -73,8 +73,8 @@ flowchart LR
   W <-->|outbox out, edits in| GC[Google Calendar]
 ```
 
-**[Architecture](docs/architecture.md)** continues from here: the bounded contexts and their import
-rules, the runtime topology, authentication and live events, and the database.
+**[Architecture](docs/architecture.md)** continues from here: the Compose services, sign-in and
+live events, the calendar sync, the edge on EC2, the database and the codebase.
 
 ## Getting started
 
@@ -119,18 +119,24 @@ Each script's header comment is its full documentation, and `--help` prints it.
 
 ## Details
 
-- [Architecture](docs/architecture.md) — the bounded contexts, the import rules, the runtime
-  topology and the database
-- [Features & roadmap](docs/features.md) — what each role sees, surface by surface, and the open
-  work
-- [Authentication & live communication](docs/auth-and-communication.md) — the sign-in, calendar
-  connect and approval flows end to end, and running a role on several replicas
-- [Sign-in](docs/sign-in.md) — how sign-in works and how to set up the Google side
-- [Google Calendar connect](docs/calendar-setup.md) — the calendar scopes, a rejected connect and
-  re-consent
-- [Database schema](docs/data.md) — the tables, the integrity guarantees and the calendar sync
-- [Development & deployment](docs/development.md) — the settings files, the tests, the scripts
-  and the addresses
+- [Architecture](docs/architecture.md) — the Compose services, sign-in and live events, the
+  calendar sync, the edge on EC2, storage and the codebase
+- [API endpoints](docs/api.md) — every route of the role apps, who may call it and what it
+  answers, and what the edge passes on
+- [Workers' responsibilities and flows](docs/workers.md) — the calendar dispatcher and poller,
+  the schema migration and the jobs run by hand
+- [Features](docs/features.md) — what each role sees, surface by surface
+- [Design patterns](docs/design-patterns.md) — the bounded contexts, their import rules and how
+  they are enforced
+- [Data model](docs/data-model.md) — every table, its keys and the integrity guarantees
+- [Live events across replicas](docs/live-events.md) — the approval flows end to end, and running
+  a role on several replicas
+- [Sign-in](docs/sign-in.md) — how sign-in works, how to set up the Google side, its guarantees
+  and the credentials' lifetimes
+- [Google Calendar connect](docs/calendar-setup.md) — the connect flow, the calendar scopes, a
+  rejected connect and re-consent
+- [Development & deployment](docs/development.md) — the settings files, the tests, the scripts,
+  the EC2 stack and the addresses
 - [Testing](docs/testing.md) — what each test layer proves
 - [Decisions](docs/adr/) — one record per decision: the EC2 deployment
 

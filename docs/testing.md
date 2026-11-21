@@ -1,6 +1,11 @@
 # Testing
 
-How the test suite is organized and how to run it.
+This document details the tests behind
+[Development & deployment](development.md#backend-tests): how the test suite is organized and how
+to run it.
+
+**Contents:** [Running](#running) · [Backend](#backend-backendtests-pytest) ·
+[Frontend](#frontend-frontend) · [Glossary](#glossary)
 
 ## Running
 
@@ -16,7 +21,7 @@ Targets combine. The `e2e` target is never part of the default run: it builds an
 processes through Redis before returning over SSE (details in that folder's README).
 
 Backend integration tests start ephemeral PostgreSQL and RustFS object-store containers via
-testcontainers<sup>(1)</sup>, so **Docker must be running**. On first run the script provisions the
+testcontainers [1], so **Docker must be running**. On first run the script provisions the
 backend virtualenv and installs frontend dependencies. The same gates run in CI
 (`.github/workflows/ci.yml`).
 
@@ -36,24 +41,28 @@ Tests mirror the source layout — one package per bounded context (`identity`, 
 ### Unit tests
 Pure and in-memory, no external I/O. Domain and application layers (and ports, for the contexts that
 define them) are exercised against in-memory fakes — e.g. `tests/scheduling/domain`,
-`tests/identity/application`. They cover slot-generation math (including DST<sup>(2)</sup> correctness), appointment
-lifecycle transitions, the inbound reconciliation decision logic (last-write-wins, DB-as-authority),
-and each application service's behavior. Fast and deterministic.
+`tests/identity/application`. They cover slot-generation math (including DST [2] correctness),
+appointment lifecycle transitions, the inbound reconciliation decision logic (last-write-wins,
+DB-as-authority), and each application service's behavior. Fast and deterministic.
 
 ### Integration tests
 Run against a **real PostgreSQL** instance started per test module via testcontainers
-(`tests/<context>/adapters`). They verify the SQLAlchemy repositories, the Alembic migrations, and the
-database-enforced invariants — most importantly the GiST `EXCLUDE`<sup>(3)</sup> no-double-booking constraint, which
-can only be proven against a real Postgres, not a fake. The assist context's `MinioPhotoStore`
-adapter is verified the same way, round-tripping bytes against a real **RustFS** container
-(`tests/assist/adapters/test_photo_store.py`).
+(`tests/<context>/adapters`). They verify the SQLAlchemy repositories, the Alembic migrations, and
+the database-enforced invariants — most importantly the GiST `EXCLUDE` [3] no-double-booking
+constraint, which can only be proven against a real Postgres, not a fake. The assist context's
+`MinioPhotoStore` adapter is verified the same way, round-tripping bytes against a real **RustFS**
+container (`tests/assist/adapters/test_photo_store.py`).
 
 ### API tests
 End-to-end HTTP tests (`tests/platform/api`) drive the FastAPI app through Starlette's `TestClient`
 against real Postgres: opening service calls, availability (free/busy, holidays, days-off, and the
-first-available technician pool), booking with `409` on overlap, the OAuth sign-in and calendar-connect
-flows (with injected fakes standing in for Google so no network or credentials are needed), and
-notification delivery into the in-app feed.
+first-available technician pool), booking with `409` on overlap, the OAuth sign-in and
+calendar-connect flows (with injected fakes standing in for Google so no network or credentials are
+needed), and notification delivery into the in-app feed.
+
+**The API document** is checked against the router: `tests/platform/api/test_api_doc.py` reads every
+route each role app declares and fails, naming the route, when [API endpoints](api.md) leaves one
+out or names one no role app declares.
 
 ### Contract tests
 `tests/contracts` runs one shared behavioral suite against **both** the in-memory fake and the real
@@ -65,9 +74,8 @@ and `ServiceCallOpener` (`FakeServiceCallOpener` against the scheduling bridge).
 `tests/test_architecture.py` runs import-linter's boundary contracts (also runnable directly as
 `lint-imports`): the build fails if any bounded context imports across a forbidden boundary — for
 example `scheduling` importing an adapter package or a Google library, or `core` importing anything
-of this product's, including the web framework. `tests/test_packages.py` asserts
-every package is importable. These encode the hexagonal<sup>(4)</sup> boundaries as executable checks rather than
-conventions.
+of this product's, including the web framework. `tests/test_packages.py` asserts every package is
+importable. These encode the hexagonal [4] boundaries as executable checks rather than conventions.
 
 Beside them, `tests/test_compose.py` checks the Compose files (what is published, and where; no
 bind mount; an `:ec2` image for every image built here; each role's callbacks on EC2),
@@ -81,18 +89,18 @@ The React app's quality gates are **lint** (`oxlint`), **unit/component tests** 
 and the **typecheck** (`tsc -b`) and production **build** (`vite build`) that `npm run build`
 chains; `scripts/test.sh frontend` runs all four.
 
-Tests live next to the code they cover as `*.test.ts(x)` and run under Vitest in a jsdom
-environment with React Testing Library (per-test DOM cleanup is wired in `src/test/setup.ts`).
-They cover the API client modules, the pure helpers (onboarding completeness, phone validation, error
-shaping), the data-fetching and SSE hooks, and component/page behaviour up to whole role pages —
-including the customer triage chat and its streaming decode, the back-office knowledge-base panel, the
-booking flow, and the technician calendar connect/disconnect controls.
+Tests live next to the code they cover as `*.test.ts(x)` and run under Vitest in a jsdom environment
+with React Testing Library (per-test DOM cleanup is wired in `src/test/setup.ts`). They cover the
+API client modules, the pure helpers (onboarding completeness, phone validation, error shaping), the
+data-fetching and SSE hooks, and component/page behaviour up to whole role pages — including the
+customer triage chat and its streaming decode, the back-office knowledge-base panel, the booking
+flow, and the technician calendar connect/disconnect controls.
 
 ## Glossary
 
 | Ref | Term | Meaning |
 | --- | --- | --- |
-| (1) | testcontainers | A library that starts throwaway Docker containers (here PostgreSQL) for the duration of a test module, giving integration tests a real database instead of a fake. |
-| (2) | DST — Daylight Saving Time | Seasonal clock shifts that make some local days shorter or longer; slot-generation math is tested to stay correct across them. |
-| (3) | GiST `EXCLUDE` | A PostgreSQL exclusion constraint backed by a Generalized Search Tree index; it enforces no-double-booking in the database and can only be verified against a real Postgres. |
-| (4) | hexagonal (ports and adapters) | An architecture where the core domain talks only to abstract ports and all infrastructure lives in adapters behind them; the boundaries are checked in CI by import-linter. |
+| [1] | testcontainers | A library that starts throwaway Docker containers (here PostgreSQL) for the duration of a test module, giving integration tests a real database instead of a fake. |
+| [2] | DST — Daylight Saving Time | Seasonal clock shifts that make some local days shorter or longer; slot-generation math is tested to stay correct across them. |
+| [3] | GiST `EXCLUDE` | A PostgreSQL exclusion constraint backed by a Generalized Search Tree index; it enforces no-double-booking in the database and can only be verified against a real Postgres. |
+| [4] | hexagonal (ports and adapters) | An architecture where the core domain talks only to abstract ports and all infrastructure lives in adapters behind them; the boundaries are checked in CI by import-linter. |
