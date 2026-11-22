@@ -6,6 +6,7 @@ from langchain.embeddings import init_embeddings
 from langchain_core.embeddings import Embeddings
 
 from fsm.assist.adapters.chat_model import LangChainChatModel
+from fsm.assist.adapters.model_call_log import ModelCallLog
 from fsm.assist.adapters.photo_store import MinioPhotoStore
 from fsm.assist.adapters.text_extraction import CompositeTextExtractor
 from fsm.assist.adapters.vector_index import PgVectorDocumentIndex
@@ -56,7 +57,9 @@ def build_chat_model(settings: Settings, photo_store: PhotoStore | None) -> Chat
     """The triage chat model, or None when the feature is not configured.
 
     The API key is passed explicitly rather than through the environment, so the feature works
-    without exporting provider keys into the process.
+    without exporting provider keys into the process. Every call, a reply or the closing summary,
+    logs one model_call line as "triage"; a model whose prices model_costs.py does not list is
+    refused here, at startup.
     """
     if not settings.assist_chat_enabled:
         return None
@@ -64,7 +67,11 @@ def build_chat_model(settings: Settings, photo_store: PhotoStore | None) -> Chat
     provider = settings.assist_model.split(":", 1)[0]
     key = {"openai": settings.openai_api_key, "anthropic": settings.anthropic_api_key}[provider]
     assert key is not None  # guaranteed by assist_chat_enabled
-    model = init_chat_model(settings.assist_model, api_key=key.get_secret_value())
+    model = init_chat_model(
+        settings.assist_model,
+        api_key=key.get_secret_value(),
+        callbacks=[ModelCallLog(settings.assist_model, "triage")],
+    )
     return LangChainChatModel(model, photo_store=photo_store)
 
 

@@ -10,6 +10,7 @@ import logging
 import pytest
 import structlog
 
+from fsm.assist.adapters.model_costs import MODEL_CALL_LOGGER
 from fsm.platform.logging import configure_logging
 
 
@@ -23,10 +24,13 @@ def _isolate_logging(monkeypatch):
     saved_level = root.level
     target = logging.getLogger("fsm.per_module_target")
     saved_target_level = target.level
+    model_call = logging.getLogger(MODEL_CALL_LOGGER)
+    saved_model_call_level = model_call.level
     yield
     root.handlers[:] = saved_handlers
     root.setLevel(saved_level)
     target.setLevel(saved_target_level)
+    model_call.setLevel(saved_model_call_level)
     structlog.reset_defaults()
 
 
@@ -46,3 +50,10 @@ def test_fsm_log_levels_sets_per_module_levels(monkeypatch, capsys):
 
     logging.getLogger("fsm.per_module_target").debug("targeted detail")
     assert "targeted detail" in capsys.readouterr().err
+
+
+def test_model_call_lines_pass_a_warning_level_log():
+    configure_logging()
+
+    assert logging.getLogger(MODEL_CALL_LOGGER).isEnabledFor(logging.INFO)
+    assert not logging.getLogger("fsm").isEnabledFor(logging.INFO)

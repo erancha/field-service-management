@@ -53,8 +53,9 @@ than `LICENSE_CONTACT`, the address the README and `NOTICE` give for a commercia
   CloudFront distributions, hosts or guests by `EC2_HOST_STACK` of `params.sh` (`template-ec2.yaml`,
   `docker-compose.ec2.yml`), in the account of the gitignored `lib/aws-config.sh`.
 - `docker-helper.sh [--ec2]` — `--stop [--volumes]`, `--logs [-e|-w] [--grep <pattern>]
-  [--since <duration>] [--sorted] [service...]`, `--ps`; `--ec2 --delete-stack` deletes this
-  repo's three EC2 stacks.
+  [--since <duration>] [--sorted] [service...]`, `--ps`, `--costs [--since <age>]` (model spend
+  by day and kind, summed by `lib/docker_helper.py`, the same file in every Docker repo);
+  `--ec2 --delete-stack` deletes this repo's three EC2 stacks.
 - `lib/ec2.sh` — the EC2 target: a stack's deploy, SSH with an Instance Connect key, Compose
   against the instance's daemon. `lib/settings-guard.sh` — the checks behind the pre-commit
   hook. Both are the same files in every Docker Compose repo.

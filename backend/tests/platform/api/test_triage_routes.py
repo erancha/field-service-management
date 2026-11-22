@@ -54,7 +54,7 @@ def pg_session_factory(pg_engine):
 
 def build_app(pg_session_factory, chat_model, *, enabled: bool = True):
     settings = Settings(
-        assist_model="anthropic:claude-sonnet-5" if enabled else None,
+        assist_model="anthropic:claude-opus-5" if enabled else None,
         anthropic_api_key="sk-test" if enabled else None,
         database_url="postgresql+psycopg://u:p@localhost/db",
     )

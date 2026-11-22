@@ -93,10 +93,12 @@ Docker runs the stack; `deploy.sh` and `docker-helper.sh` stop when it is not re
 - `deploy.sh --ec2` — the same on an EC2 instance, as one stack per role
   ([The EC2 stack](#the-ec2-stack)).
 - [`docker-helper.sh`](../scripts/docker-helper.sh) — `--stop [--volumes]`,
-  `--logs [-e|-w] [--grep <pattern>] [--since <duration>] [--sorted] [service...]` or `--ps` for
-  the stack; `--volumes` also removes the database and the photos. With `--ec2` as its first
-  argument it acts on the instance, and `--ec2 --delete-stack` deletes this repo's three EC2
-  stacks.
+  `--logs [-e|-w] [--grep <pattern>] [--since <duration>] [--sorted] [service...]`, `--ps` or
+  `--costs [--since <age>]` for the stack; `--volumes` also removes the database and the photos.
+  `--costs` sums the model calls of the running containers' logs by UTC day and by kind of call
+  (the triage assistant's replies and summaries), in dollars at the prices of
+  `backend/src/fsm/assist/adapters/model_costs.py`. With `--ec2` as its first argument it acts on
+  the instance, and `--ec2 --delete-stack` deletes this repo's three EC2 stacks.
 - [`test.sh`](../scripts/test.sh) — the quality gate and the e2e, above.
 - [`init-env.sh`](../scripts/init-env.sh) — creates the settings files, above; `--force`
   replaces existing ones, hand-filled keys and the generated keys included.

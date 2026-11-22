@@ -2,6 +2,9 @@
 touch a provider when unset."""
 from __future__ import annotations
 
+import pytest
+
+from fsm.assist.adapters.model_call_log import ModelCallLog
 from fsm.platform.assist_factory import build_chat_model, build_photo_store
 from fsm.platform.config import Settings
 
@@ -13,7 +16,7 @@ def test_returns_none_when_no_chat_model_is_configured() -> None:
 
 
 def test_returns_none_when_the_provider_key_is_missing() -> None:
-    settings = Settings(assist_model="anthropic:claude-sonnet-5", database_url=DB_URL)
+    settings = Settings(assist_model="anthropic:claude-opus-5", database_url=DB_URL)
 
     assert build_chat_model(settings, photo_store=None) is None
 
@@ -28,7 +31,7 @@ def test_builds_a_chat_model_for_a_configured_provider(monkeypatch) -> None:
 
     monkeypatch.setattr("fsm.platform.assist_factory.init_chat_model", fake_init_chat_model)
     settings = Settings(
-        assist_model="anthropic:claude-sonnet-5",
+        assist_model="anthropic:claude-opus-5",
         anthropic_api_key="sk-test",
         database_url=DB_URL,
     )
@@ -36,8 +39,11 @@ def test_builds_a_chat_model_for_a_configured_provider(monkeypatch) -> None:
     built = build_chat_model(settings, photo_store=None)
 
     assert built is not None
-    assert captured["model"] == "anthropic:claude-sonnet-5"
+    assert captured["model"] == "anthropic:claude-opus-5"
+    [log] = captured["kwargs"].pop("callbacks")
     assert captured["kwargs"] == {"api_key": "sk-test"}
+    assert isinstance(log, ModelCallLog)
+    assert (log.spec, log.kind) == ("anthropic:claude-opus-5", "triage")
 
 
 def test_passes_the_openai_key_when_the_model_is_openai(monkeypatch) -> None:
@@ -47,11 +53,11 @@ def test_passes_the_openai_key_when_the_model_is_openai(monkeypatch) -> None:
         lambda model, **kwargs: captured.update(model=model, kwargs=kwargs) or object(),
     )
     settings = Settings(
-        assist_model="openai:gpt-4.1", openai_api_key="sk-openai", database_url=DB_URL
+        assist_model="openai:gpt-5-mini", openai_api_key="sk-openai", database_url=DB_URL
     )
 
     assert build_chat_model(settings, photo_store=None) is not None
-    assert captured["kwargs"] == {"api_key": "sk-openai"}
+    assert captured["kwargs"]["api_key"] == "sk-openai"
 
 
 def test_photo_store_is_none_when_the_chat_feature_is_not_configured() -> None:
@@ -67,7 +73,7 @@ def test_photo_store_is_built_from_the_minio_settings_when_chat_is_enabled(monke
 
     monkeypatch.setattr("fsm.platform.assist_factory.MinioPhotoStore", fake_minio_photo_store)
     settings = Settings(
-        assist_model="anthropic:claude-sonnet-5",
+        assist_model="anthropic:claude-opus-5",
         anthropic_api_key="sk-test",
         minio_endpoint="minio.local:9000",
         minio_access_key="access",
@@ -87,3 +93,12 @@ def test_photo_store_is_built_from_the_minio_settings_when_chat_is_enabled(monke
         "bucket": "bucket",
         "secure": True,
     }
+
+
+def test_refuses_a_chat_model_without_a_listed_price() -> None:
+    settings = Settings(
+        assist_model="anthropic:claude-unlisted", anthropic_api_key="sk-test", database_url=DB_URL
+    )
+
+    with pytest.raises(ValueError, match="PRICE_PER_MILLION"):
+        build_chat_model(settings, photo_store=None)
