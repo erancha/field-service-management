@@ -123,6 +123,11 @@ Within the test users, the app grants each role at its own address:
 - **Administrator** — only an account listed in `ADMIN_EMAILS`, on its first sign-in at the back
   office; the back office refuses every other account.
 
+Under its "Sign in with Google" button, the landing page has a "Why sign in with Google?" toggle
+that explains why signing in with Google is safe and links to Google's own help page. It covers
+signing in only; the calendar access a technician grants later is asked for on its own consent
+screen.
+
 ## Security guarantees
 
 - **CSRF on the OAuth handshake.** `/auth/google/login` mints a random `state` into the session and

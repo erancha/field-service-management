@@ -32,13 +32,11 @@ function renderShell(auth: CurrentUserResult['auth'], route = '/') {
 }
 
 describe('AppShell', () => {
-  it('shows the brand and the page content without user controls when signed out', () => {
+  it('shows only the page content when signed out, since the landing card carries the brand', () => {
     renderShell({ status: 'unauthenticated' })
 
-    expect(screen.getByText(BRAND)).toBeInTheDocument()
+    expect(screen.queryByText(BRAND)).toBeNull()
     expect(screen.getByText('page content')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull()
   })
 
   it('shows the email, profile link, and sign-out button for a signed-in user', () => {

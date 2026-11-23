@@ -50,8 +50,11 @@ Code under `src/` is organized by responsibility, with `features/` split one fol
 - `hooks/` — custom React hooks for data fetching and auth state
 - `components/` — shared presentational components reused across features
 - `features/` — feature-specific screens and flows: one folder per user role (`auth`, `customer`,
-  `technician`, `backoffice`) plus the cross-role `profile` onboarding/editing flow
+  `technician`, `backoffice`), the cross-role `profile` onboarding/editing flow, and `landing`,
+  the signed-out page every role's app opens on
 - `pages/` — top-level route components; `HomePage` dispatches by auth state and role
-- `utils/` — shared pure helpers (slot search window and time-range formatting)
+- `utils/` — shared pure helpers (slot search window, time-range formatting, bold marks in fixed
+  page text)
 - `test/` — vitest setup (jest-dom matchers, per-test DOM cleanup)
-- `styles/` — global CSS
+- `styles/` — global CSS, and `landing.css`, the landing page's stylesheet, copied byte for byte
+  from loan-simulator and edited only there

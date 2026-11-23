@@ -1,5 +1,5 @@
 import { useAuth } from '../features/auth/authContext.ts'
-import { SignInWithGoogle } from '../components/SignInWithGoogle.tsx'
+import { Landing } from '../features/landing/Landing.tsx'
 import { CustomerPage } from './CustomerPage.tsx'
 import { TechnicianPage } from './TechnicianPage.tsx'
 import { AdminPage } from './AdminPage.tsx'
@@ -53,12 +53,5 @@ export function HomePage() {
     )
   }
 
-  return (
-    <div className="home-page">
-      <p className="home-page__tagline">Schedule and manage field service appointments.</p>
-      <div className="home-page__auth">
-        <SignInWithGoogle />
-      </div>
-    </div>
-  )
+  return <Landing />
 }

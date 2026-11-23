@@ -10,11 +10,14 @@ interface AppShellProps {
 /**
  * Global chrome rendered once around every route: the brand bar with the product name and, for a
  * signed-in user, their email, a link to the profile page, and the sign-out button. Pages render
- * only their own title and content below it.
+ * only their own title and content below it. Signed out, the landing card carries the brand
+ * itself, so the bar stays away until sign-in.
  */
 export function AppShell({ children }: AppShellProps) {
   const { auth } = useAuth()
   const location = useLocation()
+
+  if (auth.status === 'unauthenticated') return <>{children}</>
 
   return (
     <>

@@ -19,6 +19,14 @@ or scheduling action needs a signed-in session. There are three roles — custom
 technician, and admin — and a role comes from the per-role edge that completed the sign-in, never
 from client input. An admin approves a technician before they can be booked.
 
+Signed out, every role's app opens on the same landing page: one card with the product's icon,
+name and tagline, a short pitch and three numbered steps from the customer's side, a "More"
+toggle that adds the details, and the "Sign in with Google" button. Under the button, a "Why sign
+in with Google?" toggle explains why signing in with Google is safe and links to Google's own help
+page. Links under the card open the visual walkthrough (screenshots of one end-to-end run),
+invite a friend through WhatsApp with the app's own address in the message, and open the source
+on GitHub. The app's top bar appears only after sign-in.
+
 ## Booking and scheduling
 
 - Customers book themselves, against a technician's real availability.

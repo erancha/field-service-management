@@ -22,6 +22,7 @@ export async function logout(): Promise<void> {
   await apiFetch('/auth/logout', { method: 'POST' })
 }
 
-export function getGoogleLoginUrl(): string {
-  return '/auth/google/login'
+/** Leaves for the backend's Google sign-in, which returns to this role's app when it completes. */
+export function startGoogleSignIn(): void {
+  window.location.assign('/auth/google/login')
 }
