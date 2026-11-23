@@ -65,6 +65,14 @@
   .lede { font-size: 18px; color: var(--muted); margin: 0 0 16px; text-wrap: pretty; }
   .lede strong { color: var(--text); font-weight: 600; }
 
+  /* Sets the format up front so a visitor expecting an auto-playing demo is not left waiting. */
+  .format-note {
+    display: block; margin: 0 0 20px; padding: 10px 16px;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px;
+    background: var(--surface); font-size: 14px; color: var(--muted); text-wrap: pretty;
+  }
+  .format-note strong { color: var(--text); font-weight: 600; }
+
   .roles { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 4px; }
   .role {
     display: inline-flex; align-items: baseline; gap: 8px;
@@ -192,6 +200,11 @@
   <div class="wrap">
     <a class="brand" href="https://github.com/erancha/field-service-management"><span class="bolt">⚡</span> Field Service Management</a>
     <h1>A walkthrough of one real run</h1>
+    <p class="format-note">
+      <strong>A scroll-through walkthrough, not a video.</strong> 25 annotated screenshots you read
+      at your own pace — nothing plays on its own. Scroll for the whole run in order, or jump to a
+      stage from the bar below.
+    </p>
     <p class="lede">
       Field Service Management books maintenance visits for agencies — elevators, appliances,
       anything with a technician and a van. What follows is one uninterrupted session with it
