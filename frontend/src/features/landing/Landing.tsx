@@ -43,7 +43,7 @@ export function Landing() {
           <img className="app-icon" src="/favicon.svg" alt="" /> {BRAND}
         </h1>
         {/* A sibling of the heading, so the heading's accessible name stays the bare title. */}
-        <p className="app-tagline">{APP_TAGLINE}</p>
+        <p className="app-tagline landing-flash">{APP_TAGLINE}</p>
         {LANDING_LEAD.map((line) => (
           <p key={line} className="landing-pitch">
             {withBold(line)}
@@ -67,7 +67,7 @@ export function Landing() {
         )}
         <button
           type="button"
-          className="landing-more"
+          className="landing-more landing-flash"
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
@@ -76,7 +76,7 @@ export function Landing() {
         <SignInButton />
       </div>
       <footer className="landing-links">
-        <a href={DEMO_URL} className={demoFlashClass()} target="_blank" rel="noreferrer">
+        <a href={DEMO_URL} className={`landing-flash ${demoFlashClass() ?? ''}`} target="_blank" rel="noreferrer">
           <span className="link-mark" aria-hidden="true">
             {DEMO_MARK}
           </span>
