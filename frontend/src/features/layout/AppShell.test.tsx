@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { CurrentUserResult } from '../../hooks/useCurrentUser.ts'
 import type { CurrentUser } from '../../api/types.ts'
@@ -39,19 +39,43 @@ describe('AppShell', () => {
     expect(screen.getByText('page content')).toBeInTheDocument()
   })
 
-  it('shows the email, profile link, and sign-out button for a signed-in user', () => {
+  it('keeps the account behind a closed menu for a signed-in user', () => {
     renderShell({ status: 'authenticated', user: USER })
 
     expect(screen.getByText(BRAND)).toBeInTheDocument()
-    expect(screen.getByText('jane@example.com')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account menu' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByText('jane@example.com')).toBeNull()
   })
 
-  it('hides the profile link while already on the profile page', () => {
+  it('opens the menu on the name, email, profile link and sign-out item', () => {
+    renderShell({ status: 'authenticated', user: USER })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu' }))
+
+    expect(screen.getByText('Jane')).toBeInTheDocument()
+    expect(screen.getByText('jane@example.com')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Profile' })).toHaveAttribute('href', '/profile')
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
+  })
+
+  it('closes the menu on Escape', () => {
+    renderShell({ status: 'authenticated', user: USER })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('leaves the profile item out while already on the profile page', () => {
     renderShell({ status: 'authenticated', user: USER }, '/profile')
 
-    expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull()
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu' }))
+
+    expect(screen.queryByRole('menuitem', { name: 'Profile' })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
   })
 })
