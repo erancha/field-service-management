@@ -15,6 +15,7 @@ import {
   MORE,
   SOURCE_LINK,
 } from './copy.ts'
+import { demoFlashClass } from './demoFlash.ts'
 import { whatsAppInviteUrl } from './invite.ts'
 
 const SOURCE_URL = 'https://github.com/erancha/field-service-management'
@@ -75,7 +76,7 @@ export function Landing() {
         <SignInButton />
       </div>
       <footer className="landing-links">
-        <a href={DEMO_URL} target="_blank" rel="noreferrer">
+        <a href={DEMO_URL} className={demoFlashClass()} target="_blank" rel="noreferrer">
           <span className="link-mark" aria-hidden="true">
             {DEMO_MARK}
           </span>
