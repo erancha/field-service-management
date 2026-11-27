@@ -21,6 +21,7 @@
   --color-success-hover: var(--color-success-text);
   --color-bg: #f9fafb;
   --color-surface: #ffffff;
+  --color-hover: #eef0f3;
   --color-border: #e5e7eb;
   --color-text: #111827;
   --color-text-muted: #6b7280;
@@ -166,34 +167,27 @@ body {
   outline-offset: 1px;
 }
 
-/* App shell — the brand bar rendered once above every page. Same width as .page so the brand
-   aligns with the page content below it. On viewports too narrow for the brand and the user
-   controls side by side (360px phones), the controls wrap onto their own line rather than
-   overflowing off-screen. */
+/* App shell — the header rendered once above every page: full width, with the brand at the
+   start and the account menu at the end. */
 .app-shell__bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 1rem 1rem 0;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
-/* Brand lockup: the mark is decorative and carries no alt text, and the name is set quieter than
-   the page title so each page has one dominant heading rather than two competing ones. */
+/* Brand lockup: the mark is decorative and carries no alt text. The name is not a heading, so
+   each page keeps its own title as its one heading. */
 .app-shell__brand {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.app-shell__brand span {
-  font-size: 0.95rem;
+  min-width: 0;
+  margin-right: auto;
+  font-size: 1.15rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-text-muted);
 }
 
 .app-shell__logo {
@@ -201,27 +195,89 @@ body {
   height: auto;
 }
 
-/* Stays against the right edge whether it shares the bar's line with the brand or wraps below it. */
-.app-shell__user {
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* The account box anchors the menu, which floats over the page instead of pushing it down. */
+.account {
+  position: relative;
+}
+
+.account-trigger {
+  display: flex;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.account-trigger:hover {
+  background: var(--color-hover);
+}
+
+.account-trigger[aria-expanded="true"] {
+  background: var(--color-hover);
+  color: var(--color-primary);
+}
+
+.account-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: max-content;
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.13);
+}
+
+/* The account labels the menu rather than acting, so it is set apart from the items below it. */
+.account-name {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -4px 4px;
+  padding: 4px 16px 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.account-email {
+  font-size: 0.8rem;
+}
+
+.account-menu [role="menu"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-  margin-left: auto;
-}
-
-/* The buttons hold their size so a long address gives up width instead of squashing them. */
-.app-shell__user .btn {
-  flex: none;
-}
-
-.app-shell__email {
-  font-size: 0.875rem;
-  color: var(--color-text-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 8px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--color-hover);
 }
 
 /* Pages */
